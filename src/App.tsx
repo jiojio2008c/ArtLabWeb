@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import HomePage from './components/HomePage.tsx'
 import UploadPage from './components/UploadPage.tsx'
 import EditPage from './components/EditPage.tsx'
 
@@ -8,7 +9,7 @@ interface ImageData {
 }
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'upload' | 'edit'>('upload')
+  const [currentPage, setCurrentPage] = useState<'home' | 'upload' | 'edit'>('home')
   const [imageData, setImageData] = useState<ImageData | null>(null)
   const [wsIp, setWsIp] = useState<string>('192.168.8.101')
   const [selectedName, setSelectedName] = useState<string>('fish')
@@ -27,15 +28,23 @@ function App() {
     setCurrentPage('upload')
   }
 
+  const handleSelectScene = (sceneName: string) => {
+    setSelectedName(sceneName)
+    setCurrentPage('upload')
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      {currentPage === 'upload' ? (
+    <div className="min-h-screen bg-white">
+      {currentPage === 'home' ? (
+        <HomePage 
+          onSelectScene={handleSelectScene}
+        />
+      ) : currentPage === 'upload' ? (
         <UploadPage 
           onUploadSuccess={handleUploadSuccess}
           wsIp={wsIp}
           onWsIpChange={setWsIp}
           selectedName={selectedName}
-          onSelectedNameChange={setSelectedName}
         />
       ) : (
         <EditPage 

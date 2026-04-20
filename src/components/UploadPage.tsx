@@ -6,10 +6,9 @@ interface UploadPageProps {
   wsIp: string
   onWsIpChange: (ip: string) => void
   selectedName: string
-  onSelectedNameChange: (name: string) => void
 }
 
-const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onSelectedNameChange }) => {
+const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState<boolean>(false)
@@ -171,93 +170,37 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   }
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-8 text-center">Art Lab Web</h1>
+    <div className="min-h-screen bg-white">
+      <div className="container mx-auto px-6 py-16 max-w-4xl">
+        <h1 className="text-5xl font-bold text-gray-900 mb-2 text-center">Art Lab</h1>
+        <p className="text-xl text-gray-500 mb-12 text-center">上传您的图片</p>
 
       {/* HTTP 伺服器 IP 設定 */}
-      <div className="mb-6">
-        <label className="block text-lg font-medium mb-2">HTTP 伺服器 IP 位址</label>
+      <div className="mb-12">
+        <label className="block text-xl font-semibold text-gray-900 mb-4">HTTP 伺服器 IP 位址</label>
         <div className="flex">
           <input
             type="text"
             value={wsIp}
             onChange={(e) => onWsIpChange(e.target.value)}
             placeholder="請輸入伺服器 IP 位址"
-            className="flex-grow px-4 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-grow px-6 py-3 text-lg border border-gray-200 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           />
-          <span className="px-4 py-2 bg-gray-200 border border-gray-300 rounded-r-lg">:8080</span>
+          <span className="px-6 py-3 text-lg bg-gray-100 border border-gray-200 rounded-r-lg text-gray-700">:8080</span>
         </div>
       </div>
 
-      {/* 選擇畫面 */}
-      <div className="mb-6">
-        <label className="block text-lg font-medium mb-2">選擇畫面</label>
-        <div className="grid grid-cols-3 gap-4">
-          {/* 選項 1: fish */}
-          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'fish' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
-            <input
-              type="radio"
-              name="scene"
-              value="fish"
-              checked={selectedName === 'fish'}
-              onChange={(e) => onSelectedNameChange(e.target.value)}
-              className="sr-only"
-            />
-            <div className="flex flex-col items-center">
-              <div className="w-full h-24 bg-gray-100 rounded mb-2 overflow-hidden">
-                <img src="/fish.png" alt="fish preview" className="w-full h-full object-cover" />
-              </div>
-              <span className="font-medium">fish</span>
-            </div>
-          </label>
-          
-          {/* 選項 2: people */}
-          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'people' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
-            <input
-              type="radio"
-              name="scene"
-              value="people"
-              checked={selectedName === 'people'}
-              onChange={(e) => onSelectedNameChange(e.target.value)}
-              className="sr-only"
-            />
-            <div className="flex flex-col items-center">
-              <div className="w-full h-24 bg-gray-100 rounded mb-2 overflow-hidden">
-                <img src="/people.png" alt="people preview" className="w-full h-full object-cover" />
-              </div>
-              <span className="font-medium">people</span>
-            </div>
-          </label>
-          
-          {/* 選項 3: other */}
-          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'other' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
-            <input
-              type="radio"
-              name="scene"
-              value="other"
-              checked={selectedName === 'other'}
-              onChange={(e) => onSelectedNameChange(e.target.value)}
-              className="sr-only"
-            />
-            <div className="flex flex-col items-center">
-              <div className="w-full h-24 bg-gray-100 rounded mb-2 flex items-center justify-center">
-                <span className="text-gray-500">空白網格 + 恐龍</span>
-              </div>
-              <span className="font-medium">other</span>
-            </div>
-          </label>
-        </div>
-      </div>
+
 
       {/* 圖片上傳區域 */}
       {previewUrl && (
-        <div className="mb-8">
-          <h2 className="text-xl font-medium mb-4">圖片預覽</h2>
-          <div className="bg-white p-4 rounded-lg shadow-md">
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">圖片預覽</h2>
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
             <img
               src={previewUrl}
               alt="預覽"
-              className="w-full h-auto object-contain max-h-96"
+              className="w-full h-auto object-contain max-h-96 mx-auto"
             />
           </div>
         </div>
@@ -265,20 +208,20 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 相機模式 */}
       {showCamera ? (
-        <div className="mb-8">
-          <div className="bg-white p-4 rounded-lg shadow-md">
-            <video ref={videoRef} className="w-full h-auto max-h-96 object-contain"></video>
+        <div className="mb-12">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+            <video ref={videoRef} className="w-full h-auto max-h-96 object-contain mx-auto"></video>
             <canvas ref={canvasRef} className="hidden"></canvas>
-            <div className="flex justify-between mt-4">
+            <div className="flex justify-between mt-6 space-x-4">
               <button
                 onClick={handleTakePhoto}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex-1 py-3 px-8 bg-blue-600 text-white text-lg font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
               >
                 拍攝
               </button>
               <button
                 onClick={handleCloseCamera}
-                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="flex-1 py-3 px-8 bg-gray-100 text-gray-800 text-lg font-medium rounded-lg hover:bg-gray-200 transition-all shadow-sm hover:shadow-md"
               >
                 取消
               </button>
@@ -286,14 +229,14 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
           {/* 選擇本機圖片 */}
           <div>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full px-6 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex flex-col items-center justify-center"
+              className="w-full py-6 bg-blue-600 text-white text-lg font-medium rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md flex flex-col items-center justify-center"
             >
-              <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
               <span>選擇本機圖片</span>
@@ -312,24 +255,24 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}
+            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}
           >
-            <svg className="w-12 h-12 mb-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span className="text-center">拖放圖片到這裡</span>
+            <span className="text-lg text-gray-700">拖放圖片到這裡</span>
           </div>
         </div>
       )}
 
       {/* 開啟相機按鈕 */}
       {!showCamera && !previewUrl && (
-        <div className="mb-8">
+        <div className="mb-12">
           <button
             onClick={handleOpenCamera}
-            className="w-full px-6 py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex flex-col items-center justify-center"
+            className="w-full py-6 bg-green-600 text-white text-lg font-medium rounded-xl hover:bg-green-700 transition-all shadow-sm hover:shadow-md flex flex-col items-center justify-center"
           >
-            <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
@@ -340,11 +283,11 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 上載按鈕 */}
       {previewUrl && (
-        <div>
+        <div className="mb-8">
           <button
             onClick={handleUpload}
             disabled={isUploading}
-            className={`w-full px-6 py-4 rounded-lg transition-colors ${isUploading ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+            className={`w-full py-3 px-8 text-lg font-medium rounded-lg transition-all ${isUploading ? 'bg-gray-300 text-gray-600 cursor-not-allowed shadow-sm' : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow-md'}`}
           >
             {isUploading ? '上載中...' : '確認上載'}
           </button>
@@ -353,14 +296,15 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 錯誤提示 */}
       {uploadError && (
-        <div className="mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
+        <div className="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">
           {uploadError}
         </div>
       )}
 
       {/* 輔助文字 */}
-      <div className="mt-8 text-center text-sm text-gray-500">
+      <div className="mt-12 text-center text-sm text-gray-500">
         支援 JPEG/PNG/GIF/WebP，單一檔案不超過 10MB
+      </div>
       </div>
     </div>
   )
