@@ -1,14 +1,15 @@
 import { useState, useRef } from 'react'
-import { useDrag, usePinch, useWheel } from 'react-use-gesture'
+import { useDrag } from 'react-use-gesture'
 
 interface EditPageProps {
   imageData: { name: string; url: string }
   wsIp: string
+  selectedName: string
   onBackToUpload: () => void
   onResetUpload: () => void
 }
 
-const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, onResetUpload }) => {
+const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBackToUpload, onResetUpload }) => {
   const [position, setPosition] = useState({ x: 0.5, y: 0.5 })
   const [scale, setScale] = useState(1)
   const [animationId, setAnimationId] = useState(0)
@@ -74,30 +75,13 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, on
     }
   })
 
-  // 缩放处理（触摸）
-  const pinchBind = usePinch(({ down, da, args: [currentScale] }) => {
-    if (down) {
-      const deltaScale = typeof da === 'number' ? da : 0
-      const newScale = Math.max(0.1, Math.min(3, currentScale * (1 + deltaScale * 0.01)))
-      setScale(newScale)
-    } else {
-      // 确保缩放值是有效的数字
-      const safeScale = isNaN(scale) ? 1 : scale
-      // 缩放结束后发送缩放值
-      sendHttpMessage(`${imageData.name}_Scale:${safeScale.toFixed(1)}`)
-    }
-  })
-
-  // 缩放处理（鼠标滚轮）
-  const wheelBind = useWheel(({ delta: [, dy] }) => {
-    const zoomFactor = dy > 0 ? 0.9 : 1.1
-    const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor))
+  // 缩放处理（滑动条）
+  const handleScaleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newScale = parseFloat(e.target.value)
     setScale(newScale)
-    // 确保缩放值是有效的数字
-    const safeScale = isNaN(newScale) ? 1 : newScale
     // 发送缩放值
-    sendHttpMessage(`${imageData.name}_Scale:${safeScale.toFixed(1)}`)
-  })
+    sendHttpMessage(`${imageData.name}_Scale:${newScale.toFixed(1)}`)
+  }
 
   // 动画选择处理
   const handleAnimationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -122,7 +106,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, on
   }
 
   // 合并所有手势绑定
-  const bind = { ...dragBind(), ...pinchBind(), ...wheelBind() }
+  const bind = { ...dragBind() }
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
@@ -148,6 +132,26 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, on
           ref={containerRef}
           className="grid-container bg-white rounded-lg shadow-md overflow-hidden relative"
         >
+          {/* 背景影片 */}
+          {selectedName === 'fish' && (
+            <video
+              src="fish.mp4"
+              autoPlay
+              loop
+              muted
+              className="absolute inset-0 w-full h-full object-cover z-0"
+            />
+          )}
+          {selectedName === 'people' && (
+            <video
+              src="people.mp4"
+              autoPlay
+              loop
+              muted
+              className="absolute inset-0 w-full h-full object-cover z-0"
+            />
+          )}
+          
           {/* 網格背景已在 CSS 中定義 */}
           
           {/* 可拖放的圖片 */}
@@ -162,6 +166,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, on
               transform: `translate(-50%, -50%) scale(${scale})`,
               maxWidth: '80%',
               maxHeight: '80%',
+              zIndex: 10,
             }}
             {...bind}
           />
@@ -183,9 +188,19 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, onBackToUpload, on
             <span className="text-lg">當前縮放比例：</span>
             <span className="text-xl font-bold text-blue-600">{scale.toFixed(1)}x</span>
           </div>
-          <div className="mt-4 text-sm text-gray-500">
-            <p>滑鼠滾輪或雙指縮放調整圖片大小</p>
-            <p>縮放範圍：0.1 ~ 3.0</p>
+          <div className="mt-4">
+            <input
+              type="range"
+              min="0.1"
+              max="3.0"
+              step="0.1"
+              value={scale}
+              onChange={handleScaleChange}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="mt-2 text-sm text-gray-500">
+              <p>縮放範圍：0.1 ~ 3.0</p>
+            </div>
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<'upload' | 'edit'>('upload')
   const [imageData, setImageData] = useState<ImageData | null>(null)
   const [wsIp, setWsIp] = useState<string>('192.168.8.101')
+  const [selectedName, setSelectedName] = useState<string>('fish')
 
   const handleUploadSuccess = (data: ImageData) => {
     setImageData(data)
@@ -33,11 +34,14 @@ function App() {
           onUploadSuccess={handleUploadSuccess}
           wsIp={wsIp}
           onWsIpChange={setWsIp}
+          selectedName={selectedName}
+          onSelectedNameChange={setSelectedName}
         />
       ) : (
         <EditPage 
           imageData={imageData!}
           wsIp={wsIp}
+          selectedName={selectedName}
           onBackToUpload={handleBackToUpload}
           onResetUpload={handleResetUpload}
         />

@@ -5,9 +5,11 @@ interface UploadPageProps {
   onUploadSuccess: (data: { name: string; url: string }) => void
   wsIp: string
   onWsIpChange: (ip: string) => void
+  selectedName: string
+  onSelectedNameChange: (name: string) => void
 }
 
-const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange }) => {
+const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onSelectedNameChange }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState<boolean>(false)
@@ -118,6 +120,8 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
     }
   }
 
+
+
   // 上传文件到Supabase
   const handleUpload = async () => {
     if (!selectedFile) return
@@ -129,7 +133,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       const formData = new FormData()
       formData.append('file', selectedFile)
       formData.append('questionId', '752d87b3-5f33-4097-ae16-c99eabed2e86')
-      formData.append('name', 'John')
+      formData.append('name', selectedName)
 
       const response = await axios.post(
         'https://lmlzavksopdunbpckaqh.supabase.co/functions/v1/gallery-upload',
@@ -138,10 +142,23 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       )
 
       if (response.data && response.data.media_url) {
+        // 1. 先执行上传成功（核心：上传独立成功）
         onUploadSuccess({
           name: selectedFile.name,
           url: response.data.media_url
         })
+
+        // 2. 解耦 + 只发不管：fire and forget，不await、不try、不等待返回
+        if (wsIp) {
+          const httpUrl = `http://${wsIp}:8080`
+          const formData = new FormData()
+          formData.append('image', selectedFile)
+          // 只发不管，无任何等待/错误处理
+          fetch(httpUrl, {
+            method: 'POST',
+            body: formData
+          })
+        }
       } else {
         throw new Error('上載失敗：未收到有效回應')
       }
@@ -172,7 +189,67 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         </div>
       </div>
 
-      {/* 圖片預覽區 */}
+      {/* 選擇畫面 */}
+      <div className="mb-6">
+        <label className="block text-lg font-medium mb-2">選擇畫面</label>
+        <div className="grid grid-cols-3 gap-4">
+          {/* 選項 1: fish */}
+          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'fish' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
+            <input
+              type="radio"
+              name="scene"
+              value="fish"
+              checked={selectedName === 'fish'}
+              onChange={(e) => onSelectedNameChange(e.target.value)}
+              className="sr-only"
+            />
+            <div className="flex flex-col items-center">
+              <div className="w-full h-24 bg-gray-100 rounded mb-2 overflow-hidden">
+                <img src="/fish.png" alt="fish preview" className="w-full h-full object-cover" />
+              </div>
+              <span className="font-medium">fish</span>
+            </div>
+          </label>
+          
+          {/* 選項 2: people */}
+          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'people' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
+            <input
+              type="radio"
+              name="scene"
+              value="people"
+              checked={selectedName === 'people'}
+              onChange={(e) => onSelectedNameChange(e.target.value)}
+              className="sr-only"
+            />
+            <div className="flex flex-col items-center">
+              <div className="w-full h-24 bg-gray-100 rounded mb-2 overflow-hidden">
+                <img src="/people.png" alt="people preview" className="w-full h-full object-cover" />
+              </div>
+              <span className="font-medium">people</span>
+            </div>
+          </label>
+          
+          {/* 選項 3: other */}
+          <label className={`cursor-pointer p-3 border-2 rounded-lg ${selectedName === 'other' ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-300'}`}>
+            <input
+              type="radio"
+              name="scene"
+              value="other"
+              checked={selectedName === 'other'}
+              onChange={(e) => onSelectedNameChange(e.target.value)}
+              className="sr-only"
+            />
+            <div className="flex flex-col items-center">
+              <div className="w-full h-24 bg-gray-100 rounded mb-2 flex items-center justify-center">
+                <span className="text-gray-500">空白網格 + 恐龍</span>
+              </div>
+              <span className="font-medium">other</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* 圖片上傳區域 */}
       {previewUrl && (
         <div className="mb-8">
           <h2 className="text-xl font-medium mb-4">圖片預覽</h2>
