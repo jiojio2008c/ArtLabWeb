@@ -28,6 +28,10 @@ function App() {
     setCurrentPage('upload')
   }
 
+  const handleBackToHome = () => {
+    setCurrentPage('home')
+  }
+
   const handleSelectScene = (sceneName: string) => {
     setSelectedName(sceneName)
     setCurrentPage('upload')
@@ -45,6 +49,7 @@ function App() {
           wsIp={wsIp}
           onWsIpChange={setWsIp}
           selectedName={selectedName}
+          onBackToHome={handleBackToHome}
         />
       ) : (
         <EditPage 

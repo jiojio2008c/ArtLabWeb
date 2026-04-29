@@ -6,9 +6,10 @@ interface UploadPageProps {
   wsIp: string
   onWsIpChange: (ip: string) => void
   selectedName: string
+  onBackToHome: () => void
 }
 
-const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName }) => {
+const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onBackToHome }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState<boolean>(false)
@@ -44,6 +45,85 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
     }
   }
 
+  // 去背景处理函数
+  const removeBackground = (image: HTMLImageElement): Promise<Blob> => {
+    return new Promise((resolve) => {
+      try {
+        // 创建Canvas
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          // 如果无法获取上下文，返回原始图片
+          const canvas2 = document.createElement('canvas')
+          canvas2.width = image.width
+          canvas2.height = image.height
+          const ctx2 = canvas2.getContext('2d')
+          ctx2?.drawImage(image, 0, 0)
+          canvas2.toBlob((blob) => resolve(blob || new Blob()))
+          return
+        }
+
+        // 压缩高分辨率图片，解决文件体积过大问题
+        const MAX_WIDTH = 1920;
+        let width = image.width;
+        let height = image.height;
+        
+        if (width > MAX_WIDTH) {
+          const scale = MAX_WIDTH / width;
+          width = MAX_WIDTH;
+          height = Math.floor(height * scale);
+        }
+
+        // 设置Canvas尺寸
+        canvas.width = width;
+        canvas.height = height;
+
+        // 绘制图片到Canvas
+        ctx.drawImage(image, 0, 0, width, height)
+
+        // 获取图片数据
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = imageData.data
+
+        // 处理每个像素
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+
+          // 检查是否为纯黑色或纯白色
+          const isBlack = r < 10 && g < 10 && b < 10
+          const isWhite = r > 245 && g > 245 && b > 245
+
+          if (isBlack || isWhite) {
+            // 将透明通道设为0
+            data[i + 3] = 0
+          }
+        }
+
+        // 将处理后的数据放回Canvas
+        ctx.putImageData(imageData, 0, 0)
+
+        // 转换为WebP格式，质量0.8以减小文件体积
+        canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/webp', 0.8)
+      } catch (error) {
+        console.error('去背景处理失败:', error)
+        // 处理失败时，返回原始图片
+        const canvas = document.createElement('canvas')
+        canvas.width = image.width
+        canvas.height = image.height
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(image, 0, 0)
+          canvas.toBlob((blob) => resolve(blob || new Blob()))
+        } else {
+          // 如果无法创建Canvas，返回空Blob
+          resolve(new Blob())
+        }
+      }
+    })
+  }
+
   // 处理文件
   const handleFile = (file: File) => {
     // 验证文件格式和大小
@@ -57,14 +137,38 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       return
     }
 
-    setSelectedFile(file)
     setUploadError(null)
     
-    // 生成预览
+    // 生成预览并去背景
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       if (e.target?.result) {
-        setPreviewUrl(e.target.result as string)
+        const result = e.target.result as string
+        const img = new Image()
+        img.onload = async () => {
+          try {
+            // 去背景处理
+            const processedBlob = await removeBackground(img)
+            // 转换为File对象
+            const processedFile = new File([processedBlob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' })
+            // 更新状态
+            setSelectedFile(processedFile)
+            // 生成预览URL
+            setPreviewUrl(URL.createObjectURL(processedBlob))
+          } catch (error) {
+            console.error('图片处理失败:', error)
+            // 处理失败时，使用原始文件
+            setSelectedFile(file)
+            setPreviewUrl(result)
+          }
+        }
+        img.onerror = () => {
+          console.error('图片加载失败')
+          // 图片加载失败时，使用原始文件
+          setSelectedFile(file)
+          setPreviewUrl(result)
+        }
+        img.src = result
       }
     }
     reader.readAsDataURL(file)
@@ -103,16 +207,66 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       const context = canvas.getContext('2d')
       
       if (context) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        context.drawImage(video, 0, 0, canvas.width, canvas.height)
+        // 压缩高分辨率图片，解决 iOS Canvas 内存溢出问题
+        const MAX_WIDTH = 1920;
+        let width = video.videoWidth;
+        let height = video.videoHeight;
         
-        // 转换为文件
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+        if (width > MAX_WIDTH) {
+          const scale = MAX_WIDTH / width;
+          width = MAX_WIDTH;
+          height = Math.floor(height * scale);
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        context.drawImage(video, 0, 0, width, height)
+        
+        // 创建图片对象用于去背景处理
+        const img = new Image()
+        img.onload = async () => {
+          try {
+            // 去背景处理
+            const processedBlob = await removeBackground(img)
+            // 转换为File对象
+            const file = new File([processedBlob], 'photo.png', { type: 'image/png' })
             handleFile(file)
             handleCloseCamera()
+          } catch (error) {
+            console.error('图片处理失败:', error)
+            // 处理失败时，直接将Canvas内容转换为文件
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+                handleFile(file)
+                handleCloseCamera()
+              } else {
+                // 如果无法创建Blob，直接关闭相机
+                setUploadError('图片处理失败，请重试')
+                handleCloseCamera()
+              }
+            }, 'image/jpeg', 0.9)
+          }
+        }
+        img.onerror = () => {
+          console.error('图片加载失败')
+          // 图片加载失败时，直接将Canvas内容转换为文件
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+              handleFile(file)
+              handleCloseCamera()
+            } else {
+              // 如果无法创建Blob，直接关闭相机
+              setUploadError('图片处理失败，请重试')
+              handleCloseCamera()
+            }
+          }, 'image/jpeg', 0.9)
+        }
+        // iOS 兼容：用 toBlob 代替 toDataURL，避免大图崩溃
+        canvas.toBlob((blob) => {
+          if (blob) {
+            img.src = URL.createObjectURL(blob)
           }
         }, 'image/jpeg', 0.9)
       }
@@ -136,8 +290,8 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       const response = await axios.post(
         'https://lmlzavksopdunbpckaqh.supabase.co/functions/v1/gallery-upload',
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        formData
+        // 🔥 彻底删除这里的 headers 配置！！！
       )
 
       if (response.data && response.data.media_url) {
@@ -170,23 +324,23 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="container mx-auto px-6 py-16 max-w-4xl">
-        <h1 className="text-5xl font-bold text-gray-900 mb-2 text-center">Art Lab</h1>
-        <p className="text-xl text-gray-500 mb-12 text-center">上传您的图片</p>
+    <div className="min-h-screen upload-background apple-container">
+      <div className="container mx-auto px-6 py-20 max-w-4xl">
+        <h1 className="text-5xl font-bold text-gray-900 mb-4 text-center apple-title">Art Lab</h1>
+        <p className="text-xl text-gray-600 mb-16 text-center apple-subtitle">上傳您的圖片</p>
 
       {/* HTTP 伺服器 IP 設定 */}
-      <div className="mb-12">
-        <label className="block text-xl font-semibold text-gray-900 mb-4">HTTP 伺服器 IP 位址</label>
+      <div className="mb-16">
+        <label className="block text-xl font-semibold text-gray-700 mb-4">HTTP 伺服器 IP 位址</label>
         <div className="flex">
           <input
             type="text"
             value={wsIp}
             onChange={(e) => onWsIpChange(e.target.value)}
             placeholder="請輸入伺服器 IP 位址"
-            className="flex-grow px-6 py-3 text-lg border border-gray-200 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            className="flex-grow px-6 py-3 text-lg border border-gray-200 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all apple-input"
           />
-          <span className="px-6 py-3 text-lg bg-gray-100 border border-gray-200 rounded-r-lg text-gray-700">:8080</span>
+          <span className="px-6 py-3 text-lg bg-gray-100 border border-gray-200 rounded-r-xl text-gray-700">:8080</span>
         </div>
       </div>
 
@@ -194,9 +348,9 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 圖片上傳區域 */}
       {previewUrl && (
-        <div className="mb-12">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">圖片預覽</h2>
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+        <div className="mb-16">
+          <h2 className="text-xl font-semibold text-gray-700 mb-6">圖片預覽</h2>
+          <div className="apple-card">
             <img
               src={previewUrl}
               alt="預覽"
@@ -208,20 +362,20 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 相機模式 */}
       {showCamera ? (
-        <div className="mb-12">
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+        <div className="mb-16">
+          <div className="apple-card">
             <video ref={videoRef} className="w-full h-auto max-h-96 object-contain mx-auto"></video>
             <canvas ref={canvasRef} className="hidden"></canvas>
             <div className="flex justify-between mt-6 space-x-4">
               <button
                 onClick={handleTakePhoto}
-                className="flex-1 py-3 px-8 bg-blue-600 text-white text-lg font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
+                className="flex-1 py-3 px-8 text-lg font-medium rounded-xl transition-all apple-button"
               >
                 拍攝
               </button>
               <button
                 onClick={handleCloseCamera}
-                className="flex-1 py-3 px-8 bg-gray-100 text-gray-800 text-lg font-medium rounded-lg hover:bg-gray-200 transition-all shadow-sm hover:shadow-md"
+                className="flex-1 py-3 px-8 text-lg font-medium rounded-xl transition-all apple-button-secondary"
               >
                 取消
               </button>
@@ -229,12 +383,12 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
           {/* 選擇本機圖片 */}
           <div>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-6 bg-blue-600 text-white text-lg font-medium rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md flex flex-col items-center justify-center"
+              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button flex flex-col items-center justify-center"
             >
               <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -255,9 +409,9 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}
+            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all apple-card ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-400'}`}
           >
-            <svg className="w-16 h-16 mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span className="text-lg text-gray-700">拖放圖片到這裡</span>
@@ -265,29 +419,45 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         </div>
       )}
 
-      {/* 開啟相機按鈕 */}
+      {/* 返回首页按钮 */}
       {!showCamera && !previewUrl && (
-        <div className="mb-12">
-          <button
-            onClick={handleOpenCamera}
-            className="w-full py-6 bg-green-600 text-white text-lg font-medium rounded-xl hover:bg-green-700 transition-all shadow-sm hover:shadow-md flex flex-col items-center justify-center"
-          >
-            <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span>開啟相機拍攝</span>
-          </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+          {/* 返回首页按钮 */}
+          <div>
+            <button
+              onClick={onBackToHome}
+              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
+            >
+              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span>返回首页</span>
+            </button>
+          </div>
+
+          {/* 開啟相機按鈕 */}
+          <div>
+            <button
+              onClick={handleOpenCamera}
+              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
+            >
+              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>開啟相機拍攝</span>
+            </button>
+          </div>
         </div>
       )}
 
       {/* 上載按鈕 */}
       {previewUrl && (
-        <div className="mb-8">
+        <div className="mb-12">
           <button
             onClick={handleUpload}
             disabled={isUploading}
-            className={`w-full py-3 px-8 text-lg font-medium rounded-lg transition-all ${isUploading ? 'bg-gray-300 text-gray-600 cursor-not-allowed shadow-sm' : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow-md'}`}
+            className={`w-full py-3 px-8 text-lg font-medium rounded-xl transition-all ${isUploading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
           >
             {isUploading ? '上載中...' : '確認上載'}
           </button>
@@ -296,13 +466,13 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 錯誤提示 */}
       {uploadError && (
-        <div className="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">
+        <div className="mt-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-xl apple-status-error">
           {uploadError}
         </div>
       )}
 
       {/* 輔助文字 */}
-      <div className="mt-12 text-center text-sm text-gray-500">
+      <div className="mt-16 text-center text-sm text-gray-500">
         支援 JPEG/PNG/GIF/WebP，單一檔案不超過 10MB
       </div>
       </div>
