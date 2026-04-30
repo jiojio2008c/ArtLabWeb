@@ -14,11 +14,22 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState<boolean>(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [showCamera, setShowCamera] = useState<boolean>(false)
   const [isDragging, setIsDragging] = useState<boolean>(false)
+  // 遮罩对齐面板状态
+  const [showMaskPanel, setShowMaskPanel] = useState<boolean>(false)
+  const [selectedMask, setSelectedMask] = useState<number>(0) // 0表示无遮罩，默认展示
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [isDraggingImage, setIsDraggingImage] = useState(false)
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 }) // 图片尺寸
+  // Supabase上传开关
+  const [enableSupabaseUpload, setEnableSupabaseUpload] = useState<boolean>(true)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const alignmentContainerRef = useRef<HTMLDivElement>(null) // 对齐面板容器ref
 
   // 处理文件选择
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,11 +102,11 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           const g = data[i + 1]
           const b = data[i + 2]
 
-          // 检查是否为纯黑色或纯白色
-          const isBlack = r < 10 && g < 10 && b < 10
-          const isWhite = r > 245 && g > 245 && b > 245
+          // 强化纯白色像素判定，确保遮罩带来的白色底全部设为透明
+          // 纯白色阈值：RGB值接近255的像素
+          const isWhite = r > 230 && g > 230 && b > 230
 
-          if (isBlack || isWhite) {
+          if (isWhite) {
             // 将透明通道设为0
             data[i + 3] = 0
           }
@@ -104,8 +115,8 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         // 将处理后的数据放回Canvas
         ctx.putImageData(imageData, 0, 0)
 
-        // 转换为WebP格式，质量0.8以减小文件体积
-        canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/webp', 0.8)
+        // 转换为PNG格式，确保Unity兼容性
+        canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/png')
       } catch (error) {
         console.error('去背景处理失败:', error)
         // 处理失败时，返回原始图片
@@ -145,28 +156,28 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       if (e.target?.result) {
         const result = e.target.result as string
         const img = new Image()
-        img.onload = async () => {
-          try {
-            // 去背景处理
-            const processedBlob = await removeBackground(img)
-            // 转换为File对象
-            const processedFile = new File([processedBlob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' })
-            // 更新状态
-            setSelectedFile(processedFile)
-            // 生成预览URL
-            setPreviewUrl(URL.createObjectURL(processedBlob))
-          } catch (error) {
-            console.error('图片处理失败:', error)
-            // 处理失败时，使用原始文件
-            setSelectedFile(file)
-            setPreviewUrl(result)
-          }
+        img.onload = () => {
+          // 保留原始图片，不提前去背景
+          setSelectedFile(file)
+          setPreviewUrl(result)
+          // 获取图片尺寸
+          setImageDimensions({ width: img.width, height: img.height })
+          // 自动显示遮罩对齐面板
+          setShowMaskPanel(true)
+          // 重置图片位置
+          setImagePosition({ x: 0, y: 0 })
         }
         img.onerror = () => {
           console.error('图片加载失败')
           // 图片加载失败时，使用原始文件
           setSelectedFile(file)
           setPreviewUrl(result)
+          // 获取图片尺寸（即使加载失败也尝试获取）
+          setImageDimensions({ width: img.width, height: img.height })
+          // 自动显示遮罩对齐面板
+          setShowMaskPanel(true)
+          // 重置图片位置
+          setImagePosition({ x: 0, y: 0 })
         }
         img.src = result
       }
@@ -186,6 +197,212 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
     } catch (error) {
       console.error('相機開啟失敗:', error)
       setUploadError('相機開啟失敗，請檢查相機權限')
+    }
+  }
+
+  // 图片拖放处理函数
+  const handleImageMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingImage(true)
+    setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y })
+  }
+
+  const handleImageMouseMove = (e: React.MouseEvent) => {
+    if (isDraggingImage && alignmentContainerRef.current) {
+      const containerWidth = alignmentContainerRef.current.clientWidth
+      const containerHeight = alignmentContainerRef.current.clientHeight
+      
+      // 计算新位置
+      let newX = e.clientX - dragStart.x
+      let newY = e.clientY - dragStart.y
+      
+      // 边界限制：确保图片完全显示在容器内
+      newX = Math.max(-(imageDimensions.width - containerWidth), Math.min(0, newX))
+      newY = Math.max(-(imageDimensions.height - containerHeight), Math.min(0, newY))
+      
+      setImagePosition({
+        x: newX,
+        y: newY
+      })
+    }
+  }
+
+  const handleImageMouseUp = () => {
+    setIsDraggingImage(false)
+  }
+
+  const handleImageTouchStart = (e: React.TouchEvent) => {
+    setIsDraggingImage(true)
+    const touch = e.touches[0]
+    setDragStart({ x: touch.clientX - imagePosition.x, y: touch.clientY - imagePosition.y })
+  }
+
+  const handleImageTouchMove = (e: React.TouchEvent) => {
+    if (isDraggingImage && alignmentContainerRef.current) {
+      const touch = e.touches[0]
+      const containerWidth = alignmentContainerRef.current.clientWidth
+      const containerHeight = alignmentContainerRef.current.clientHeight
+      
+      // 计算新位置
+      let newX = touch.clientX - dragStart.x
+      let newY = touch.clientY - dragStart.y
+      
+      // 边界限制：确保图片完全显示在容器内
+      newX = Math.max(-(imageDimensions.width - containerWidth), Math.min(0, newX))
+      newY = Math.max(-(imageDimensions.height - containerHeight), Math.min(0, newY))
+      
+      setImagePosition({
+        x: newX,
+        y: newY
+      })
+    }
+  }
+
+  const handleImageTouchEnd = () => {
+    setIsDraggingImage(false)
+  }
+
+  // 切换遮罩
+  const handleMaskChange = (maskIndex: number) => {
+    setSelectedMask(maskIndex)
+  }
+
+  // 截图并上传
+  const handleScreenshotAndUpload = async () => {
+    if (!previewUrl) return
+
+    setIsUploading(true)
+    setUploadError(null)
+    setUploadSuccess(null)
+
+    try {
+      // 获取遮罩对齐容器的实际尺寸
+      if (!alignmentContainerRef.current) throw new Error('无法获取容器尺寸')
+      const containerWidth = alignmentContainerRef.current.clientWidth
+      const containerHeight = alignmentContainerRef.current.clientHeight
+
+      // 创建截图Canvas
+      const screenshotCanvas = document.createElement('canvas')
+      const ctx = screenshotCanvas.getContext('2d')
+      if (!ctx) throw new Error('无法创建Canvas上下文')
+
+      // 设置Canvas尺寸与遮罩面板相同
+      screenshotCanvas.width = containerWidth
+      screenshotCanvas.height = containerHeight
+
+      // 加载用户图片
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+        img.src = previewUrl
+      })
+
+      // 计算用户图片的显示尺寸（匹配CSS: max-w-full max-h-full，即object-contain效果）
+      let drawWidth = img.width
+      let drawHeight = img.height
+      if (drawWidth > containerWidth || drawHeight > containerHeight) {
+        const scaleX = containerWidth / drawWidth
+        const scaleY = containerHeight / drawHeight
+        const scale = Math.min(scaleX, scaleY)
+        drawWidth = Math.round(img.width * scale)
+        drawHeight = Math.round(img.height * scale)
+      }
+
+      // 计算居中偏移（匹配CSS: flex items-center justify-center 对absolute元素的静态定位）
+      const centerX = (containerWidth - drawWidth) / 2
+      const centerY = (containerHeight - drawHeight) / 2
+
+      // 1. 绘制用户图片（居中 + 拖动偏移，与预览一致）
+      ctx.drawImage(img, centerX + imagePosition.x, centerY + imagePosition.y, drawWidth, drawHeight)
+
+      // 2. 用遮罩裁剪用户图：destination-out模式
+      // 遮罩白色不透明区域（形状外部）→ 擦除用户图 → 透明
+      // 遮罩透明区域（形状内部）→ 保留用户图
+      if (selectedMask > 0) {
+        const maskImg = new Image()
+        maskImg.crossOrigin = 'anonymous'
+        await new Promise((resolve, reject) => {
+          maskImg.onload = resolve
+          maskImg.onerror = reject
+          maskImg.src = `/MaskTexture/Mask${selectedMask}.png`
+        })
+
+        // 计算遮罩绘制参数（匹配CSS: w-full h-full object-cover）
+        const maskScaleX = containerWidth / maskImg.width
+        const maskScaleY = containerHeight / maskImg.height
+        const maskScale = Math.max(maskScaleX, maskScaleY)
+        const maskDrawWidth = maskImg.width * maskScale
+        const maskDrawHeight = maskImg.height * maskScale
+        const maskOffsetX = (containerWidth - maskDrawWidth) / 2
+        const maskOffsetY = (containerHeight - maskDrawHeight) / 2
+
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskDrawWidth, maskDrawHeight)
+      }
+
+      // 3. 重置混合模式
+      ctx.globalCompositeOperation = 'source-over'
+
+      // 4. 直接获取裁剪后的Blob（无需再去背景）
+      const blob = await new Promise<Blob | null>((resolve) => {
+        screenshotCanvas.toBlob((blob) => resolve(blob), 'image/png')
+      })
+
+      if (!blob) throw new Error('截图失败')
+
+      // 直接使用裁剪后的Blob生成File，无需再调用removeBackground
+      const processedFile = new File([blob], selectedFile?.name.replace(/\.[^/.]+$/, '') + '.png' || 'processed_image.png', { type: 'image/png' })
+
+      // 1. Supabase上传（仅当启用时）
+      if (enableSupabaseUpload) {
+        const formData = new FormData()
+        formData.append('file', processedFile)
+        formData.append('questionId', '752d87b3-5f33-4097-ae16-c99eabed2e86')
+        formData.append('name', selectedName)
+
+        const response = await axios.post(
+          'https://lmlzavksopdunbpckaqh.supabase.co/functions/v1/gallery-upload',
+          formData
+        )
+
+        if (response.data && response.data.media_url) {
+          // 执行上传成功回调
+          onUploadSuccess({
+            name: processedFile.name,
+            url: response.data.media_url
+          })
+        } else {
+          throw new Error('上載失敗：未收到有效回應')
+        }
+      }
+      // 2. 强制发送HTTP请求（无论是否启用Supabase上传）
+      if (wsIp) {
+        const httpUrl = `http://${wsIp}:8080`
+        const formData = new FormData()
+        formData.append('image', processedFile)
+        // 只发不管，无任何等待/错误处理
+        fetch(httpUrl, {
+          method: 'POST',
+          body: formData
+        })
+      }
+      
+      // 3. 上传成功提示（根据是否启用Supabase显示不同文案）
+      if (!enableSupabaseUpload) {
+        setUploadSuccess('已發送HTTP請求，未上傳至Supabase')
+        const localUrl = URL.createObjectURL(blob!)
+        onUploadSuccess({
+          name: processedFile.name,
+          url: localUrl
+        })
+      }
+    } catch (error) {
+      console.error('截圖上載錯誤:', error)
+      setUploadError('截圖上載失敗，請重試')
+    } finally {
+      setIsUploading(false)
+      setShowMaskPanel(false)
     }
   }
 
@@ -281,39 +498,46 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
     setIsUploading(true)
     setUploadError(null)
+    setUploadSuccess(null)
 
     try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      formData.append('questionId', '752d87b3-5f33-4097-ae16-c99eabed2e86')
-      formData.append('name', selectedName)
+      // 1. Supabase上传（仅当启用时）
+      if (enableSupabaseUpload) {
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+        formData.append('questionId', '752d87b3-5f33-4097-ae16-c99eabed2e86')
+        formData.append('name', selectedName)
 
-      const response = await axios.post(
-        'https://lmlzavksopdunbpckaqh.supabase.co/functions/v1/gallery-upload',
-        formData
-        // 🔥 彻底删除这里的 headers 配置！！！
-      )
+        const response = await axios.post(
+          'https://lmlzavksopdunbpckaqh.supabase.co/functions/v1/gallery-upload',
+          formData
+        )
 
-      if (response.data && response.data.media_url) {
-        // 1. 先执行上传成功（核心：上传独立成功）
-        onUploadSuccess({
-          name: selectedFile.name,
-          url: response.data.media_url
-        })
-
-        // 2. 解耦 + 只发不管：fire and forget，不await、不try、不等待返回
-        if (wsIp) {
-          const httpUrl = `http://${wsIp}:8080`
-          const formData = new FormData()
-          formData.append('image', selectedFile)
-          // 只发不管，无任何等待/错误处理
-          fetch(httpUrl, {
-            method: 'POST',
-            body: formData
+        if (response.data && response.data.media_url) {
+          // 执行上传成功回调
+          onUploadSuccess({
+            name: selectedFile.name,
+            url: response.data.media_url
           })
+        } else {
+          throw new Error('上載失敗：未收到有效回應')
         }
-      } else {
-        throw new Error('上載失敗：未收到有效回應')
+      }
+      // 2. 强制发送HTTP请求（无论是否启用Supabase上传）
+      if (wsIp) {
+        const httpUrl = `http://${wsIp}:8080`
+        const formData = new FormData()
+        formData.append('image', selectedFile)
+        // 只发不管，无任何等待/错误处理
+        fetch(httpUrl, {
+          method: 'POST',
+          body: formData
+        })
+      }
+      
+      // 3. 上传成功提示（根据是否启用Supabase显示不同文案）
+      if (!enableSupabaseUpload) {
+        setUploadSuccess('已發送HTTP請求，未上傳至Supabase')
       }
     } catch (error) {
       console.error('上載錯誤:', error)
@@ -344,10 +568,21 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         </div>
       </div>
 
-
+      {/* Supabase 上傳開關 */}
+      <div className="mb-16">
+        <label className="flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enableSupabaseUpload}
+            onChange={(e) => setEnableSupabaseUpload(e.target.checked)}
+            className="w-6 h-6 text-blue-600 rounded focus:ring-blue-500 border-gray-300 transition-all"
+          />
+          <span className="ml-3 text-xl font-medium text-gray-700">啟用 Supabase 上傳</span>
+        </label>
+      </div>
 
       {/* 圖片上傳區域 */}
-      {previewUrl && (
+      {previewUrl && !showMaskPanel && (
         <div className="mb-16">
           <h2 className="text-xl font-semibold text-gray-700 mb-6">圖片預覽</h2>
           <div className="apple-card">
@@ -356,6 +591,72 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
               alt="預覽"
               className="w-full h-auto object-contain max-h-96 mx-auto"
             />
+          </div>
+        </div>
+      )}
+
+      {/* 遮罩對齊面板 */}
+      {showMaskPanel && previewUrl && (
+        <div className="mb-16">
+          <h2 className="text-xl font-semibold text-gray-700 mb-6">遮罩對齊</h2>
+          <div className="apple-card">
+            {/* 遮罩選擇器 */}
+            <div className="mb-6 flex justify-center space-x-4">
+              {[0, 1, 2, 3, 4, 5].map((maskIndex) => (
+                <button
+                  key={maskIndex}
+                  onClick={() => handleMaskChange(maskIndex)}
+                  className={`px-4 py-2 rounded-lg transition-all ${selectedMask === maskIndex ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  {maskIndex === 0 ? '無遮罩' : `遮罩 ${maskIndex}`}
+                </button>
+              ))}
+            </div>
+
+            {/* 遮罩對齊區域 */}
+            <div 
+              ref={alignmentContainerRef}
+              className="relative w-full h-96 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white flex items-center justify-center"
+              onMouseMove={handleImageMouseMove}
+              onMouseUp={handleImageMouseUp}
+              onMouseLeave={handleImageMouseUp}
+              onTouchMove={handleImageTouchMove}
+              onTouchEnd={handleImageTouchEnd}
+            >
+              {/* 用戶上傳的圖片 */}
+              <img
+                src={previewUrl}
+                alt="待調整圖片"
+                className="absolute max-w-full max-h-full cursor-move"
+                style={{ 
+                  transform: `translate(${imagePosition.x}px, ${imagePosition.y}px)`,
+                  zIndex: 1
+                }}
+                onMouseDown={handleImageMouseDown}
+                onTouchStart={handleImageTouchStart}
+              />
+
+              {/* 遮罩圖（固定顯示在最上層，僅在選擇遮罩時顯示） */}
+              {selectedMask > 0 && (
+                <img
+                  src={`/MaskTexture/Mask${selectedMask}.png`}
+                  alt={`遮罩 ${selectedMask}`}
+                  className="absolute w-full h-full object-cover pointer-events-none"
+                  style={{ zIndex: 2 }}
+                />
+              )}
+            </div>
+
+            {/* 確認截圖同上傳按鈕 */}
+            <div className="mt-6">
+              <button
+                onClick={handleScreenshotAndUpload}
+                disabled={isUploading}
+                className={`w-full py-3 px-8 text-lg font-medium rounded-xl transition-all ${isUploading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
+              >
+                {isUploading ? '上載中...' : '確認截圖同上傳'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -451,8 +752,8 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         </div>
       )}
 
-      {/* 上載按鈕 */}
-      {previewUrl && (
+      {/* 上載按鈕（只在未顯示遮罩面板時顯示） */}
+      {previewUrl && !showMaskPanel && (
         <div className="mb-12">
           <button
             onClick={handleUpload}
@@ -468,6 +769,13 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       {uploadError && (
         <div className="mt-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-xl apple-status-error">
           {uploadError}
+        </div>
+      )}
+
+      {/* 成功提示 */}
+      {uploadSuccess && (
+        <div className="mt-6 p-4 bg-green-50 text-green-600 border border-green-200 rounded-xl apple-status-success">
+          {uploadSuccess}
         </div>
       )}
 
