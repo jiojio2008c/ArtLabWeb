@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 
 interface UploadPageProps {
@@ -29,7 +29,63 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const alignmentContainerRef = useRef<HTMLDivElement>(null) // 对齐面板容器ref
+  const alignmentContainerRef = useRef<HTMLDivElement>(null)
+  const [isRecording, setIsRecording] = useState<boolean>(false)
+  const [audioRecorded, setAudioRecorded] = useState<boolean>(false)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioStatus, setAudioStatus] = useState<string>('')
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+
+  const startAudioRecording = async () => {
+    try {
+      setAudioStatus('正在录制音频...')
+      setIsRecording(true)
+      setAudioRecorded(false)
+      setAudioBlob(null)
+      audioChunksRef.current = []
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data)
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+        setAudioBlob(blob)
+        setAudioRecorded(true)
+        setAudioStatus('录制完成，可发送到Unity')
+        stream.getTracks().forEach(track => track.stop())
+      }
+
+      mediaRecorder.start()
+    } catch (err) {
+      console.error('录制失败:', err)
+      setAudioStatus('录制失败，请检查麦克风权限')
+      setIsRecording(false)
+    }
+  }
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop()
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [])
 
   // 处理文件选择
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,6 +206,15 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
     setUploadError(null)
     
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop()
+    }
+    setIsRecording(false)
+    setAudioRecorded(false)
+    setAudioBlob(null)
+    setAudioStatus('')
+    audioChunksRef.current = []
+    
     // 生成预览并去背景
     const reader = new FileReader()
     reader.onload = async (e) => {
@@ -199,6 +264,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       setUploadError('相機開啟失敗，請檢查相機權限')
     }
   }
+  void handleOpenCamera
 
   // 图片拖放处理函数
   const handleImageMouseDown = (e: React.MouseEvent) => {
@@ -381,6 +447,10 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         const httpUrl = `http://${wsIp}:8080`
         const formData = new FormData()
         formData.append('image', processedFile)
+        if (audioRecorded && audioBlob) {
+          const audioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' })
+          formData.append('audio', audioFile)
+        }
         // 只发不管，无任何等待/错误处理
         fetch(httpUrl, {
           method: 'POST',
@@ -647,6 +717,37 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
               )}
             </div>
 
+            {/* 为当前图片录制音频（可选） */}
+            <div className="mt-6 p-6 border border-gray-200 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-700 mb-4">为当前图片录制音频（可选）</h3>
+              <div className="flex flex-col space-y-3">
+                {audioStatus && (
+                  <p className={`text-center text-base ${audioStatus.includes('失败') ? 'text-red-500' : 'text-green-600'}`}>
+                    {audioStatus}
+                  </p>
+                )}
+                {audioRecorded && !audioStatus.includes('失败') && (
+                  <p className="text-center text-sm text-green-500">✓ 已录制音频，将随图片一起发送</p>
+                )}
+                <div className="flex space-x-4">
+                  <button
+                    onClick={startAudioRecording}
+                    disabled={isRecording}
+                    className={`flex-1 py-2 px-4 text-base font-medium rounded-xl transition-all ${isRecording ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
+                  >
+                    {isRecording ? '录制中...' : '开始录制'}
+                  </button>
+                  <button
+                    onClick={stopAudioRecording}
+                    disabled={!isRecording}
+                    className={`flex-1 py-2 px-4 text-base font-medium rounded-xl transition-all ${!isRecording ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button-secondary'}`}
+                  >
+                    停止录制
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* 確認截圖同上傳按鈕 */}
             <div className="mt-6">
               <button
@@ -722,33 +823,16 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
       {/* 返回首页按钮 */}
       {!showCamera && !previewUrl && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          {/* 返回首页按钮 */}
-          <div>
-            <button
-              onClick={onBackToHome}
-              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
-            >
-              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              <span>返回首页</span>
-            </button>
-          </div>
-
-          {/* 開啟相機按鈕 */}
-          <div>
-            <button
-              onClick={handleOpenCamera}
-              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
-            >
-              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>開啟相機拍攝</span>
-            </button>
-          </div>
+        <div className="mb-12">
+          <button
+            onClick={onBackToHome}
+            className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
+          >
+            <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span>返回首页</span>
+          </button>
         </div>
       )}
 
