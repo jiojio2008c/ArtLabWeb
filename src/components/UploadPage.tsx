@@ -21,9 +21,11 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   const [showMaskPanel, setShowMaskPanel] = useState<boolean>(false)
   const [selectedMask, setSelectedMask] = useState<number>(0) // 0表示无遮罩，默认展示
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [isDraggingImage, setIsDraggingImage] = useState(false)
-  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 }) // 图片尺寸
+  const isDraggingImageRef = useRef(false)
+  const dragStartRef = useRef({ x: 0, y: 0 })
+  const positionRef = useRef({ x: 0, y: 0 })
+  const [isImageDragging, setIsImageDragging] = useState(false)
+  const [_imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
   // Supabase上传开关
   const [enableSupabaseUpload, setEnableSupabaseUpload] = useState<boolean>(true)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -230,6 +232,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           // 自动显示遮罩对齐面板
           setShowMaskPanel(true)
           // 重置图片位置
+          positionRef.current = { x: 0, y: 0 }
           setImagePosition({ x: 0, y: 0 })
         }
         img.onerror = () => {
@@ -242,6 +245,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           // 自动显示遮罩对齐面板
           setShowMaskPanel(true)
           // 重置图片位置
+          positionRef.current = { x: 0, y: 0 }
           setImagePosition({ x: 0, y: 0 })
         }
         img.src = result
@@ -268,64 +272,90 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
   // 图片拖放处理函数
   const handleImageMouseDown = (e: React.MouseEvent) => {
-    setIsDraggingImage(true)
-    setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y })
-  }
-
-  const handleImageMouseMove = (e: React.MouseEvent) => {
-    if (isDraggingImage && alignmentContainerRef.current) {
-      const containerWidth = alignmentContainerRef.current.clientWidth
-      const containerHeight = alignmentContainerRef.current.clientHeight
-      
-      // 计算新位置
-      let newX = e.clientX - dragStart.x
-      let newY = e.clientY - dragStart.y
-      
-      // 边界限制：确保图片完全显示在容器内
-      newX = Math.max(-(imageDimensions.width - containerWidth), Math.min(0, newX))
-      newY = Math.max(-(imageDimensions.height - containerHeight), Math.min(0, newY))
-      
-      setImagePosition({
-        x: newX,
-        y: newY
-      })
+    e.preventDefault()
+    isDraggingImageRef.current = true
+    dragStartRef.current = {
+      x: e.clientX - positionRef.current.x,
+      y: e.clientY - positionRef.current.y
     }
-  }
-
-  const handleImageMouseUp = () => {
-    setIsDraggingImage(false)
+    setIsImageDragging(true)
   }
 
   const handleImageTouchStart = (e: React.TouchEvent) => {
-    setIsDraggingImage(true)
+    e.preventDefault()
+    isDraggingImageRef.current = true
     const touch = e.touches[0]
-    setDragStart({ x: touch.clientX - imagePosition.x, y: touch.clientY - imagePosition.y })
-  }
-
-  const handleImageTouchMove = (e: React.TouchEvent) => {
-    if (isDraggingImage && alignmentContainerRef.current) {
-      const touch = e.touches[0]
-      const containerWidth = alignmentContainerRef.current.clientWidth
-      const containerHeight = alignmentContainerRef.current.clientHeight
-      
-      // 计算新位置
-      let newX = touch.clientX - dragStart.x
-      let newY = touch.clientY - dragStart.y
-      
-      // 边界限制：确保图片完全显示在容器内
-      newX = Math.max(-(imageDimensions.width - containerWidth), Math.min(0, newX))
-      newY = Math.max(-(imageDimensions.height - containerHeight), Math.min(0, newY))
-      
-      setImagePosition({
-        x: newX,
-        y: newY
-      })
+    dragStartRef.current = {
+      x: touch.clientX - positionRef.current.x,
+      y: touch.clientY - positionRef.current.y
     }
+    setIsImageDragging(true)
   }
 
-  const handleImageTouchEnd = () => {
-    setIsDraggingImage(false)
-  }
+  useEffect(() => {
+    if (!isImageDragging) return
+
+    const container = alignmentContainerRef.current
+    if (!container) return
+
+    const clampPosition = (newX: number, newY: number) => {
+      const containerWidth = container.clientWidth
+      const containerHeight = container.clientHeight
+      const img = container.querySelector('img') as HTMLImageElement | null
+      if (!img) return { x: newX, y: newY }
+
+      const displayWidth = img.offsetWidth
+      const displayHeight = img.offsetHeight
+
+      if (displayWidth > containerWidth) {
+        newX = Math.max(-(displayWidth - containerWidth), Math.min(0, newX))
+      }
+      if (displayHeight > containerHeight) {
+        newY = Math.max(-(displayHeight - containerHeight), Math.min(0, newY))
+      }
+
+      return { x: newX, y: newY }
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingImageRef.current) return
+      const newX = e.clientX - dragStartRef.current.x
+      const newY = e.clientY - dragStartRef.current.y
+      const clamped = clampPosition(newX, newY)
+      positionRef.current = { x: clamped.x, y: clamped.y }
+      setImagePosition({ x: clamped.x, y: clamped.y })
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDraggingImageRef.current) return
+      e.preventDefault()
+      const touch = e.touches[0]
+      const newX = touch.clientX - dragStartRef.current.x
+      const newY = touch.clientY - dragStartRef.current.y
+      const clamped = clampPosition(newX, newY)
+      positionRef.current = { x: clamped.x, y: clamped.y }
+      setImagePosition({ x: clamped.x, y: clamped.y })
+    }
+
+    const handleEnd = () => {
+      isDraggingImageRef.current = false
+      setIsImageDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleEnd)
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleEnd)
+    document.addEventListener('touchcancel', handleEnd)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleEnd)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleEnd)
+      document.removeEventListener('touchcancel', handleEnd)
+    }
+  }, [isImageDragging])
 
   // 切换遮罩
   const handleMaskChange = (maskIndex: number) => {
@@ -687,11 +717,6 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
             <div 
               ref={alignmentContainerRef}
               className="relative w-full h-96 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white flex items-center justify-center"
-              onMouseMove={handleImageMouseMove}
-              onMouseUp={handleImageMouseUp}
-              onMouseLeave={handleImageMouseUp}
-              onTouchMove={handleImageTouchMove}
-              onTouchEnd={handleImageTouchEnd}
             >
               {/* 用戶上傳的圖片 */}
               <img
