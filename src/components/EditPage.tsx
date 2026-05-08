@@ -131,87 +131,83 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
   const bind = isReleased ? {} : { ...dragBind() }
 
   return (
-    <div className="min-h-screen edit-background apple-container">
-      <div className="container mx-auto px-6 py-20 max-w-4xl">
-        <h1 className="text-5xl font-bold text-gray-900 mb-8 text-center apple-title">圖片編輯</h1>
-
-      {/* HTTP 通訊設置 */}
-      <div className="mb-16">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-700">HTTP 通訊設置</h2>
-        </div>
-        <div className="mt-2 text-sm text-gray-500">
-          伺服器 IP: {wsIp}:8080
-          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium apple-status-info">
-            HTTP 模式
-          </span>
-        </div>
-      </div>
-
-      {/* 網格定位區 */}
-      <div className="mb-16">
-        <h2 className="text-xl font-semibold text-gray-700 mb-6">網格定位區</h2>
-        <div 
-          ref={containerRef}
-          className="grid-container rounded-xl overflow-hidden relative apple-card"
-        >
-          {/* 背景影片 */}
-          {selectedName === 'fish' && (
-            <video
-              src="fish.mp4"
-              autoPlay
-              loop
-              muted
-              className="absolute inset-0 w-full h-full object-cover z-0"
+    <div className="w-screen h-screen overflow-hidden bg-white flex flex-col p-8">
+      <h1 className="text-3xl font-bold text-gray-900 text-center mb-6">圖片編輯</h1>
+      
+      <div className="flex flex-1 gap-6 min-h-0">
+        {/* 左侧：網格定位區 */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <h2 className="text-sm font-semibold text-gray-700 mb-2">網格定位區</h2>
+          <div 
+            ref={containerRef}
+            className="flex-1 min-h-0 rounded-xl overflow-hidden relative"
+          >
+            {/* 背景影片 */}
+            {selectedName === 'fish' && (
+              <video
+                src="fish.mp4"
+                autoPlay
+                loop
+                muted
+                className="absolute inset-0 w-full h-full object-cover z-0"
+              />
+            )}
+            {selectedName === 'people' && (
+              <video
+                src="people.mp4"
+                autoPlay
+                loop
+                muted
+                className="absolute inset-0 w-full h-full object-cover z-0"
+              />
+            )}
+            
+            {/* 可拖放的圖片 */}
+            <img
+              ref={imageRef}
+              src={imageData.url}
+              alt="編輯中"
+              className="draggable-image"
+              style={{
+                left: `${position.x * 100}%`,
+                top: `${position.y * 100}%`,
+                transform: `translate(-50%, -50%) scale(${scale}) ${isFlipped ? 'scaleX(-1)' : ''}`,
+                maxWidth: '80%',
+                maxHeight: '80%',
+                zIndex: 10,
+              }}
+              {...bind}
             />
-          )}
-          {selectedName === 'people' && (
-            <video
-              src="people.mp4"
-              autoPlay
-              loop
-              muted
-              className="absolute inset-0 w-full h-full object-cover z-0"
-            />
-          )}
-          
-          {/* 網格背景已在 CSS 中定義 */}
-          
-          {/* 可拖放的圖片 */}
-          <img
-            ref={imageRef}
-            src={imageData.url}
-            alt="編輯中"
-            className="draggable-image"
-            style={{
-              left: `${position.x * 100}%`,
-              top: `${position.y * 100}%`,
-              transform: `translate(-50%, -50%) scale(${scale}) ${isFlipped ? 'scaleX(-1)' : ''}`,
-              maxWidth: '80%',
-              maxHeight: '80%',
-              zIndex: 10,
-            }}
-            {...bind}
-          />
-          
-          {/* 拖放覆蓋層 */}
-          <div className="drag-overlay" {...bind}></div>
-        </div>
-        <div className="mt-4 text-center">
-          <span className="text-lg font-medium text-gray-700">當前網格索引：</span>
-          <span className="text-xl font-bold text-blue-600">{gridIndex}</span>
-        </div>
-      </div>
-
-      {/* 圖片縮放控制 */}
-      <div className="mb-16">
-        <h2 className="text-xl font-semibold text-gray-700 mb-6">圖片縮放</h2>
-        <div className="apple-card">
-          <div className="flex items-center justify-between">
-            <span className="text-lg text-gray-700">當前縮放比例：</span>
-            <span className="text-xl font-bold text-blue-600">{scale.toFixed(1)}x</span>
+            
+            {/* 拖放覆蓋層 */}
+            <div className="drag-overlay" {...bind}></div>
           </div>
-          <div className="mt-4">
+          <div className="mt-2 text-center text-sm">
+            <span className="text-gray-700">當前網格索引：</span>
+            <span className="font-bold text-blue-600">{gridIndex}</span>
+          </div>
+        </div>
+        
+        {/* 右侧：控制面板 */}
+        <div className="w-80 flex flex-col gap-3 flex-shrink-0">
+          {/* HTTP 通訊設置 */}
+          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">HTTP 通訊設置</h2>
+            <div className="text-xs text-gray-500">
+              伺服器 IP: {wsIp}:8080
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-600">
+                HTTP 模式
+              </span>
+            </div>
+          </div>
+          
+          {/* 圖片縮放控制 */}
+          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">圖片縮放</h2>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-700">縮放比例：</span>
+              <span className="text-sm font-bold text-blue-600">{scale.toFixed(1)}x</span>
+            </div>
             <input
               type="range"
               min="0.1"
@@ -219,119 +215,107 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
               step="0.1"
               value={scale}
               onChange={handleScaleChange}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer apple-slider disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isReleased}
             />
-            <div className="mt-2 text-sm text-gray-500">
-              <p>縮放範圍：0.1 ~ 3.0</p>
+            <div className="mt-1 text-xs text-gray-500">
+              縮放範圍：0.1 ~ 3.0
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* 動畫選擇 */}
-      <div className="mb-16">
-        <h2 className="text-xl font-semibold text-gray-700 mb-6">動畫效果選擇</h2>
-        <div className="apple-card">
-          <div className="flex items-center">
-            <label htmlFor="animation" className="mr-4 text-lg text-gray-700">選擇動畫編號：</label>
-            <select
-              id="animation"
-              value={animationId}
-              onChange={handleAnimationChange}
-              className="px-4 py-2 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 apple-select"
-              disabled={isReleased}
+          
+          {/* 動畫選擇 */}
+          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">動畫效果選擇</h2>
+            <div className="flex items-center">
+              <label htmlFor="animation" className="mr-3 text-xs text-gray-700">動畫編號：</label>
+              <select
+                id="animation"
+                value={animationId}
+                onChange={handleAnimationChange}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
+                disabled={isReleased}
+              >
+                {Array.from({ length: 10 }, (_, i) => i).map((id) => (
+                  <option key={id} value={id} className="bg-white text-gray-900">
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          {/* 圖片控制選項 */}
+          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">圖片控制選項</h2>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center">
+                <input
+                  id="flip"
+                  type="checkbox"
+                  checked={isFlipped}
+                  onChange={handleFlipChange}
+                  className="w-4 h-4 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isReleased}
+                />
+                <label htmlFor="flip" className="ml-2 text-xs text-gray-700">
+                  水平翻轉
+                </label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  id="release"
+                  type="checkbox"
+                  checked={isReleased}
+                  onChange={handleReleaseChange}
+                  className="w-4 h-4 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isReleased}
+                />
+                <label htmlFor="release" className="ml-2 text-xs text-gray-700">
+                  釋放圖片物件
+                </label>
+              </div>
+              {isReleased && (
+                <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
+                  <p className="text-xs text-red-500">
+                    你已經釋放圖片物件，無法再對該圖片物件進行操控，請重新上傳
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* 操作按钮 */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onBackToUpload}
+              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
             >
-              {Array.from({ length: 10 }, (_, i) => i).map((id) => (
-                <option key={id} value={id} className="bg-white text-gray-900">
-                  {id}
-                </option>
-              ))}
-            </select>
+              返回拍攝頁
+            </button>
+            <button
+              onClick={onResetUpload}
+              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-red-500 text-white hover:bg-red-600"
+            >
+              重新上載
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handleResetPosition}
+              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
+            >
+              重設位置
+            </button>
+            <button
+              onClick={handleResetScale}
+              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
+            >
+              重設縮放
+            </button>
           </div>
         </div>
-      </div>
-
-      {/* 圖片控制選項 */}
-      <div className="mb-16">
-        <h2 className="text-xl font-semibold text-gray-700 mb-6">圖片控制選項</h2>
-        <div className="apple-card p-6">
-          <div className="flex flex-col md:flex-row gap-8">
-            {/* 水平翻轉勾選框 */}
-            <div className="flex items-center">
-              <input
-                id="flip"
-                type="checkbox"
-                checked={isFlipped}
-                onChange={handleFlipChange}
-                className="w-5 h-5 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isReleased}
-              />
-              <label htmlFor="flip" className="ml-3 text-lg text-gray-700">
-                水平翻轉
-              </label>
-            </div>
-
-            {/* 釋放圖片勾選框 */}
-            <div className="flex items-center">
-              <input
-                id="release"
-                type="checkbox"
-                checked={isReleased}
-                onChange={handleReleaseChange}
-                className="w-5 h-5 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isReleased}
-              />
-              <label htmlFor="release" className="ml-3 text-lg text-gray-700">
-                釋放圖片物件
-              </label>
-            </div>
-          </div>
-
-          {/* 釋放提示文字 */}
-          {isReleased && (
-            <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-              <p className="text-sm text-red-500">
-                你已經釋放圖片物件，無法再對該圖片物件進行操控，請重新上傳
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 流程控制按鈕 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-        <button
-          onClick={onBackToUpload}
-          className="px-6 py-3 text-lg font-medium rounded-xl transition-all apple-button-secondary"
-        >
-          返回拍攝頁
-        </button>
-        <button
-          onClick={onResetUpload}
-          className="px-6 py-3 text-lg font-medium rounded-xl transition-all apple-button-danger"
-        >
-          重新上載
-        </button>
-      </div>
-
-      {/* 額外輔助按鈕 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <button
-          onClick={handleResetPosition}
-          className="px-6 py-3 text-lg font-medium rounded-xl transition-all apple-button-secondary"
-        >
-          重設位置
-        </button>
-        <button
-          onClick={handleResetScale}
-          className="px-6 py-3 text-lg font-medium rounded-xl transition-all apple-button-secondary"
-        >
-          重設縮放
-        </button>
       </div>
     </div>
-  </div>
   )
 }
 
