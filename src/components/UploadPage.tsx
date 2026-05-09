@@ -482,10 +482,9 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
           formData.append('audio', audioFile)
         }
         // 只发不管，无任何等待/错误处理
-        fetch(httpUrl, {
-          method: 'POST',
-          body: formData
-        })
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', httpUrl, true)
+        xhr.send(formData)
       }
       
       // 3. 上传成功提示（根据是否启用Supabase显示不同文案）
@@ -629,10 +628,9 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         const formData = new FormData()
         formData.append('image', selectedFile)
         // 只发不管，无任何等待/错误处理
-        fetch(httpUrl, {
-          method: 'POST',
-          body: formData
-        })
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', httpUrl, true)
+        xhr.send(formData)
       }
       
       // 3. 上传成功提示（根据是否启用Supabase显示不同文案）

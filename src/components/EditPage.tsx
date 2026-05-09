@@ -31,24 +31,14 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
   const sendHttpMessage = async (message: string) => {
     if (!wsIp) return
     
+    const url = `http://${wsIp}:8080`
+    console.log('Sending HTTP POST message to:', url, 'Message:', message)
+    
     try {
-      // 发送HTTP POST请求
-      const url = `http://${wsIp}:8080`
-      console.log('Sending HTTP POST message to:', url, 'Message:', message)
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        body: message,
-        headers: {
-          'Content-Type': 'text/plain'
-        }
-      })
-      
-      if (response.ok) {
-        console.log('HTTP POST message sent successfully:', message)
-      } else {
-        console.error('HTTP POST message failed with status:', response.status)
-      }
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url, true)
+      xhr.setRequestHeader('Content-Type', 'text/plain')
+      xhr.send(message)
     } catch (error: any) {
       console.error('HTTP POST message sending failed:', error)
     }
