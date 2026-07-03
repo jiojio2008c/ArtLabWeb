@@ -12,28 +12,35 @@ interface UploadPageProps {
   selectedObjectIndex: number
 }
 
-const saveThumbnailForObject = (ip: string, index: number, imageUrl: string, imageName = `slot-${index}.png`) => {
-  saveArtworkToIp(ip, index, { name: imageName, url: imageUrl })
+const saveThumbnailForObject = async (ip: string, index: number, imageUrl: string, imageName = `slot-${index}.png`, artworkBlob?: Blob) => {
+  await saveArtworkToIp(ip, index, { name: imageName, url: imageUrl }, artworkBlob)
   const img = new Image()
   img.crossOrigin = 'anonymous'
-  img.onload = () => {
-    const canvas = document.createElement('canvas')
-    const size = 80
-    canvas.width = size
-    canvas.height = size
-    const ctx = canvas.getContext('2d')!
-    const scale = Math.max(size / img.width, size / img.height)
-    const w = img.width * scale
-    const h = img.height * scale
-    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
-    try {
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
-      saveThumbnailToIp(ip, index, dataUrl)
-    } catch {
-      try { saveThumbnailToIp(ip, index, imageUrl) } catch {}
+  await new Promise<void>((resolve) => {
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const size = 80
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')!
+      const scale = Math.max(size / img.width, size / img.height)
+      const w = img.width * scale
+      const h = img.height * scale
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
+        saveThumbnailToIp(ip, index, dataUrl)
+      } catch {
+        try { saveThumbnailToIp(ip, index, imageUrl) } catch {}
+      }
+      resolve()
     }
-  }
-  img.src = imageUrl
+    img.onerror = () => {
+      try { saveThumbnailToIp(ip, index, imageUrl) } catch {}
+      resolve()
+    }
+    img.src = imageUrl
+  })
 }
 
 const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onBackToHome, enableSupabaseUpload, selectedObjectIndex }) => {
@@ -486,7 +493,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         )
 
         if (response.data && response.data.media_url) {
-          saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, processedFile.name)
+          await saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, processedFile.name)
           onUploadSuccess({
             name: processedFile.name,
             url: response.data.media_url
@@ -514,7 +521,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       if (!enableSupabaseUpload) {
         setUploadSuccess('已發送至 Unity')
         const localUrl = URL.createObjectURL(blob!)
-        saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, processedFile.name)
+        await saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, processedFile.name, blob)
         onUploadSuccess({
           name: processedFile.name,
           url: localUrl
@@ -637,7 +644,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         )
 
         if (response.data && response.data.media_url) {
-          saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, selectedFile.name)
+          await saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, selectedFile.name)
           onUploadSuccess({
             name: selectedFile.name,
             url: response.data.media_url
@@ -661,7 +668,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       if (!enableSupabaseUpload) {
         setUploadSuccess('已發送至 Unity')
         const localUrl = URL.createObjectURL(selectedFile)
-        saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, selectedFile.name)
+        await saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, selectedFile.name, selectedFile)
         onUploadSuccess({
           name: selectedFile.name,
           url: localUrl
@@ -865,7 +872,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
             <div className="capture-content">
               <p className="eyebrow light">Camera</p>
               <h2>拍攝作品</h2>
-              <button onClick={handleOpenCamera} className="ipad-button primary-button">
+              <button onClick={handleOpenCamera} className="hidden">
                 開啟相機
               </button>
             </div>

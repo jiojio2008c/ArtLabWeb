@@ -8,6 +8,9 @@ interface HomePageProps {
 
 const STORAGE_KEY = 'artlab_ip_thumbnails'
 const MAX_IP_GROUPS = 3
+const ARTWORK_DB_NAME = 'artlab_artwork_cache'
+const ARTWORK_DB_VERSION = 1
+const ARTWORK_STORE_NAME = 'artworks'
 
 interface IpThumbnailGroup {
   ip: string
@@ -18,6 +21,72 @@ interface IpThumbnailGroup {
 interface StoredArtwork {
   name: string
   url: string
+  storageKey?: string
+}
+
+interface ArtworkRecord {
+  key: string
+  name: string
+  blob: Blob
+  updatedAt: number
+}
+
+const makeArtworkStorageKey = (ip: string, index: number) => `${ip.trim()}::${index}`
+
+const openArtworkDb = () => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('IndexedDB is not available'))
+      return
+    }
+
+    const request = window.indexedDB.open(ARTWORK_DB_NAME, ARTWORK_DB_VERSION)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(ARTWORK_STORE_NAME)) {
+        db.createObjectStore(ARTWORK_STORE_NAME, { keyPath: 'key' })
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Failed to open artwork cache'))
+  })
+}
+
+const putArtworkBlob = async (key: string, name: string, blob: Blob) => {
+  const db = await openArtworkDb()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(ARTWORK_STORE_NAME, 'readwrite')
+      transaction.objectStore(ARTWORK_STORE_NAME).put({
+        key,
+        name,
+        blob,
+        updatedAt: Date.now()
+      } satisfies ArtworkRecord)
+
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save artwork blob'))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+const getArtworkBlob = async (key: string) => {
+  const db = await openArtworkDb()
+  try {
+    return await new Promise<ArtworkRecord | undefined>((resolve, reject) => {
+      const transaction = db.transaction(ARTWORK_STORE_NAME, 'readonly')
+      const request = transaction.objectStore(ARTWORK_STORE_NAME).get(key)
+
+      request.onsuccess = () => resolve(request.result as ArtworkRecord | undefined)
+      request.onerror = () => reject(request.error ?? new Error('Failed to load artwork blob'))
+    })
+  } finally {
+    db.close()
+  }
 }
 
 const loadAllGroups = (): IpThumbnailGroup[] => {
@@ -51,7 +120,7 @@ const saveThumbnailToIp = (ip: string, index: number, dataUrl: string) => {
   saveAllGroups(groups)
 }
 
-const saveArtworkToIp = (ip: string, index: number, artwork: StoredArtwork) => {
+const saveArtworkToIp = async (ip: string, index: number, artwork: StoredArtwork, blob?: Blob) => {
   const groups = loadAllGroups()
   let group = groups.find(g => g.ip === ip)
   if (!group) {
@@ -64,7 +133,21 @@ const saveArtworkToIp = (ip: string, index: number, artwork: StoredArtwork) => {
   if (!group.images) {
     group.images = {}
   }
-  group.images[index] = artwork
+
+  let storageKey = blob ? makeArtworkStorageKey(ip, index) : artwork.storageKey
+  if (blob && storageKey) {
+    try {
+      await putArtworkBlob(storageKey, artwork.name, blob)
+    } catch (error) {
+      console.error('Failed to persist artwork blob:', error)
+      storageKey = undefined
+    }
+  }
+
+  group.images[index] = {
+    ...artwork,
+    storageKey
+  }
   saveAllGroups(groups)
 }
 
@@ -73,9 +156,31 @@ const loadThumbnailsForIp = (ip: string): Record<number, string> => {
   return group ? { ...group.thumbnails } : {}
 }
 
-const loadArtworkForIp = (ip: string, index: number): StoredArtwork | undefined => {
+const loadArtworkForIp = async (ip: string, index: number): Promise<StoredArtwork | undefined> => {
   const group = findGroupByIp(ip)
-  return group?.images?.[index]
+  const artwork = group?.images?.[index]
+  if (!artwork) return undefined
+
+  if (artwork.storageKey) {
+    try {
+      const cachedArtwork = await getArtworkBlob(artwork.storageKey)
+      if (cachedArtwork?.blob) {
+        return {
+          name: artwork.name || cachedArtwork.name,
+          url: URL.createObjectURL(cachedArtwork.blob),
+          storageKey: artwork.storageKey
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load cached artwork:', error)
+    }
+  }
+
+  if (artwork.url && !artwork.url.startsWith('blob:')) {
+    return artwork
+  }
+
+  return undefined
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange }) => {
@@ -85,6 +190,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   })
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
   const slotTimerRef = useRef<number | null>(null)
+  const selectionTokenRef = useRef(0)
 
   useEffect(() => {
     return () => {
@@ -116,15 +222,20 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   const handleObjectClick = (index: number) => {
     sendHttpMessage(`GameObject:${index}`)
     setSelectedSlot(index)
+    const selectionToken = selectionTokenRef.current + 1
+    selectionTokenRef.current = selectionToken
     if (slotTimerRef.current !== null) {
       window.clearTimeout(slotTimerRef.current)
     }
     slotTimerRef.current = window.setTimeout(() => {
-      const storedArtwork = loadArtworkForIp(wsIp.trim(), index)
-      const fallbackArtwork = thumbnails[index]
-        ? { name: `slot-${index}.png`, url: thumbnails[index] }
-        : undefined
-      onSelectObject(index, storedArtwork ?? fallbackArtwork)
+      void (async () => {
+        const storedArtwork = await loadArtworkForIp(wsIp.trim(), index)
+        const fallbackArtwork = thumbnails[index]
+          ? { name: `slot-${index}.png`, url: thumbnails[index] }
+          : undefined
+        if (selectionToken !== selectionTokenRef.current) return
+        onSelectObject(index, storedArtwork ?? fallbackArtwork)
+      })()
     }, 140)
   }
 

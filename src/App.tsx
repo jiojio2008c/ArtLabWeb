@@ -68,11 +68,6 @@ function App() {
     }, 560)
   }
 
-  const handleBackToUpload = () => {
-    clearHandoffTransition()
-    navigateTo('upload')
-  }
-
   const handleResetUpload = () => {
     clearHandoffTransition()
     setImageData(null)
@@ -126,7 +121,6 @@ function App() {
             imageData={imageData!}
             wsIp={wsIp}
             selectedName={selectedName}
-            onBackToUpload={handleBackToUpload}
             onResetUpload={handleResetUpload}
             onBackToHome={handleBackToHome}
           />

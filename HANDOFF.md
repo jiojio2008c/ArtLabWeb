@@ -12,11 +12,19 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 
 页面转场记录: 已加入第一版 iPad 操作动效，包括全局页面前进/返回方向转场、首页槽位点击选中反馈、上传成功后的“正在發送作品”短过渡层，以及 `prefers-reduced-motion` 兼容。该动效层只改变界面反馈，不改变原有上传和 Unity HTTP 通信逻辑。
 
-轻量控制改造记录: 已临时关闭 Supabase 使用路径，界面显示为 `HTTP 直送`；首页点击已有缩略图的作品位置会直接进入控制页，空位置仍进入上传页；编辑页改成双击/双点舞台弹出右侧轻量工具面板，工具内可切换缩放、动画、场景、物件操作，底部保留返回上传和重新上传入口。该改造继续保留原有 Unity HTTP 控制命令格式。
+轻量控制改造记录: 已临时关闭 Supabase 使用路径，界面显示为 `HTTP 直送`；首页点击已有缩略图的作品位置会直接进入控制页，空位置仍进入上传页；编辑页改成双击/双点舞台弹出右侧轻量工具面板，工具内可切换缩放、旋转、动画、场景、物件操作，底部保留返回首页和重新上载入口。该改造继续保留原有 Unity HTTP 控制命令格式。
 
 图片缓存修复记录: 首页缓存已从“只存 80x80 缩略图”扩展为同时保存 `thumbnails` 和完整控制图 `images`。首页缩略图仍用于格子展示，点击已有记录进入控制页时读取完整图片 URL，避免控制页使用缩略图导致图片尺寸变小。旧版本已经写入的历史记录可能只有缩略图，没有完整控制图，需要重新上传一次后才会生成新的完整记录。
 
+完整图持久化修复记录: 关闭 Supabase 的 HTTP 直送模式不再把 `blob:` 临时 URL 当作完整图长期保存。上传页会把完整图片 Blob 写入 IndexedDB `artlab_artwork_cache/artworks`，localStorage 的 `images` 只保存名称、当前会话 URL 和 `storageKey` 元数据。首页重新进入控制页时会从 IndexedDB 取出 Blob 并重新生成新的 object URL，避免 App 重启后控制页图片显示问号破图。旧版本已经保存的失效 `blob:` 记录无法恢复原图，现会自动退回缩略图；重新上传后会生成新的持久完整图。
+
 旧记录直进修复记录: 首页点击已有缩略图但缺少完整 `images` 记录的旧槽位时，现已使用缩略图作为兜底进入控制页，不再跳回上传页；同时控制页图片加入基础显示宽度，避免兜底缩略图按 80px 天然尺寸显示得过小。旧记录画质无法恢复为原图，重新上传后会生成高清完整记录。
+
+控制页手势改造记录: 控制页已从 `react-use-gesture` 拖拽改为 Pointer Events 手势层。一指拖动图片，拖动中按网格变化并以约 90ms 节流实时发送 Unity 网格坐标，松手强制补发最终坐标；双指捏合图片时同时识别缩放和旋转，缩放以约 120ms 节流发送 `{imageName}_Scale:{value}`，旋转以约 120ms 节流发送 `{imageName}_Rotate:{degrees}`，两者松手都会补发最终值。旋转值归一到 `-180..180`，保留一位小数。双点舞台仍可打开轻量工具面板，拖动/捏合不会误触双点。缩放和旋转工具页均提供大触控滑杆、`- / +` 步进按钮和常用预设，方便 iPad 操作。
+
+释放/翻转信号修复记录: 控制页“水平翻转”和“释放物件”均按 checkbox 状态变化发送信号。水平翻转发送 `{imageName}_Flip:{true|false}`；释放物件发送 `{imageName}_Release:{true|false}`。释放物件只通知 Unity，不再禁用控制页移动、缩放、旋转等操作。
+
+动画预览修复记录: 已把根目录 `0.gif` 到 `9.gif` 移动到 `public/animations/0.gif` 到 `public/animations/9.gif`。控制页动画工具中点击 0 到 9 按钮时，仍按原协议发送 `{imageName}:{animationId}` 给 Unity，同时在按钮下方预览对应 GIF 示例。预览图只用于客户查看动画效果，不参与 Unity 协议。
 
 本文以当前工作区源码为准，重点覆盖 `src/App.tsx`、`src/main.tsx`、`src/components/HomePage.tsx`、`src/components/UploadPage.tsx`、`src/components/EditPage.tsx` 以及相关配置。当前项目的 README 存在历史描述和现实代码不一致的地方，后文会单独列出。
 
@@ -26,16 +34,16 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 
 - 图片上传: 通过 `XMLHttpRequest` 向 `http://{IP}:8080` 发送 `multipart/form-data`，字段名为 `image`，可附带 `audio`。
 - 控制命令: 通过 `XMLHttpRequest` 向 `http://{IP}:8080` 发送 `text/plain` 文本命令。
-- 可选 Supabase: 上传页可勾选是否先把图片发到 Supabase Edge Function，再进入编辑页。
+- Supabase: 代码中仍保留上传能力，但当前版本临时固定关闭，界面按 HTTP 直送 Unity 路径运行。
 
 核心用户流程:
 
 1. 首页输入 Unity/HTTP 服务器 IP，选择一个物体编号 0 到 19。
-2. 选择物体时先向 Unity 发送 `GameObject:{index}`，再进入上传页。
+2. 选择物体时先向 Unity 发送 `GameObject:{index}`。如果该槽位已有图片记录则直接进入编辑页，否则进入上传页。
 3. 上传页选择本地图片或拖放图片。
 4. 图片进入遮罩对齐面板，可选择无遮罩或 5 个遮罩，可拖动图片位置，可选录制一段音频。
-5. 确认后截图生成 PNG，按配置上传 Supabase，同时或随后向 Unity 发送图片和音频。
-6. 上传成功后进入编辑页，用户可拖动图片、缩放、选择动画、翻转、释放物体、切换背景场景。
+5. 确认后截图生成 PNG，当前按 HTTP 直送路径向 Unity 发送图片和音频。
+6. 上传成功后进入编辑页，用户可拖动图片、缩放、旋转、选择动画、翻转、释放物体、切换背景场景。
 7. 编辑页每次操作会按约定向 Unity 发送 HTTP 文本命令。
 
 ## 2. 技术栈和运行方式
@@ -47,7 +55,7 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 - Vite 5
 - Tailwind CSS 3
 - Axios: 仅用于 Supabase `multipart/form-data` 上传
-- react-use-gesture: 编辑页拖拽定位
+- Pointer Events: 编辑页一指拖动、双指缩放和旋转
 - Capacitor 8: iOS/iPad 壳工程
 - Web API: `FileReader`、`Canvas`、`XMLHttpRequest`、`navigator.mediaDevices`、`MediaRecorder`
 
@@ -107,6 +115,8 @@ public/
   fish.mp4
   people.png
   people.mp4
+  animations/
+    0.gif ... 9.gif
   MaskTexture/
     Mask1.png
     Mask2.png
@@ -159,16 +169,15 @@ node_modules/
 - `imageData`: 当前已上传或本地生成的图片数据，结构为 `{ name, url }`。
 - `wsIp`: 实际是 HTTP 服务器 IP，默认 `192.168.8.101`。
 - `selectedName`: 当前固定为 `'fish'`，没有 UI 修改入口。
-- `enableSupabaseUpload`: 是否启用 Supabase 上传，默认 `true`。
+- `enableSupabaseUpload`: 是否启用 Supabase 上传，当前临时固定为 `false`，界面按 HTTP 直送路径运行。
 - `selectedObjectIndex`: 首页选择的物体编号，默认 `0`。
 
 页面跳转:
 
-- 首页选择物体: `handleSelectObject(index)` 设置 `selectedObjectIndex`，进入上传页。
+- 首页选择物体: `handleSelectObject(index, existingImage?)` 设置 `selectedObjectIndex`；如果该槽位已有图片记录则直接进入编辑页，否则进入上传页。
 - 上传成功: `handleUploadSuccess(data)` 设置 `imageData`，进入编辑页。
-- 编辑页返回拍摄页: `handleBackToUpload()` 进入上传页，但保留 `imageData`。
-- 重新上传: `handleResetUpload()` 清空 `imageData`，进入上传页。
-- 回首页: `handleBackToHome()` 进入首页。
+- 编辑页返回首页: `handleBackToHome()` 进入首页，不清空当前图片数据。
+- 重新上载: `handleResetUpload()` 清空 `imageData`，进入上传页。
 
 注意:
 
@@ -180,10 +189,9 @@ node_modules/
 首页职责:
 
 - 输入 HTTP 服务器 IP。
-- 控制 Supabase 上传开关。
 - 展示 20 个物体槽位。
 - 读取和展示每个 IP 下的物体缩略图。
-- 点击物体时向 Unity 发送物体选择命令，并跳转上传页。
+- 点击物体时向 Unity 发送物体选择命令；已有图片记录时进入编辑页，空槽位进入上传页。
 
 ### 本地缩略图缓存
 
@@ -198,6 +206,12 @@ node_modules/
 interface IpThumbnailGroup {
   ip: string
   thumbnails: Record<number, string>
+  images?: Record<number, StoredArtwork>
+}
+
+interface StoredArtwork {
+  name: string
+  url: string
 }
 ```
 
@@ -207,9 +221,11 @@ interface IpThumbnailGroup {
 - `saveAllGroups(groups)`: 写回 `localStorage`。
 - `findGroupByIp(ip)`: 查找指定 IP 的分组。
 - `saveThumbnailToIp(ip, index, dataUrl)`: 为某个 IP 和物体编号保存缩略图。如果 IP 分组超过 3 个，会 `shift()` 删除最老分组。
+- `saveArtworkToIp(ip, index, artwork, blob?)`: 为某个 IP 和物体编号保存完整控制图记录；传入 Blob 时会先写入 IndexedDB，再把 `storageKey` 写入 localStorage 元数据。
 - `loadThumbnailsForIp(ip)`: 加载指定 IP 的缩略图字典。
+- `loadArtworkForIp(ip, index)`: 异步加载指定 IP 和物体编号的完整控制图记录；优先从 IndexedDB 取 Blob 并重新创建 object URL，旧的失效 `blob:` 记录会返回空，让首页退回缩略图。
 
-上传页会从这里导入 `saveThumbnailToIp`，因此首页同时承担了缩略图存储模块的角色。
+上传页会从这里导入 `saveThumbnailToIp` 和 `saveArtworkToIp`，因此首页同时承担了缩略图和完整控制图的本地存储模块角色。
 
 ### 首页 HTTP 命令
 
@@ -239,7 +255,7 @@ GameObject:7
 - IP 输入框变化只更新 `wsIp`，不会自动加载对应 IP 的缩略图，需要点击“载入配置”。
 - 物体编号固定 0 到 19。
 - 缩略图为空时显示一个内联 SVG 占位图。
-- Supabase 开关在首页显示，上传页也收到对应状态和 setter。
+- 首页显示 `HTTP 直送` 状态；Supabase 开关当前不在界面显示。
 
 ## 7. 上传页: `UploadPage.tsx`
 
@@ -267,7 +283,6 @@ interface UploadPageProps {
   selectedName: string
   onBackToHome: () => void
   enableSupabaseUpload: boolean
-  onEnableSupabaseUploadChange: (val: boolean) => void
   selectedObjectIndex: number
 }
 ```
@@ -374,7 +389,7 @@ FormData 字段:
 成功判定:
 
 - 需要 `response.data.media_url` 存在。
-- 成功后保存缩略图，并调用 `onUploadSuccess({ name, url })` 进入编辑页。
+- 成功后保存完整控制图和缩略图，并调用 `onUploadSuccess({ name, url })` 进入编辑页。
 
 注意:
 
@@ -400,7 +415,7 @@ FormData 字段:
 
 - 仍会发送 HTTP。
 - 设置成功文案: `已發送HTTP請求，未上傳至Supabase`
-- 通过 `URL.createObjectURL(blob)` 生成本地 URL 进入编辑页。
+- 通过 `URL.createObjectURL(blob)` 生成当前会话本地 URL 进入编辑页，同时把完整图片 Blob 写入 IndexedDB，供 App 重启后从首页再次进入控制页时恢复高清完整图。
 
 ### 音频录制
 
@@ -435,13 +450,7 @@ FormData 字段:
 - `handleTakePhoto()`
 - `showCamera` UI
 
-但是当前页面没有渲染“打开相机”的按钮，并且代码里有:
-
-```ts
-void handleOpenCamera
-```
-
-这说明相机功能目前是半保留状态: 逻辑存在，但用户从界面上无法进入相机模式。后续如果要恢复拍照，需要添加入口，并在 iPad 真机上确认权限和 WebView 行为。
+当前页面保留了“打开相机”的按钮节点和 `handleOpenCamera` 逻辑，但按钮使用 `className="hidden"` 隐藏，用户从界面上无法进入相机模式。后续如果要恢复拍照，只需要恢复入口显示，并在 iPad 真机上确认权限和 WebView 行为。
 
 ### 直接上传路径
 
@@ -458,6 +467,7 @@ void handleOpenCamera
 - 拖动图片位置。
 - 计算 16x9 网格索引。
 - 控制缩放。
+- 控制旋转。
 - 选择动画编号。
 - 水平翻转。
 - 释放图片物体。
@@ -471,7 +481,6 @@ interface EditPageProps {
   imageData: { name: string; url: string }
   wsIp: string
   selectedName: string
-  onBackToUpload: () => void
   onResetUpload: () => void
   onBackToHome: () => void
 }
@@ -481,15 +490,16 @@ interface EditPageProps {
 
 - `position`: 图片中心点归一化位置，初始 `{ x: 0.5, y: 0.5 }`。
 - `scale`: 图片缩放，初始 `1`，范围 UI 上为 `0.1` 到 `3.0`。
+- `rotation`: 图片旋转角度，初始 `0`，发送前归一到 `-180..180`。
 - `animationId`: 动画编号，初始 `0`。
-- `gridIndex`: 当前网格索引，初始 `0`。
+- `gridIndex`: 当前网格索引，初始按中心点计算。
 - `currentBg`: 当前背景，初始为 `selectedName`，当前通常是 `fish`。
 - `isFlipped`: 是否水平翻转。
-- `isReleased`: 是否释放图片物体，释放后禁用拖动绑定。
+- `isReleased`: 是否勾选释放物件信号。该状态只影响 checkbox 和 Unity 发送内容，不禁用控制页操作。
 
 注意:
 
-- 初始 `position` 在中心点，但初始 `gridIndex` 显示为 `0`。按算法中心点实际应为 `72`。
+- 初始 `position` 在中心点，`gridIndex` 也按中心点计算。
 - 点击“重设位置”会把 `gridIndex` 更新为中心点对应值并发送。
 
 ### 网格计算
@@ -498,8 +508,8 @@ interface EditPageProps {
 
 ```ts
 const calculateGridIndex = (x: number, y: number) => {
-  const col = Math.floor(x * 16)
-  const row = 8 - Math.floor(y * 9)
+  const col = clamp(Math.floor(x * 16), 0, 15)
+  const row = clamp(8 - Math.floor(y * 9), 0, 8)
   return row * 16 + col
 }
 ```
@@ -516,31 +526,20 @@ const calculateGridIndex = (x: number, y: number) => {
 - `x = 0, y = 1` 理论上接近左下。
 - `x = 0.5, y = 0.5` 得到 `72`。
 
-风险:
+注意:
 
-- `x` 或 `y` 被允许等于 `1`，此时 `Math.floor(x * 16)` 会得到 `16`，超过列范围 0 到 15；`Math.floor(y * 9)` 会得到 `9`，导致 row 为 `-1`。应在后续改动中把 col clamp 到 `0..15`，row clamp 到 `0..8`。
+- `x` 和 `y` 会先参与 `Math.floor`，再把列限制在 `0..15`、行限制在 `0..8`，避免边缘位置算出越界网格。
 
 ### 拖动
 
-使用 `react-use-gesture` 的 `useDrag`。
+使用原生 Pointer Events 手势层。
 
-拖动中:
+拖动和手势中:
 
-1. 读取容器宽高。
-2. 把拖动 delta 转成归一化比例。
-3. 叠加到 `position`。
-4. clamp 到 `0..1`。
-5. 计算并保存 `gridIndex`。
-
-拖动结束:
-
-```ts
-sendHttpMessage(gridIndex.toString())
-```
-
-风险:
-
-- `setGridIndex` 是异步的，拖动结束时发送的 `gridIndex` 可能是上一帧状态。更稳的方式是在 drag handler 里保存最新值到 ref，或在释放时用最新 position 重新计算。
+1. 一指拖动时读取容器宽高，把 delta 转成归一化比例，更新 `position` 并计算 `gridIndex`。
+2. 拖动中以约 90ms 节流实时发送最新网格编号，松手强制补发最终编号。
+3. 双指操作时读取两指距离变化更新 `scale`，读取两指连线角度变化更新 `rotation`。
+4. 缩放和旋转分别以约 120ms 节流发送，双指松开后分别补发最终值。
 
 ### 编辑页 HTTP 命令
 
@@ -561,9 +560,10 @@ sendHttpMessage(gridIndex.toString())
 | 拖动定位 | `{gridIndex}` | `72` |
 | 重设位置 | `{gridIndex}` | `72` |
 | 缩放 | `{imageData.name}_Scale:{value}` | `photo.png_Scale:1.5` |
+| 旋转 | `{imageData.name}_Rotate:{degrees}` | `photo.png_Rotate:45.0` |
 | 动画 | `{imageData.name}:{animationId}` | `photo.png:4` |
 | 水平翻转 | `{imageData.name}_Flip:{true|false}` | `photo.png_Flip:true` |
-| 释放 | `{imageData.name}_Release:true` | `photo.png_Release:true` |
+| 释放 | `{imageData.name}_Release:{true|false}` | `photo.png_Release:false` |
 | 背景 | `Bg:{Fish|People|Other}` | `Bg:Fish` |
 
 ### 背景场景
@@ -633,6 +633,7 @@ sendHttpMessage(gridIndex.toString())
 
 - `public/fish.mp4`: 编辑页 fish 背景视频。
 - `public/people.mp4`: 编辑页 people 背景视频。
+- `public/animations/0.gif` 到 `9.gif`: 控制页动画 0 到 9 的客户示例预览。
 - `public/MaskTexture/Mask1.png` 到 `Mask5.png`: 上传页遮罩。
 
 可能是历史或备用资源:
@@ -717,7 +718,7 @@ sendHttpMessage(gridIndex.toString())
 
 - Supabase URL 和 questionId 硬编码。
 - Supabase 失败时启用状态下不会继续 HTTP 直发。
-- “关闭 Supabase”时进入编辑页使用 object URL，只在当前会话有效。
+- “关闭 Supabase”时进入编辑页仍使用当前会话 object URL，但完整图片 Blob 已额外写入 IndexedDB；需要真机确认 iPad 长期使用时 IndexedDB 容量和清理策略是否足够。
 - `handleUpload()` 直接上传路径基本不可达。
 
 建议:
@@ -747,19 +748,19 @@ sendHttpMessage(gridIndex.toString())
 
 ### 编辑页网格
 
-- 初始 `gridIndex` 和初始位置不一致。
-- x/y 为 1 时可能算出越界索引。
-- 拖动结束发送的索引可能是旧状态。
+- 当前已使用 Pointer Events、ref 和节流发送解决拖动实时反馈问题。
+- 网格列和行已 clamp，边缘位置不会算出越界索引。
+- 仍需在 iPad 真机上确认一指拖动、双指缩放和双指旋转的手感，以及 Unity 端能否稳定承受约 90ms/120ms 的实时命令频率。
 
 建议:
 
 - 把 `calculateGridIndex` 改成可测试的工具函数。
-- clamp col 到 `0..15`，row 到 `0..8`。
-- 使用 ref 保存最新 gridIndex，释放时发送 ref。
+- 和 Unity 端确认网格坐标方向、旋转角度方向、实时发送频率上限。
+- 如果真机上旋转过于敏感，可在 `applyRotation` 或手势角度差处加入灵敏度系数或死区。
 
 ### 相机和音频
 
-- 相机入口当前没有显示。
+- 相机入口当前以 `className="hidden"` 隐藏，但 `handleOpenCamera` 和相机 UI 逻辑仍保留。
 - 录音 MIME 被强制标为 WAV，但 MediaRecorder 不保证输出 WAV。
 - iOS WebView 对 MediaRecorder 和摄像头行为需要真机验证。
 
@@ -798,7 +799,7 @@ sendHttpMessage(gridIndex.toString())
 1. 先冻结并确认 Unity HTTP 协议，包括所有命令、字段名、端口、图片和音频格式。
 2. 抽出 Unity 通信服务，替换三个页面里的重复 `XMLHttpRequest`。
 3. 抽出上传服务，统一 Supabase 和 HTTP 直发策略。
-4. 修正编辑页网格算法和拖动释放发送旧索引的问题。
+4. 真机验证编辑页一指拖动、双指缩放/旋转、释放/翻转开关信号和 Unity 接收频率。
 5. 拆分上传页，把遮罩、录音、文件选择、上传动作拆成组件。
 6. 明确 `selectedName`、`selectedObjectIndex`、背景场景之间的业务关系。
 7. 恢复或删除相机入口。
@@ -820,8 +821,9 @@ sendHttpMessage(gridIndex.toString())
 | 改遮罩数量 | `UploadPage.tsx` | 遮罩按钮 `[0,1,2,3,4,5]` 和 public 资源 |
 | 改遮罩算法 | `UploadPage.tsx` | `handleScreenshotAndUpload` |
 | 改录音行为 | `UploadPage.tsx` | `startAudioRecording`、`stopAudioRecording` |
-| 恢复相机入口 | `UploadPage.tsx` | `handleOpenCamera` 已有但未渲染入口 |
+| 恢复相机入口 | `UploadPage.tsx` | `handleOpenCamera` 已有，当前入口按钮用 `className="hidden"` 隐藏 |
 | 改网格规则 | `EditPage.tsx` | `calculateGridIndex` |
 | 改动画数量 | `EditPage.tsx` | `Array.from({ length: 10 })` |
+| 改动画预览资源路径 | `EditPage.tsx`、`public/animations` | 当前预览路径为 `/animations/{animationId}.gif` |
 | 改背景选项 | `EditPage.tsx` | `currentBg`、video、`bgMap` |
 | 改整体视觉 | `src/index.css` | Apple 风格全局类和 Tailwind class |
