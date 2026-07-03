@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
+import { saveArtworkToIp, saveThumbnailToIp } from './HomePage.tsx'
 
 interface UploadPageProps {
   onUploadSuccess: (data: { name: string; url: string }) => void
@@ -7,9 +8,35 @@ interface UploadPageProps {
   onWsIpChange: (ip: string) => void
   selectedName: string
   onBackToHome: () => void
+  enableSupabaseUpload: boolean
+  selectedObjectIndex: number
 }
 
-const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onBackToHome }) => {
+const saveThumbnailForObject = (ip: string, index: number, imageUrl: string, imageName = `slot-${index}.png`) => {
+  saveArtworkToIp(ip, index, { name: imageName, url: imageUrl })
+  const img = new Image()
+  img.crossOrigin = 'anonymous'
+  img.onload = () => {
+    const canvas = document.createElement('canvas')
+    const size = 80
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')!
+    const scale = Math.max(size / img.width, size / img.height)
+    const w = img.width * scale
+    const h = img.height * scale
+    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
+      saveThumbnailToIp(ip, index, dataUrl)
+    } catch {
+      try { saveThumbnailToIp(ip, index, imageUrl) } catch {}
+    }
+  }
+  img.src = imageUrl
+}
+
+const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpChange, selectedName, onBackToHome, enableSupabaseUpload, selectedObjectIndex }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState<boolean>(false)
@@ -26,8 +53,6 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
   const positionRef = useRef({ x: 0, y: 0 })
   const [isImageDragging, setIsImageDragging] = useState(false)
   const [_imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
-  // Supabase上传开关
-  const [enableSupabaseUpload, setEnableSupabaseUpload] = useState<boolean>(true)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -41,7 +66,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
 
   const startAudioRecording = async () => {
     try {
-      setAudioStatus('正在录制音频...')
+      setAudioStatus('正在錄製音訊...')
       setIsRecording(true)
       setAudioRecorded(false)
       setAudioBlob(null)
@@ -61,14 +86,14 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
         setAudioBlob(blob)
         setAudioRecorded(true)
-        setAudioStatus('录制完成，可发送到Unity')
+        setAudioStatus('錄製完成，可發送到 Unity')
         stream.getTracks().forEach(track => track.stop())
       }
 
       mediaRecorder.start()
     } catch (err) {
-      console.error('录制失败:', err)
-      setAudioStatus('录制失败，请检查麦克风权限')
+      console.error('錄製失敗:', err)
+      setAudioStatus('錄製失敗，請檢查麥克風權限')
       setIsRecording(false)
     }
   }
@@ -268,8 +293,6 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       setUploadError('相機開啟失敗，請檢查相機權限')
     }
   }
-  void handleOpenCamera
-
   // 图片拖放处理函数
   const handleImageMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -463,7 +486,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         )
 
         if (response.data && response.data.media_url) {
-          // 执行上传成功回调
+          saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, processedFile.name)
           onUploadSuccess({
             name: processedFile.name,
             url: response.data.media_url
@@ -489,8 +512,9 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       
       // 3. 上传成功提示（根据是否启用Supabase显示不同文案）
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已發送HTTP請求，未上傳至Supabase')
+        setUploadSuccess('已發送至 Unity')
         const localUrl = URL.createObjectURL(blob!)
+        saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, processedFile.name)
         onUploadSuccess({
           name: processedFile.name,
           url: localUrl
@@ -613,7 +637,7 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
         )
 
         if (response.data && response.data.media_url) {
-          // 执行上传成功回调
+          saveThumbnailForObject(wsIp, selectedObjectIndex, response.data.media_url, selectedFile.name)
           onUploadSuccess({
             name: selectedFile.name,
             url: response.data.media_url
@@ -635,7 +659,13 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
       
       // 3. 上传成功提示（根据是否启用Supabase显示不同文案）
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已發送HTTP請求，未上傳至Supabase')
+        setUploadSuccess('已發送至 Unity')
+        const localUrl = URL.createObjectURL(selectedFile)
+        saveThumbnailForObject(wsIp, selectedObjectIndex, localUrl, selectedFile.name)
+        onUploadSuccess({
+          name: selectedFile.name,
+          url: localUrl
+        })
       }
     } catch (error) {
       console.error('上載錯誤:', error)
@@ -645,83 +675,84 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
     }
   }
 
+  const selectedFileName = selectedFile?.name ?? '未選擇檔案'
+  const uploadModeLabel = enableSupabaseUpload ? 'Supabase + HTTP' : 'HTTP 直送'
+  const maskOptions = [0, 1, 2, 3, 4, 5]
+
   return (
-    <div className="min-h-screen upload-background apple-container">
-      <div className="container mx-auto px-6 py-20 max-w-4xl">
-        <h1 className="text-5xl font-bold text-gray-900 mb-4 text-center apple-title">Art Lab</h1>
-        <p className="text-xl text-gray-600 mb-16 text-center apple-subtitle">上傳您的圖片</p>
-
-      {/* HTTP 伺服器 IP 設定 */}
-      <div className="mb-16">
-        <label className="block text-xl font-semibold text-gray-700 mb-4">HTTP 伺服器 IP 位址</label>
-        <div className="flex">
-          <input
-            type="text"
-            value={wsIp}
-            onChange={(e) => onWsIpChange(e.target.value)}
-            placeholder="請輸入伺服器 IP 位址"
-            className="flex-grow px-6 py-3 text-lg border border-gray-200 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all apple-input"
-          />
-          <span className="px-6 py-3 text-lg bg-gray-100 border border-gray-200 rounded-r-xl text-gray-700">:8080</span>
-        </div>
-      </div>
-
-      {/* Supabase 上傳開關 */}
-      <div className="mb-16">
-        <label className="flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={enableSupabaseUpload}
-            onChange={(e) => setEnableSupabaseUpload(e.target.checked)}
-            className="w-6 h-6 text-blue-600 rounded focus:ring-blue-500 border-gray-300 transition-all"
-          />
-          <span className="ml-3 text-xl font-medium text-gray-700">啟用 Supabase 上傳</span>
-        </label>
-      </div>
-
-      {/* 圖片上傳區域 */}
-      {previewUrl && !showMaskPanel && (
-        <div className="mb-16">
-          <h2 className="text-xl font-semibold text-gray-700 mb-6">圖片預覽</h2>
-          <div className="apple-card">
-            <img
-              src={previewUrl}
-              alt="預覽"
-              className="w-full h-auto object-contain max-h-96 mx-auto"
-            />
+    <main className="ipad-screen upload-screen apple-container">
+      <header className="ipad-topbar">
+        <div className="topbar-title-row">
+          <button onClick={onBackToHome} className="ipad-button ghost-button">
+            返回
+          </button>
+          <div className="min-w-0">
+            <p className="eyebrow">Slot {selectedObjectIndex}</p>
+            <h1 className="screen-title">上傳作品</h1>
           </div>
+        </div>
+
+        <div className="topbar-controls">
+          <div className="ip-control">
+            <span className="control-label">HTTP</span>
+            <input
+              type="text"
+              value={wsIp}
+              onChange={(e) => onWsIpChange(e.target.value)}
+              className="ipad-input ip-input"
+            />
+            <span className="port-chip">:8080</span>
+          </div>
+          <span className="status-pill">{uploadModeLabel}</span>
+        </div>
+      </header>
+
+      {(uploadError || uploadSuccess) && (
+        <div className={`status-toast ${uploadError ? 'error' : 'success'}`}>
+          {uploadError || uploadSuccess}
         </div>
       )}
 
-      {/* 遮罩對齊面板 */}
-      {showMaskPanel && previewUrl && (
-        <div className="mb-16">
-          <h2 className="text-xl font-semibold text-gray-700 mb-6">遮罩對齊</h2>
-          <div className="apple-card">
-            {/* 遮罩選擇器 */}
-            <div className="mb-6 flex justify-center space-x-4">
-              {[0, 1, 2, 3, 4, 5].map((maskIndex) => (
-                <button
-                  key={maskIndex}
-                  onClick={() => handleMaskChange(maskIndex)}
-                  className={`px-4 py-2 rounded-lg transition-all ${selectedMask === maskIndex ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                >
-                  {maskIndex === 0 ? '無遮罩' : `遮罩 ${maskIndex}`}
-                </button>
-              ))}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      {showCamera ? (
+        <section className="camera-workspace">
+          <div className="camera-preview">
+            <video ref={videoRef} className="camera-video"></video>
+            <canvas ref={canvasRef} className="hidden"></canvas>
+          </div>
+          <div className="camera-actions">
+            <button onClick={handleCloseCamera} className="ipad-button secondary-button">
+              取消
+            </button>
+            <button onClick={handleTakePhoto} className="ipad-button primary-button">
+              拍攝
+            </button>
+          </div>
+        </section>
+      ) : showMaskPanel && previewUrl ? (
+        <section className="upload-workspace mask-workspace">
+          <div className="mask-canvas-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Mask Alignment</p>
+                <h2>調整作品位置</h2>
+              </div>
+              <span className="status-pill">{selectedFileName}</span>
             </div>
 
-            {/* 遮罩對齊區域 */}
-            <div 
-              ref={alignmentContainerRef}
-              className="relative w-full h-96 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white flex items-center justify-center"
-            >
-              {/* 用戶上傳的圖片 */}
+            <div ref={alignmentContainerRef} className="mask-stage">
               <img
                 src={previewUrl}
                 alt="待調整圖片"
-                className="absolute max-w-full max-h-full cursor-move"
-                style={{ 
+                className="mask-source-image"
+                style={{
                   transform: `translate(${imagePosition.x}px, ${imagePosition.y}px)`,
                   zIndex: 1
                 }}
@@ -729,169 +760,119 @@ const UploadPage: React.FC<UploadPageProps> = ({ onUploadSuccess, wsIp, onWsIpCh
                 onTouchStart={handleImageTouchStart}
               />
 
-              {/* 遮罩圖（固定顯示在最上層，僅在選擇遮罩時顯示） */}
               {selectedMask > 0 && (
                 <img
                   src={`/MaskTexture/Mask${selectedMask}.png`}
                   alt={`遮罩 ${selectedMask}`}
-                  className="absolute w-full h-full object-cover pointer-events-none"
+                  className="mask-overlay-image"
                   style={{ zIndex: 2 }}
                 />
               )}
             </div>
+          </div>
 
-            {/* 为当前图片录制音频（可选） */}
-            <div className="mt-6 p-6 border border-gray-200 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">为当前图片录制音频（可选）</h3>
-              <div className="flex flex-col space-y-3">
-                {audioStatus && (
-                  <p className={`text-center text-base ${audioStatus.includes('失败') ? 'text-red-500' : 'text-green-600'}`}>
-                    {audioStatus}
-                  </p>
-                )}
-                {audioRecorded && !audioStatus.includes('失败') && (
-                  <p className="text-center text-sm text-green-500">✓ 已录制音频，将随图片一起发送</p>
-                )}
-                <div className="flex space-x-4">
+          <aside className="upload-rail">
+            <section className="rail-section">
+              <p className="eyebrow">Mask</p>
+              <div className="mask-button-grid">
+                {maskOptions.map((maskIndex) => (
                   <button
-                    onClick={startAudioRecording}
-                    disabled={isRecording}
-                    className={`flex-1 py-2 px-4 text-base font-medium rounded-xl transition-all ${isRecording ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
+                    key={maskIndex}
+                    onClick={() => handleMaskChange(maskIndex)}
+                    className={`mask-option ${selectedMask === maskIndex ? 'active' : ''}`}
                   >
-                    {isRecording ? '录制中...' : '开始录制'}
+                    {maskIndex === 0 ? '無' : maskIndex}
                   </button>
-                  <button
-                    onClick={stopAudioRecording}
-                    disabled={!isRecording}
-                    className={`flex-1 py-2 px-4 text-base font-medium rounded-xl transition-all ${!isRecording ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button-secondary'}`}
-                  >
-                    停止录制
-                  </button>
-                </div>
+                ))}
               </div>
-            </div>
+            </section>
 
-            {/* 確認截圖同上傳按鈕 */}
-            <div className="mt-6">
-              <button
-                onClick={handleScreenshotAndUpload}
-                disabled={isUploading}
-                className={`w-full py-3 px-8 text-lg font-medium rounded-xl transition-all ${isUploading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
-              >
-                {isUploading ? '上載中...' : '確認截圖同上傳'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <section className="rail-section">
+              <p className="eyebrow">Audio</p>
+              {audioStatus && (
+                <p className={`rail-status ${audioStatus.includes('失敗') ? 'error' : 'success'}`}>
+                  {audioStatus}
+                </p>
+              )}
+              {audioRecorded && !audioStatus.includes('失敗') && (
+                <p className="rail-status success">已錄製音訊</p>
+              )}
+              <div className="rail-two-buttons">
+                <button
+                  onClick={startAudioRecording}
+                  disabled={isRecording}
+                  className="ipad-button secondary-button"
+                >
+                  {isRecording ? '錄製中' : '錄音'}
+                </button>
+                <button
+                  onClick={stopAudioRecording}
+                  disabled={!isRecording}
+                  className="ipad-button secondary-button"
+                >
+                  停止
+                </button>
+              </div>
+            </section>
 
-      {/* 相機模式 */}
-      {showCamera ? (
-        <div className="mb-16">
-          <div className="apple-card">
-            <video ref={videoRef} className="w-full h-auto max-h-96 object-contain mx-auto"></video>
-            <canvas ref={canvasRef} className="hidden"></canvas>
-            <div className="flex justify-between mt-6 space-x-4">
-              <button
-                onClick={handleTakePhoto}
-                className="flex-1 py-3 px-8 text-lg font-medium rounded-xl transition-all apple-button"
-              >
-                拍攝
-              </button>
-              <button
-                onClick={handleCloseCamera}
-                className="flex-1 py-3 px-8 text-lg font-medium rounded-xl transition-all apple-button-secondary"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-          {/* 選擇本機圖片 */}
-          <div>
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button flex flex-col items-center justify-center"
+              onClick={handleScreenshotAndUpload}
+              disabled={isUploading}
+              className="ipad-button primary-button send-button"
             >
-              <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <span>選擇本機圖片</span>
+              {isUploading ? '上載中' : '確認發送'}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
+          </aside>
+        </section>
+      ) : previewUrl ? (
+        <section className="upload-workspace preview-workspace">
+          <div className="preview-panel">
+            <img src={previewUrl} alt="預覽" className="preview-image" />
           </div>
-
-          {/* 拖放上載區 */}
-          <div
+          <aside className="upload-rail">
+            <section className="rail-section">
+              <p className="eyebrow">Preview</p>
+              <h2>{selectedFileName}</h2>
+            </section>
+            <button
+              onClick={handleUpload}
+              disabled={isUploading}
+              className="ipad-button primary-button send-button"
+            >
+              {isUploading ? '上載中' : '確認上載'}
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="ipad-button secondary-button">
+              重新選擇
+            </button>
+          </aside>
+        </section>
+      ) : (
+        <section className="upload-workspace import-workspace">
+          <button
+            onClick={() => fileInputRef.current?.click()}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all apple-card ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-400'}`}
+            className={`import-dropzone ${isDragging ? 'is-dragging' : ''}`}
           >
-            <svg className="w-16 h-16 mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="text-lg text-gray-700">拖放圖片到這裡</span>
+            <span className="import-plus">+</span>
+            <strong>選擇圖片</strong>
+            <span>JPEG / PNG / GIF / WebP</span>
+          </button>
+
+          <div className="capture-panel">
+            <video src="people.mp4" autoPlay loop muted playsInline className="capture-video" />
+            <div className="capture-content">
+              <p className="eyebrow light">Camera</p>
+              <h2>拍攝作品</h2>
+              <button onClick={handleOpenCamera} className="ipad-button primary-button">
+                開啟相機
+              </button>
+            </div>
           </div>
-        </div>
+        </section>
       )}
-
-      {/* 返回首页按钮 */}
-      {!showCamera && !previewUrl && (
-        <div className="mb-12">
-          <button
-            onClick={onBackToHome}
-            className="w-full py-6 text-lg font-medium rounded-xl transition-all apple-button-secondary flex flex-col items-center justify-center"
-          >
-            <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span>返回首页</span>
-          </button>
-        </div>
-      )}
-
-      {/* 上載按鈕（只在未顯示遮罩面板時顯示） */}
-      {previewUrl && !showMaskPanel && (
-        <div className="mb-12">
-          <button
-            onClick={handleUpload}
-            disabled={isUploading}
-            className={`w-full py-3 px-8 text-lg font-medium rounded-xl transition-all ${isUploading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'apple-button'}`}
-          >
-            {isUploading ? '上載中...' : '確認上載'}
-          </button>
-        </div>
-      )}
-
-      {/* 錯誤提示 */}
-      {uploadError && (
-        <div className="mt-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-xl apple-status-error">
-          {uploadError}
-        </div>
-      )}
-
-      {/* 成功提示 */}
-      {uploadSuccess && (
-        <div className="mt-6 p-4 bg-green-50 text-green-600 border border-green-200 rounded-xl apple-status-success">
-          {uploadSuccess}
-        </div>
-      )}
-
-      {/* 輔助文字 */}
-      <div className="mt-16 text-center text-sm text-gray-500">
-        支援 JPEG/PNG/GIF/WebP，單一檔案不超過 10MB
-      </div>
-      </div>
-    </div>
+    </main>
   )
 }
 

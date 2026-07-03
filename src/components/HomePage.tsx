@@ -1,66 +1,203 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 interface HomePageProps {
-  onSelectScene: (sceneName: string) => void
+  onSelectObject: (index: number, existingImage?: StoredArtwork) => void
+  wsIp: string
+  onWsIpChange: (ip: string) => void
 }
 
-const HomePage: React.FC<HomePageProps> = ({ onSelectScene }) => {
-  const scenes = [
-    { name: 'fish', label: '海底珊瑚', image: '/fish.png' },
-    { name: 'people', label: '動物小鎮', image: '/people.png' },
-    { name: 'other', label: '空白網格', image: '' }
-  ]
+const STORAGE_KEY = 'artlab_ip_thumbnails'
+const MAX_IP_GROUPS = 3
+
+interface IpThumbnailGroup {
+  ip: string
+  thumbnails: Record<number, string>
+  images?: Record<number, StoredArtwork>
+}
+
+interface StoredArtwork {
+  name: string
+  url: string
+}
+
+const loadAllGroups = (): IpThumbnailGroup[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+const saveAllGroups = (groups: IpThumbnailGroup[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(groups))
+}
+
+const findGroupByIp = (ip: string): IpThumbnailGroup | undefined => {
+  return loadAllGroups().find(g => g.ip === ip)
+}
+
+const saveThumbnailToIp = (ip: string, index: number, dataUrl: string) => {
+  const groups = loadAllGroups()
+  let group = groups.find(g => g.ip === ip)
+  if (!group) {
+    if (groups.length >= MAX_IP_GROUPS) {
+      groups.shift()
+    }
+    group = { ip, thumbnails: {} }
+    groups.push(group)
+  }
+  group.thumbnails[index] = dataUrl
+  saveAllGroups(groups)
+}
+
+const saveArtworkToIp = (ip: string, index: number, artwork: StoredArtwork) => {
+  const groups = loadAllGroups()
+  let group = groups.find(g => g.ip === ip)
+  if (!group) {
+    if (groups.length >= MAX_IP_GROUPS) {
+      groups.shift()
+    }
+    group = { ip, thumbnails: {}, images: {} }
+    groups.push(group)
+  }
+  if (!group.images) {
+    group.images = {}
+  }
+  group.images[index] = artwork
+  saveAllGroups(groups)
+}
+
+const loadThumbnailsForIp = (ip: string): Record<number, string> => {
+  const group = findGroupByIp(ip)
+  return group ? { ...group.thumbnails } : {}
+}
+
+const loadArtworkForIp = (ip: string, index: number): StoredArtwork | undefined => {
+  const group = findGroupByIp(ip)
+  return group?.images?.[index]
+}
+
+const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange }) => {
+  const [thumbnails, setThumbnails] = useState<Record<number, string>>(() => {
+    if (wsIp.trim()) return loadThumbnailsForIp(wsIp.trim())
+    return {}
+  })
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
+  const slotTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (slotTimerRef.current !== null) {
+        window.clearTimeout(slotTimerRef.current)
+      }
+    }
+  }, [])
+
+  const handleLoadConfig = () => {
+    const ip = wsIp.trim()
+    if (!ip) return
+    setThumbnails(loadThumbnailsForIp(ip))
+  }
+
+  const sendHttpMessage = async (message: string) => {
+    if (!wsIp) return
+    const url = `http://${wsIp}:8080`
+    try {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url, true)
+      xhr.setRequestHeader('Content-Type', 'text/plain')
+      xhr.send(message)
+    } catch (error) {
+      console.error('HTTP POST failed:', error)
+    }
+  }
+
+  const handleObjectClick = (index: number) => {
+    sendHttpMessage(`GameObject:${index}`)
+    setSelectedSlot(index)
+    if (slotTimerRef.current !== null) {
+      window.clearTimeout(slotTimerRef.current)
+    }
+    slotTimerRef.current = window.setTimeout(() => {
+      const storedArtwork = loadArtworkForIp(wsIp.trim(), index)
+      const fallbackArtwork = thumbnails[index]
+        ? { name: `slot-${index}.png`, url: thumbnails[index] }
+        : undefined
+      onSelectObject(index, storedArtwork ?? fallbackArtwork)
+    }, 140)
+  }
 
   return (
-    <div className="min-h-screen home-background apple-container">
-      {/* Header */}
-      <div className="container mx-auto px-6 py-20 max-w-5xl">
-        <h1 className="text-5xl font-bold text-gray-900 text-center mb-4 apple-title">Art Lab</h1>
-        <p className="text-xl text-gray-600 text-center mb-20 apple-subtitle">選擇您的場景</p>
+    <main className="ipad-screen home-screen apple-container">
+      <header className="ipad-topbar">
+        <div className="min-w-0">
+          <p className="eyebrow">Art Lab</p>
+          <h1 className="screen-title">作品上載</h1>
+        </div>
 
-        {/* Scene Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {scenes.map((scene) => (
-            <div
-              key={scene.name}
-              className="group cursor-pointer apple-card rounded-xl overflow-hidden transition-all duration-300"
-              onClick={() => onSelectScene(scene.name)}
-            >
-              {/* Scene Preview */}
-              <div className="h-72 bg-gray-100 flex items-center justify-center overflow-hidden">
-                {scene.image ? (
-                  <img
-                    src={scene.image}
-                    alt={scene.label}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="text-gray-500">
-                    <svg className="w-24 h-24 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 12l4 4m0 0l-4 4m4-4H8m4-4v8" />
-                    </svg>
-                    <div className="text-xl">空白网格</div>
-                  </div>
-                )}
-              </div>
+        <div className="topbar-controls">
+          <div className="ip-control">
+            <span className="control-label">HTTP</span>
+            <input
+              type="text"
+              value={wsIp}
+              onChange={(e) => onWsIpChange(e.target.value)}
+              placeholder="伺服器 IP"
+              className="ipad-input ip-input"
+            />
+            <button onClick={handleLoadConfig} className="ipad-button compact-button">
+              載入
+            </button>
+            <span className="port-chip">:8080</span>
+          </div>
+          <span className="status-pill">HTTP 直送</span>
+        </div>
+      </header>
 
-              {/* Scene Label */}
-              <div className="p-6">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-2">{scene.label}</h2>
-                <p className="text-gray-500">點擊選擇此場景</p>
-              </div>
+      <section className="home-workspace">
+        <div className="showcase-panel">
+          <video src="fish.mp4" autoPlay loop muted playsInline className="showcase-video" />
+          <div className="showcase-shade" />
+          <div className="showcase-content">
+            <p className="eyebrow light">Artwork to Life</p>
+            <h2>選擇一個作品位置</h2>
+            <p>已有作品的位置會直接進入控制頁，空位置會進入上傳流程。</p>
+          </div>
+        </div>
+
+        <div className="slot-workspace">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Object Slots</p>
+              <h2>作品位置</h2>
             </div>
-          ))}
-        </div>
+            <span className="status-pill">{Object.keys(thumbnails).length}/20 已有縮圖</span>
+          </div>
 
-        {/* Footer */}
-        <div className="mt-32 text-center text-gray-500 text-sm">
-          <p>Art Lab Web • 2026</p>
+          <div className="slot-grid">
+            {Array.from({ length: 20 }, (_, i) => i).map((idx) => (
+              <button
+                key={idx}
+                onClick={() => handleObjectClick(idx)}
+                className={`slot-tile ${thumbnails[idx] ? 'has-thumbnail' : ''} ${selectedSlot === idx ? 'is-selected' : ''}`}
+                aria-label={`選擇作品位置 ${idx}`}
+              >
+                {thumbnails[idx] ? (
+                  <img src={thumbnails[idx]} alt={`作品位置 ${idx}`} />
+                ) : (
+                  <span className="slot-empty">{String(idx).padStart(2, '0')}</span>
+                )}
+                <span className="slot-number">{idx}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   )
 }
 
 export default HomePage
+
+export { saveThumbnailToIp, saveArtworkToIp, loadThumbnailsForIp, loadArtworkForIp, STORAGE_KEY }

@@ -7,17 +7,24 @@ interface EditPageProps {
   selectedName: string
   onBackToUpload: () => void
   onResetUpload: () => void
+  onBackToHome: () => void
 }
 
-const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBackToUpload, onResetUpload }) => {
+type ControlTool = 'scale' | 'animation' | 'scene' | 'object'
+
+const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBackToUpload, onResetUpload, onBackToHome }) => {
   const [position, setPosition] = useState({ x: 0.5, y: 0.5 })
   const [scale, setScale] = useState(1)
   const [animationId, setAnimationId] = useState(0)
   const [gridIndex, setGridIndex] = useState(0)
+  const [currentBg, setCurrentBg] = useState<string>(selectedName)
   const [isFlipped, setIsFlipped] = useState(false)
   const [isReleased, setIsReleased] = useState(false)
+  const [activeTool, setActiveTool] = useState<ControlTool>('scale')
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+  const lastTapTimeRef = useRef(0)
 
   // 计算网格索引
   const calculateGridIndex = (x: number, y: number) => {
@@ -62,23 +69,19 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
       const newGridIndex = calculateGridIndex(newX, newY)
       setGridIndex(newGridIndex)
     } else if (!down) {
-      // 拖放结束后发送网格索引
       sendHttpMessage(gridIndex.toString())
+      if (isReleased) setIsReleased(false)
     }
   })
 
   // 缩放处理（滑动条）
   const handleScaleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isReleased) return // 释放后禁用缩放功能
     const newScale = parseFloat(e.target.value)
     setScale(newScale)
-    // 发送缩放值
     sendHttpMessage(`${imageData.name}_Scale:${newScale.toFixed(1)}`)
   }
 
-  // 动画选择处理
-  const handleAnimationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newAnimationId = parseInt(e.target.value)
+  const handleAnimationSelect = (newAnimationId: number) => {
     setAnimationId(newAnimationId)
     // 发送动画ID
     sendHttpMessage(`${imageData.name}:${newAnimationId}`)
@@ -103,56 +106,100 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
 
   // 重设位置
   const handleResetPosition = () => {
-    if (isReleased) return // 释放后禁用重置功能
     setPosition({ x: 0.5, y: 0.5 })
     const newGridIndex = calculateGridIndex(0.5, 0.5)
     setGridIndex(newGridIndex)
     sendHttpMessage(newGridIndex.toString())
+    if (isReleased) setIsReleased(false)
   }
 
-  // 重设缩放
   const handleResetScale = () => {
-    if (isReleased) return // 释放后禁用重置功能
     setScale(1)
     sendHttpMessage(`${imageData.name}_Scale:1`)
   }
 
+  const openControlPanel = (tool: ControlTool = activeTool) => {
+    setActiveTool(tool)
+    setIsControlPanelOpen(true)
+  }
+
+  const handleStageDoubleTap = () => {
+    openControlPanel('scale')
+  }
+
+  const handleStageTouchEnd = () => {
+    const now = Date.now()
+    if (now - lastTapTimeRef.current < 320) {
+      handleStageDoubleTap()
+      lastTapTimeRef.current = 0
+      return
+    }
+    lastTapTimeRef.current = now
+  }
+
   // 合并所有手势绑定（仅在未释放时有效）
   const bind = isReleased ? {} : { ...dragBind() }
+  const tools: { id: ControlTool; label: string }[] = [
+    { id: 'scale', label: '縮放' },
+    { id: 'animation', label: '動畫' },
+    { id: 'scene', label: '場景' },
+    { id: 'object', label: '物件' }
+  ]
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-white flex flex-col p-8">
-      <h1 className="text-3xl font-bold text-gray-900 text-center mb-6">圖片編輯</h1>
-      
-      <div className="flex flex-1 gap-6 min-h-0">
-        {/* 左侧：網格定位區 */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">網格定位區</h2>
-          <div 
-            ref={containerRef}
-            className="flex-1 min-h-0 rounded-xl overflow-hidden relative"
-          >
-            {/* 背景影片 */}
-            {selectedName === 'fish' && (
+    <main className="ipad-screen edit-screen apple-container">
+      <header className="ipad-topbar">
+        <div className="topbar-title-row">
+          <button onClick={onBackToHome} className="ipad-button ghost-button">
+            首頁
+          </button>
+          <div className="min-w-0">
+            <p className="eyebrow">Art Lab</p>
+            <h1 className="screen-title">作品控制</h1>
+          </div>
+        </div>
+
+        <div className="edit-status-strip">
+          <span className="status-pill">Grid {gridIndex}</span>
+          <span className="status-pill">{scale.toFixed(1)}x</span>
+          <span className="status-pill">{wsIp}:8080</span>
+        </div>
+      </header>
+
+      <section className="edit-workspace">
+        <div className="edit-stage-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Stage Preview</p>
+              <h2>拖動作品定位，雙點開啟工具</h2>
+            </div>
+            <span className={`status-pill ${isReleased ? 'warning' : ''}`}>
+              {isReleased ? '已釋放' : '可控制'}
+            </span>
+          </div>
+
+          <div ref={containerRef} className="edit-stage">
+            {currentBg === 'fish' && (
               <video
                 src="fish.mp4"
                 autoPlay
                 loop
                 muted
-                className="absolute inset-0 w-full h-full object-cover z-0"
+                playsInline
+                className="stage-video"
               />
             )}
-            {selectedName === 'people' && (
+            {currentBg === 'people' && (
               <video
                 src="people.mp4"
                 autoPlay
                 loop
                 muted
-                className="absolute inset-0 w-full h-full object-cover z-0"
+                playsInline
+                className="stage-video"
               />
             )}
-            
-            {/* 可拖放的圖片 */}
+
             <img
               ref={imageRef}
               src={imageData.url}
@@ -162,150 +209,172 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onBa
                 left: `${position.x * 100}%`,
                 top: `${position.y * 100}%`,
                 transform: `translate(-50%, -50%) scale(${scale}) ${isFlipped ? 'scaleX(-1)' : ''}`,
+                width: 'min(58vw, 1120px)',
+                height: 'auto',
                 maxWidth: '80%',
                 maxHeight: '80%',
+                objectFit: 'contain',
                 zIndex: 10,
               }}
               {...bind}
             />
-            
-            {/* 拖放覆蓋層 */}
-            <div className="drag-overlay" {...bind}></div>
-          </div>
-          <div className="mt-2 text-center text-sm">
-            <span className="text-gray-700">當前網格索引：</span>
-            <span className="font-bold text-blue-600">{gridIndex}</span>
-          </div>
-        </div>
-        
-        {/* 右侧：控制面板 */}
-        <div className="w-80 flex flex-col gap-3 flex-shrink-0">
-          {/* HTTP 通訊設置 */}
-          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-700 mb-1">HTTP 通訊設置</h2>
-            <div className="text-xs text-gray-500">
-              伺服器 IP: {wsIp}:8080
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-600">
-                HTTP 模式
-              </span>
-            </div>
-          </div>
-          
-          {/* 圖片縮放控制 */}
-          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">圖片縮放</h2>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-700">縮放比例：</span>
-              <span className="text-sm font-bold text-blue-600">{scale.toFixed(1)}x</span>
-            </div>
-            <input
-              type="range"
-              min="0.1"
-              max="3.0"
-              step="0.1"
-              value={scale}
-              onChange={handleScaleChange}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isReleased}
-            />
-            <div className="mt-1 text-xs text-gray-500">
-              縮放範圍：0.1 ~ 3.0
-            </div>
-          </div>
-          
-          {/* 動畫選擇 */}
-          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">動畫效果選擇</h2>
-            <div className="flex items-center">
-              <label htmlFor="animation" className="mr-3 text-xs text-gray-700">動畫編號：</label>
-              <select
-                id="animation"
-                value={animationId}
-                onChange={handleAnimationChange}
-                className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
-                disabled={isReleased}
+
+            <div
+              className="drag-overlay"
+              {...bind}
+              onDoubleClick={handleStageDoubleTap}
+              onTouchEnd={handleStageTouchEnd}
+            ></div>
+            {!isControlPanelOpen && (
+              <button
+                type="button"
+                className="stage-tool-hint"
+                onClick={() => openControlPanel('scale')}
               >
-                {Array.from({ length: 10 }, (_, i) => i).map((id) => (
-                  <option key={id} value={id} className="bg-white text-gray-900">
-                    {id}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          {/* 圖片控制選項 */}
-          <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">圖片控制選項</h2>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center">
-                <input
-                  id="flip"
-                  type="checkbox"
-                  checked={isFlipped}
-                  onChange={handleFlipChange}
-                  className="w-4 h-4 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isReleased}
-                />
-                <label htmlFor="flip" className="ml-2 text-xs text-gray-700">
-                  水平翻轉
-                </label>
-              </div>
-              <div className="flex items-center">
-                <input
-                  id="release"
-                  type="checkbox"
-                  checked={isReleased}
-                  onChange={handleReleaseChange}
-                  className="w-4 h-4 rounded text-blue-500 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isReleased}
-                />
-                <label htmlFor="release" className="ml-2 text-xs text-gray-700">
-                  釋放圖片物件
-                </label>
-              </div>
-              {isReleased && (
-                <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
-                  <p className="text-xs text-red-500">
-                    你已經釋放圖片物件，無法再對該圖片物件進行操控，請重新上傳
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          {/* 操作按钮 */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onBackToUpload}
-              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
-            >
-              返回拍攝頁
-            </button>
-            <button
-              onClick={onResetUpload}
-              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-red-500 text-white hover:bg-red-600"
-            >
-              重新上載
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={handleResetPosition}
-              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
-            >
-              重設位置
-            </button>
-            <button
-              onClick={handleResetScale}
-              className="px-3 py-2 text-xs font-medium rounded-xl transition-all bg-gray-100 text-gray-800 hover:bg-gray-200"
-            >
-              重設縮放
-            </button>
+                雙點作品開啟工具
+              </button>
+            )}
           </div>
         </div>
-      </div>
-    </div>
+
+        {isControlPanelOpen && (
+          <aside className="edit-control-drawer">
+            <div className="drawer-heading">
+              <div>
+                <p className="eyebrow">Tools</p>
+                <h2>作品工具</h2>
+              </div>
+              <button
+                type="button"
+                className="mini-action-button"
+                onClick={() => setIsControlPanelOpen(false)}
+              >
+                收起
+              </button>
+            </div>
+
+            <div className="tool-tabs">
+              {tools.map((tool) => (
+                <button
+                  key={tool.id}
+                  type="button"
+                  onClick={() => setActiveTool(tool.id)}
+                  className={`tool-tab ${activeTool === tool.id ? 'active' : ''}`}
+                >
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTool === 'scale' && (
+              <section className="rail-section">
+                <p className="eyebrow">Scale</p>
+                <div className="control-row">
+                  <strong>{scale.toFixed(1)}x</strong>
+                  <button onClick={handleResetScale} className="mini-action-button">
+                    重設
+                  </button>
+                </div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="3.0"
+                  step="0.1"
+                  value={scale}
+                  onChange={handleScaleChange}
+                  className="ipad-slider"
+                />
+              </section>
+            )}
+
+            {activeTool === 'animation' && (
+              <section className="rail-section">
+                <p className="eyebrow">Animation</p>
+                <div className="animation-grid">
+                  {Array.from({ length: 10 }, (_, i) => i).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`animation-tile ${animationId === id ? 'active' : ''}`}
+                      onClick={() => handleAnimationSelect(id)}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {activeTool === 'scene' && (
+              <section className="rail-section">
+                <p className="eyebrow">Scene</p>
+                <div className="scene-stack">
+                  {[
+                    { value: 'fish', label: '海底珊瑚' },
+                    { value: 'people', label: '動物小鎮' },
+                    { value: 'other', label: '空白網格' }
+                  ].map((scene) => (
+                    <button
+                      key={scene.value}
+                      type="button"
+                      className={`scene-button ${currentBg === scene.value ? 'active' : ''}`}
+                      onClick={() => {
+                        const bgMap: Record<string, string> = { fish: 'Fish', people: 'People', other: 'Other' }
+                        setCurrentBg(scene.value)
+                        sendHttpMessage(`Bg:${bgMap[scene.value] || 'Other'}`)
+                      }}
+                    >
+                      {scene.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {activeTool === 'object' && (
+              <section className="rail-section">
+                <p className="eyebrow">Object</p>
+                <div className="toggle-stack">
+                  <label className="toggle-control wide">
+                    <input
+                      id="flip"
+                      type="checkbox"
+                      checked={isFlipped}
+                      onChange={handleFlipChange}
+                    />
+                    <span>水平翻轉</span>
+                  </label>
+                  <label className="toggle-control wide">
+                    <input
+                      id="release"
+                      type="checkbox"
+                      checked={isReleased}
+                      onChange={handleReleaseChange}
+                    />
+                    <span>釋放物件</span>
+                  </label>
+                </div>
+              </section>
+            )}
+          </aside>
+        )}
+
+        <div className="edit-bottom-dock">
+          <button type="button" onClick={() => openControlPanel('scale')} className="ipad-button primary-button">
+            工具
+          </button>
+          <button onClick={handleResetPosition} className="ipad-button secondary-button">
+            重設位置
+          </button>
+          <button onClick={onBackToUpload} className="ipad-button secondary-button">
+            返回上傳
+          </button>
+          <button onClick={onResetUpload} className="ipad-button danger-button">
+            重新上載
+          </button>
+        </div>
+      </section>
+    </main>
   )
 }
 
