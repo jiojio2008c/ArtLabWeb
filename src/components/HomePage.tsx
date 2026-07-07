@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { loadArtworkForIp, loadThumbnailsForIp, type StoredArtwork } from '../services/artworkStorage.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
+import { CONTROL_PORT } from '../services/networkConfig.ts'
 
 interface HomePageProps {
   onSelectObject: (index: number, existingImage?: StoredArtwork) => void
   wsIp: string
   onWsIpChange: (ip: string) => void
+  onBackToEntry: () => void
 }
 
-const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange }) => {
+const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange, onBackToEntry }) => {
   const [thumbnails, setThumbnails] = useState<Record<number, string>>(() => {
     if (wsIp.trim()) return loadThumbnailsForIp(wsIp.trim())
     return {}
@@ -28,13 +30,16 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   const handleLoadConfig = () => {
     const ip = wsIp.trim()
     if (!ip) return
+
     saveLastWsIp(ip)
     setThumbnails(loadThumbnailsForIp(ip))
   }
 
   const sendHttpMessage = async (message: string) => {
-    if (!wsIp) return
-    const url = `http://${wsIp}:8080`
+    const ip = wsIp.trim()
+    if (!ip) return
+
+    const url = `http://${ip}:${CONTROL_PORT}`
     try {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', url, true)
@@ -50,19 +55,23 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
     if (ip) {
       saveLastWsIp(ip)
     }
+
     sendHttpMessage(`GameObject:${index}`)
     setSelectedSlot(index)
+
     const selectionToken = selectionTokenRef.current + 1
     selectionTokenRef.current = selectionToken
     if (slotTimerRef.current !== null) {
       window.clearTimeout(slotTimerRef.current)
     }
+
     slotTimerRef.current = window.setTimeout(() => {
       void (async () => {
         const storedArtwork = await loadArtworkForIp(ip, index)
         const fallbackArtwork = thumbnails[index]
           ? { name: `slot-${index}.png`, url: thumbnails[index] }
           : undefined
+
         if (selectionToken !== selectionTokenRef.current) return
         onSelectObject(index, storedArtwork ?? fallbackArtwork)
       })()
@@ -72,9 +81,14 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   return (
     <main className="ipad-screen home-screen apple-container">
       <header className="ipad-topbar">
-        <div className="min-w-0">
-          <p className="eyebrow">Art Lab</p>
-          <h1 className="screen-title">作品上載</h1>
+        <div className="topbar-title-row">
+          <button type="button" onClick={onBackToEntry} className="ipad-button ghost-button">
+            返回入口
+          </button>
+          <div className="min-w-0">
+            <p className="eyebrow">Art Lab</p>
+            <h1 className="screen-title">作品控制上传</h1>
+          </div>
         </div>
 
         <div className="topbar-controls">
@@ -83,14 +97,14 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
             <input
               type="text"
               value={wsIp}
-              onChange={(e) => onWsIpChange(e.target.value)}
-              placeholder="伺服器 IP"
+              onChange={(event) => onWsIpChange(event.target.value)}
+              placeholder="Unity IP"
               className="ipad-input ip-input"
             />
-            <button onClick={handleLoadConfig} className="ipad-button compact-button">
-              載入
+            <button type="button" onClick={handleLoadConfig} className="ipad-button compact-button">
+              载入
             </button>
-            <span className="port-chip">:8080</span>
+            <span className="port-chip">:{CONTROL_PORT}</span>
           </div>
           <span className="status-pill">HTTP 直送</span>
         </div>
@@ -102,8 +116,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
           <div className="showcase-shade" />
           <div className="showcase-content">
             <p className="eyebrow light">Artwork to Life</p>
-            <h2>選擇一個作品位置</h2>
-            <p>已有作品的位置會直接進入控制頁，空位置會進入上傳流程。</p>
+            <h2>选择一个作品槽位</h2>
+            <p>进入已有作品可直接打开控制页；空槽位会进入上传流程。</p>
           </div>
         </div>
 
@@ -111,25 +125,26 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Object Slots</p>
-              <h2>作品位置</h2>
+              <h2>作品槽位</h2>
             </div>
-            <span className="status-pill">{Object.keys(thumbnails).length}/20 已有縮圖</span>
+            <span className="status-pill">{Object.keys(thumbnails).length}/20 已缓存</span>
           </div>
 
           <div className="slot-grid">
-            {Array.from({ length: 20 }, (_, i) => i).map((idx) => (
+            {Array.from({ length: 20 }, (_, index) => index).map((index) => (
               <button
-                key={idx}
-                onClick={() => handleObjectClick(idx)}
-                className={`slot-tile ${thumbnails[idx] ? 'has-thumbnail' : ''} ${selectedSlot === idx ? 'is-selected' : ''}`}
-                aria-label={`選擇作品位置 ${idx}`}
+                key={index}
+                type="button"
+                onClick={() => handleObjectClick(index)}
+                className={`slot-tile ${thumbnails[index] ? 'has-thumbnail' : ''} ${selectedSlot === index ? 'is-selected' : ''}`}
+                aria-label={`选择作品槽位 ${index}`}
               >
-                {thumbnails[idx] ? (
-                  <img src={thumbnails[idx]} alt={`作品位置 ${idx}`} />
+                {thumbnails[index] ? (
+                  <img src={thumbnails[index]} alt={`作品槽位 ${index}`} />
                 ) : (
-                  <span className="slot-empty">{String(idx).padStart(2, '0')}</span>
+                  <span className="slot-empty">{String(index).padStart(2, '0')}</span>
                 )}
-                <span className="slot-number">{idx}</span>
+                <span className="slot-number">{index}</span>
               </button>
             ))}
           </div>
