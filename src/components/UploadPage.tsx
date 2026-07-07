@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { saveArtworkToIp, saveThumbnailToIp } from './HomePage.tsx'
+import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 
 interface UploadPageProps {
   onUploadSuccess: (data: { name: string; url: string }) => void

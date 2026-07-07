@@ -2,6 +2,8 @@
 
 整理日期: 2026-07-02
 
+最近补充: 2026-07-03，新增 Xcode 打包错误排查记录、DerivedData 缓存修复说明、iPad 横屏全屏 `Info.plist` 修改说明，以及 Windows 同步 iOS 工程注意事项。
+
 功能基线标记: 当前版本已由项目方确认所有功能均已跑通，可作为后续大批量修改前的稳定功能基线。后续重构、拆分、协议调整或 UI 改造，应优先保证本文档记录的现有链路和 Unity 联动行为不被破坏。
 
 复刻目标标记: 项目根目录的 `Target.gif` 是后续需要复刻的目标参考。它不是普通素材，而是一段完整演示动效/流程参考，后续 UI、交互节奏、视觉呈现和 Unity 联动体验改造都应以它为主要目标参照。
@@ -16,7 +18,9 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 
 图片缓存修复记录: 首页缓存已从“只存 80x80 缩略图”扩展为同时保存 `thumbnails` 和完整控制图 `images`。首页缩略图仍用于格子展示，点击已有记录进入控制页时读取完整图片 URL，避免控制页使用缩略图导致图片尺寸变小。旧版本已经写入的历史记录可能只有缩略图，没有完整控制图，需要重新上传一次后才会生成新的完整记录。
 
-完整图持久化修复记录: 关闭 Supabase 的 HTTP 直送模式不再把 `blob:` 临时 URL 当作完整图长期保存。上传页会把完整图片 Blob 写入 IndexedDB `artlab_artwork_cache/artworks`，localStorage 的 `images` 只保存名称、当前会话 URL 和 `storageKey` 元数据。首页重新进入控制页时会从 IndexedDB 取出 Blob 并重新生成新的 object URL，避免 App 重启后控制页图片显示问号破图。旧版本已经保存的失效 `blob:` 记录无法恢复原图，现会自动退回缩略图；重新上传后会生成新的持久完整图。
+完整图持久化修复记录: 关闭 Supabase 的 HTTP 直送模式不再把 `blob:` 临时 URL 当作完整图长期保存。当前已新增 `src/services/artworkStorage.ts`。iOS/Capacitor 真机优先用 `@capacitor/filesystem` 把完整图片 Blob 写入 App 沙盒 `Directory.Data` 下的 `artworks/{ip}/{slot}.png`；浏览器预览 fallback 到 IndexedDB `artlab_artwork_cache/artworks`。localStorage 的 `images` 只保存名称、当前会话 URL、`filePath` 或 `storageKey` 等元数据。首页重新进入控制页时会从沙盒文件或 IndexedDB 恢复完整图，避免 App 重启后控制页图片显示问号破图。旧版本已经保存的失效 `blob:` 记录无法恢复原图，现会自动退回缩略图；重新上传后会生成新的持久完整图。
+
+上次 IP 持久化记录: 当前已新增 `src/services/appSettings.ts`，App 初始化时优先读取 localStorage 的 `artlab_last_ws_ip`，没有记录时才使用默认 `192.168.8.101`。首页点击“载入配置”或选择物体槽位时会保存当前 IP，重复打开软件会自动恢复上一次实际加载/使用过的 IP。
 
 旧记录直进修复记录: 首页点击已有缩略图但缺少完整 `images` 记录的旧槽位时，现已使用缩略图作为兜底进入控制页，不再跳回上传页；同时控制页图片加入基础显示宽度，避免兜底缩略图按 80px 天然尺寸显示得过小。旧记录画质无法恢复为原图，重新上传后会生成高清完整记录。
 
@@ -26,7 +30,17 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 
 动画预览修复记录: 已把根目录 `0.gif` 到 `9.gif` 移动到 `public/animations/0.gif` 到 `public/animations/9.gif`。控制页动画工具中点击 0 到 9 按钮时，仍按原协议发送 `{imageName}:{animationId}` 给 Unity，同时在按钮下方预览对应 GIF 示例。预览图只用于客户查看动画效果，不参与 Unity 协议。
 
-本文以当前工作区源码为准，重点覆盖 `src/App.tsx`、`src/main.tsx`、`src/components/HomePage.tsx`、`src/components/UploadPage.tsx`、`src/components/EditPage.tsx` 以及相关配置。当前项目的 README 存在历史描述和现实代码不一致的地方，后文会单独列出。
+依赖清理记录: 当前前端和 iOS App 主流程只使用 HTTP POST 与 Unity 通信，未使用 `capacitor-tcp-client` 和 `capacitor-udp`。这两个历史 Capacitor 插件已从 `package.json` 移除，以消除 `npx cap sync ios` 的 Package.swift 警告。`udp-forwarder.js` 和 `ws` 仍作为历史/辅助 Node 脚本保留，当前 App 不调用。
+
+Xcode SPM 路径修复记录: Windows 上执行 `npx cap sync ios` 时，Capacitor 可能把 `ios/App/CapApp-SPM/Package.swift` 里的本地插件路径写成 `..\..\..\node_modules\...`。Xcode/Swift Package 会把反斜杠当转义字符，导致 `Invalid escape sequence in literal` 和 `Missing argument for parameter 'path' in call`。当前已把路径修为 `../../../node_modules/@capacitor/filesystem`，并新增 `scripts/fix-ios-spm-paths.cjs`、`npm run fix:ios-spm`、`npm run sync:ios`；后续在 Windows 同步 iOS 建议使用 `npm run sync:ios`，或在 `npx cap sync ios` 后补跑 `npm run fix:ios-spm`。
+
+Xcode DerivedData 缓存修复记录: 2026-07-03 在 macOS / Xcode 16.4 上复现 Xcode 打包时报出的十几个错误，错误集中为 `There is no XCFramework found at ... Capacitor.xcframework` 和 `There is no XCFramework found at ... Cordova.xcframework`。根因不是源码或 `Package.swift` 语法问题，而是 Xcode 默认 `DerivedData` 中 SwiftPM binary artifact 目录异常，只创建了空目录，没有正确展开 Capacitor 8.3.0 的两个 `.xcframework`。已删除本项目对应的 `~/Library/Developer/Xcode/DerivedData/App-*` 后重新构建，Xcode 能重新从 SwiftPM artifact cache 展开 `Capacitor.xcframework`、`Cordova.xcframework`，命令行 Release 构建通过。
+
+iPad 横屏全屏打包修复记录: 2026-07-03 已在 `ios/App/App/Info.plist` 增加 `UIRequiresFullScreen = true`。原因是 App 当前只声明横屏方向，Xcode 校验会提示 `All interface orientations must be supported unless the app requires full screen.`。iPad 锁横屏项目应声明全屏，否则后续打包/校验可能继续出现方向支持警告。Windows 同步 iOS 工程时必须保留该键值。
+
+控制页提示按钮隐藏记录: 控制页舞台底部原本显示的“雙點作品開啟工具”按钮已移除可见渲染；双点/双击舞台打开工具的手势逻辑仍保留，底部 `工具` 按钮也仍保留。
+
+本文以当前工作区源码为准，重点覆盖 `src/App.tsx`、`src/main.tsx`、`src/components/HomePage.tsx`、`src/components/UploadPage.tsx`、`src/components/EditPage.tsx` 以及相关配置。当前项目的 README 已同步 HTTP 主流程和插件清理信息，但仍有少量历史描述和现实代码不一致的地方，后文会单独列出。
 
 ## 1. 项目定位
 
@@ -55,6 +69,7 @@ iPad 目标标记: 后续界面以较新的 iPad 横屏为主，按横屏体验�
 - Vite 5
 - Tailwind CSS 3
 - Axios: 仅用于 Supabase `multipart/form-data` 上传
+- `@capacitor/filesystem`: iOS/Capacitor 真机完整图沙盒持久化
 - Pointer Events: 编辑页一指拖动、双指缩放和旋转
 - Capacitor 8: iOS/iPad 壳工程
 - Web API: `FileReader`、`Canvas`、`XMLHttpRequest`、`navigator.mediaDevices`、`MediaRecorder`
@@ -66,7 +81,8 @@ npm install
 npm run dev
 npx tsc --noEmit
 npm run build
-npx cap sync ios
+npm run sync:ios
+npm run fix:ios-spm
 npx cap open ios
 ```
 
@@ -78,9 +94,110 @@ npx tsc --noEmit
 
 结果: 通过，无 TypeScript 报错。没有执行 `npm run build`，因为它会改写 `dist` 构建产物，而当前工作区的 `dist` 已经存在未提交变更。
 
+### 2026-07-03 Xcode 打包排查补充
+
+本次用户反馈: 通过 Xcode 打包时报了十几个错误。实际复现后发现这些错误不是十几个独立问题，而是同一个 SwiftPM binary artifact 根因被多个 target 重复报告。
+
+复现环境:
+
+- macOS 本机路径: `/Users/roy/Desktop/ArtLabWeb`
+- Xcode: `Xcode 16.4`，Build version `16F6`
+- iOS 目标: `generic/platform=iOS`
+- Capacitor SwiftPM: `capacitor-swift-pm` 8.3.0
+- Capacitor Filesystem: 本地路径 `node_modules/@capacitor/filesystem`
+
+执行过的检查:
+
+```bash
+xcodebuild -list -project ios/App/App.xcodeproj
+npx tsc --noEmit
+xcodebuild -project ios/App/App.xcodeproj \
+  -scheme App \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+`xcodebuild -list` 可以正常解析 Swift Package，`npx tsc --noEmit` 通过。首次 Release build 失败，核心错误为:
+
+```text
+There is no XCFramework found at
+~/Library/Developer/Xcode/DerivedData/App-.../SourcePackages/artifacts/capacitor-swift-pm/Capacitor/Capacitor.xcframework
+
+There is no XCFramework found at
+~/Library/Developer/Xcode/DerivedData/App-.../SourcePackages/artifacts/capacitor-swift-pm/Cordova/Cordova.xcframework
+```
+
+排查结论:
+
+- `ios/App/CapApp-SPM/Package.swift` 当前路径是正确的: `../../../node_modules/@capacitor/filesystem`。
+- SwiftPM 能解析到 `CapApp-SPM`、`CapacitorFilesystem`、`capacitor-swift-pm`、`IONFilesystemLib`。
+- `~/Library/Caches/org.swift.swiftpm/artifacts/` 下 Capacitor 8.3.0 的 zip 缓存存在，并且 `unzip -l` 可以列出完整内容。
+- 失败点在默认 DerivedData: `SourcePackages/artifacts/capacitor-swift-pm/Capacitor` 和 `Cordova` 目录为空，Xcode 没有把 zip artifact 展开成 `.xcframework`。
+- 使用全新的 `-derivedDataPath /tmp/artlab-xcode-dd` 构建可以通过，进一步确认是旧 DerivedData 状态损坏。
+
+已执行的本机修复:
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData/App-*
+
+xcodebuild -project ios/App/App.xcodeproj \
+  -scheme App \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+结果: 默认 DerivedData 路径下重新构建成功，最后输出 `** BUILD SUCCEEDED **`。该命令关闭了签名检查，因此证明的是源码、SwiftPM 依赖、资源和链接阶段可以通过；Xcode Archive 时若后续仍失败，应优先检查 Apple Developer Team、Bundle ID、证书和 provisioning profile。
+
+本次实际写入项目源码的改动只有一个:
+
+```xml
+<key>UIRequiresFullScreen</key>
+<true/>
+```
+
+位置: `ios/App/App/Info.plist`，放在 `LSRequiresIPhoneOS` 后面。作用是配合当前只支持 `UIInterfaceOrientationLandscapeLeft` 和 `UIInterfaceOrientationLandscapeRight` 的 iPad 横屏策略，消除 Xcode 校验警告:
+
+```text
+All interface orientations must be supported unless the app requires full screen.
+```
+
+Windows 环境同步注意事项:
+
+1. Windows 侧拉取或同步代码后，确认 `ios/App/App/Info.plist` 中保留 `UIRequiresFullScreen`。
+2. Windows 侧执行 iOS 同步建议继续使用:
+
+```bash
+npm install
+npm run sync:ios
+```
+
+3. 如果手动执行了 `npx cap sync ios`，后面必须补跑:
+
+```bash
+npm run fix:ios-spm
+```
+
+4. 同步后检查 `ios/App/CapApp-SPM/Package.swift`，本地插件路径必须保持正斜杠:
+
+```swift
+.package(name: "CapacitorFilesystem", path: "../../../node_modules/@capacitor/filesystem")
+```
+
+不要让它变回 Windows 反斜杠路径，例如 `..\..\..\node_modules\...`。
+
+5. Windows 不能执行 Xcode build。把项目回到 Mac/Xcode 打包时，如果再次出现 `There is no XCFramework found at ... Capacitor.xcframework` 或 `Cordova.xcframework`，优先清理 Mac 上该项目的 DerivedData，而不是改源码:
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData/App-*
+```
+
+然后重新打开 Xcode，执行 `Product > Clean Build Folder`，再 Archive。
+
 ## 3. 当前工作区状态
 
-交接时 `git status --short` 显示已有未提交变更:
+2026-07-02 交接时 `git status --short` 显示已有未提交变更:
 
 ```text
 D dist/assets/index-BwPDWXnr.css
@@ -94,7 +211,9 @@ M src/components/UploadPage.tsx
 ?? dist/assets/index-Bs3QXuDc.css
 ```
 
-这些改动在整理文档前已经存在。本次只新增了本文档，没有回退或覆盖现有源码。
+这些改动在 2026-07-02 整理文档前已经存在，当时只新增了本文档，没有回退或覆盖现有源码。
+
+2026-07-03 Xcode 打包排查补充时，额外修改了 `ios/App/App/Info.plist`，新增 `UIRequiresFullScreen = true`，并补充了本文档中的 Xcode/Windows 同步说明。删除 `~/Library/Developer/Xcode/DerivedData/App-*` 是 macOS 本机缓存清理操作，不属于项目源码变更。
 
 ## 4. 目录结构说明
 
@@ -109,6 +228,9 @@ src/
     HomePage.tsx
     UploadPage.tsx
     EditPage.tsx
+  services/
+    appSettings.ts
+    artworkStorage.ts
 
 public/
   fish.png
@@ -167,7 +289,7 @@ node_modules/
 
 - `currentPage`: `'home' | 'upload' | 'edit'`，初始为 `home`。
 - `imageData`: 当前已上传或本地生成的图片数据，结构为 `{ name, url }`。
-- `wsIp`: 实际是 HTTP 服务器 IP，默认 `192.168.8.101`。
+- `wsIp`: 实际是 HTTP 服务器 IP，初始化时读取 `artlab_last_ws_ip`，没有记录时默认 `192.168.8.101`。
 - `selectedName`: 当前固定为 `'fish'`，没有 UI 修改入口。
 - `enableSupabaseUpload`: 是否启用 Supabase 上传，当前临时固定为 `false`，界面按 HTTP 直送路径运行。
 - `selectedObjectIndex`: 首页选择的物体编号，默认 `0`。
@@ -221,11 +343,11 @@ interface StoredArtwork {
 - `saveAllGroups(groups)`: 写回 `localStorage`。
 - `findGroupByIp(ip)`: 查找指定 IP 的分组。
 - `saveThumbnailToIp(ip, index, dataUrl)`: 为某个 IP 和物体编号保存缩略图。如果 IP 分组超过 3 个，会 `shift()` 删除最老分组。
-- `saveArtworkToIp(ip, index, artwork, blob?)`: 为某个 IP 和物体编号保存完整控制图记录；传入 Blob 时会先写入 IndexedDB，再把 `storageKey` 写入 localStorage 元数据。
+- `saveArtworkToIp(ip, index, artwork, blob?)`: 为某个 IP 和物体编号保存完整控制图记录；传入 Blob 时 iOS/Capacitor 优先写入 Filesystem 沙盒并保存 `filePath`，浏览器预览 fallback 到 IndexedDB 并保存 `storageKey`。
 - `loadThumbnailsForIp(ip)`: 加载指定 IP 的缩略图字典。
-- `loadArtworkForIp(ip, index)`: 异步加载指定 IP 和物体编号的完整控制图记录；优先从 IndexedDB 取 Blob 并重新创建 object URL，旧的失效 `blob:` 记录会返回空，让首页退回缩略图。
+- `loadArtworkForIp(ip, index)`: 异步加载指定 IP 和物体编号的完整控制图记录；优先从 Filesystem 沙盒读取文件，浏览器预览从 IndexedDB 取 Blob 并重新创建 object URL，旧的失效 `blob:` 记录会返回空，让首页退回缩略图。
 
-上传页会从这里导入 `saveThumbnailToIp` 和 `saveArtworkToIp`，因此首页同时承担了缩略图和完整控制图的本地存储模块角色。
+上传页会从 `src/services/artworkStorage.ts` 导入 `saveThumbnailToIp` 和 `saveArtworkToIp`，首页会从同一 service 导入 `loadThumbnailsForIp` 和 `loadArtworkForIp`。页面不再直接承载 Filesystem/IndexedDB 细节。
 
 ### 首页 HTTP 命令
 
@@ -415,7 +537,7 @@ FormData 字段:
 
 - 仍会发送 HTTP。
 - 设置成功文案: `已發送HTTP請求，未上傳至Supabase`
-- 通过 `URL.createObjectURL(blob)` 生成当前会话本地 URL 进入编辑页，同时把完整图片 Blob 写入 IndexedDB，供 App 重启后从首页再次进入控制页时恢复高清完整图。
+- 通过 `URL.createObjectURL(blob)` 生成当前会话本地 URL 进入编辑页，同时把完整图片 Blob 交给 `artworkStorage`：iOS/Capacitor 写入 Filesystem 沙盒，浏览器预览写入 IndexedDB，供 App 重启后从首页再次进入控制页时恢复完整图。
 
 ### 音频录制
 
@@ -607,7 +729,7 @@ const calculateGridIndex = (x: number, y: number) => {
 - `ios.contentInset`: `always`
 - `ios.backgroundColor`: `#ffffff`
 
-插件权限描述中配置了 Camera 和 Filesystem，但 `package.json` 当前没有安装 `@capacitor/camera` 或 `@capacitor/filesystem`。当前源码主要使用 Web API，不是 Capacitor Camera API。
+插件权限描述中配置了 Camera 和 Filesystem。当前 `package.json` 已安装 `@capacitor/filesystem`，用于 iOS/Capacitor 真机保存完整作品图到 App 沙盒；`@capacitor/camera` 仍未安装，当前相机逻辑主要使用 Web API，不是 Capacitor Camera API。
 
 ### `ios/App/App/Info.plist`
 
@@ -675,15 +797,13 @@ const calculateGridIndex = (x: number, y: number) => {
 
 ## 12. README 和实际代码差异
 
-当前 README 中有明显历史遗留:
+当前 README 已部分同步，但仍有历史遗留:
 
-- README 同时提到 UDP、WebSocket、HTTP，但当前前端源码实际使用 HTTP POST 到 `:8080`。
-- README 写“Capacitor 6”，当前依赖是 Capacitor 8.3。
-- README 写“仅使用 WebSocket，无任何 UDP 相关程式碼”，但仓库有 `udp-forwarder.js`，依赖中也有 `capacitor-udp`、`capacitor-tcp-client`、`ws`。
-- README 写“仅保留 Supabase 上载方式”，但当前代码支持关闭 Supabase，并始终存在 HTTP 直发 Unity 的路径。
+- README 当前已改为 HTTP POST 主流程和 Capacitor 8，但仓库仍有历史 `udp-forwarder.js` 和 `ws` 辅助依赖，当前 App 不调用。
+- README 仍是偏概览文档，未覆盖 Filesystem 完整图缓存、上次 IP 持久化、动画 GIF 预览、控制页手势等近期修改细节。
 - README 要求“港式繁体”，当前 `UploadPage.tsx` 和 `Info.plist` 中存在大量简体文案。
 
-建议后续把 README 作为待更新文件，不要按它直接理解当前行为。
+建议后续仍以本交接文档和源码为准，README 只作为简要概览继续补齐。
 
 ## 13. 已知风险和后续改造重点
 
@@ -718,7 +838,7 @@ const calculateGridIndex = (x: number, y: number) => {
 
 - Supabase URL 和 questionId 硬编码。
 - Supabase 失败时启用状态下不会继续 HTTP 直发。
-- “关闭 Supabase”时进入编辑页仍使用当前会话 object URL，但完整图片 Blob 已额外写入 IndexedDB；需要真机确认 iPad 长期使用时 IndexedDB 容量和清理策略是否足够。
+- “关闭 Supabase”时进入编辑页仍使用当前会话 object URL，但完整图片 Blob 已额外写入 Filesystem 沙盒；浏览器预览 fallback 到 IndexedDB。需要真机确认 iPad 长期使用时沙盒文件数量和清理策略是否足够。
 - `handleUpload()` 直接上传路径基本不可达。
 
 建议:
@@ -782,14 +902,14 @@ const calculateGridIndex = (x: number, y: number) => {
 
 ### 依赖和历史文件
 
-- `capacitor-udp`、`capacitor-tcp-client` 在当前前端未使用。
+- `capacitor-udp`、`capacitor-tcp-client` 已移除，当前前端和 iOS App 主流程未使用 TCP/UDP Capacitor 插件。
 - `ws` 只被 `udp-forwarder.js` 使用，但没有 npm script。
 - `udp-forwarder.js` 不是当前主流程。
 
 建议:
 
 - 后续确认 Unity 端到底使用 HTTP 还是 UDP。
-- 如果确定 HTTP，清理 UDP 相关依赖和 README 历史描述。
+- 如果确定 HTTP，后续可继续清理 `udp-forwarder.js` 和 `ws`。
 - 如果要恢复 UDP，先明确 iPad/Capacitor 网络权限和插件可用性，再做协议层重构。
 
 ## 14. 后续大改建议顺序
@@ -804,17 +924,18 @@ const calculateGridIndex = (x: number, y: number) => {
 6. 明确 `selectedName`、`selectedObjectIndex`、背景场景之间的业务关系。
 7. 恢复或删除相机入口。
 8. 统一 UI 文案语言。
-9. 更新 README，使其和当前代码一致。
+9. 继续补齐 README 细节，使其和当前代码完全一致。
 10. 最后清理未使用依赖、历史资源、构建产物提交策略。
 
 ## 15. 快速改动定位表
 
 | 需求 | 主要文件 | 说明 |
 | --- | --- | --- |
-| 改 Unity IP 默认值 | `src/App.tsx` | 修改 `wsIp` 初始值 |
+| 改 Unity IP 默认值/上次 IP | `src/services/appSettings.ts`、`src/App.tsx` | 默认值在 `DEFAULT_WS_IP`，运行时优先读取 `artlab_last_ws_ip` |
 | 改端口 8080 | `HomePage.tsx`、`UploadPage.tsx`、`EditPage.tsx` | 当前端口硬编码在多个文件 |
 | 改物体数量 | `HomePage.tsx` | `Array.from({ length: 20 })` |
-| 改缩略图缓存数量 | `HomePage.tsx` | `MAX_IP_GROUPS` |
+| 改缩略图缓存数量 | `src/services/artworkStorage.ts` | `MAX_IP_GROUPS` |
+| 改完整图存储策略 | `src/services/artworkStorage.ts` | iOS Filesystem 优先，Web IndexedDB fallback |
 | 改 Supabase 地址 | `UploadPage.tsx` | 两处 `gallery-upload` URL |
 | 改 Supabase questionId | `UploadPage.tsx` | 两处固定 UUID |
 | 改上传字段名 | `UploadPage.tsx` | HTTP 图片字段为 `image`，音频字段为 `audio` |

@@ -6,14 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "fix:ios-spm": "node scripts/fix-ios-spm-paths.cjs",
+    "sync:ios": "npm run build && npx cap sync ios && npm run fix:ios-spm",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.0",
+    "@capacitor/filesystem": "^8.1.2",
     "axios": "^1.6.2",
-    "capacitor-tcp-client": "^0.0.2",
-    "capacitor-udp": "^0.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-use-gesture": "^9.1.3",

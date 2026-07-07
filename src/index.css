@@ -946,23 +946,6 @@ code {
   gap: 8px;
 }
 
-.stage-tool-hint {
-  position: absolute;
-  z-index: 24;
-  left: 50%;
-  bottom: 18px;
-  min-height: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 8px;
-  padding: 0 14px;
-  color: #fff;
-  background: rgba(23, 23, 23, 0.48);
-  backdrop-filter: blur(10px);
-  font-size: 14px;
-  font-weight: 850;
-  transform: translateX(-50%);
-}
-
 .edit-stage-panel {
   height: 100%;
   padding-bottom: 84px;

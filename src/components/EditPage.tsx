@@ -486,15 +486,6 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
               onPointerCancel={handlePointerEnd}
               onLostPointerCapture={handlePointerEnd}
             ></div>
-            {!isControlPanelOpen && (
-              <button
-                type="button"
-                className="stage-tool-hint"
-                onClick={() => openControlPanel('scale')}
-              >
-                雙點作品開啟工具
-              </button>
-            )}
           </div>
         </div>
 

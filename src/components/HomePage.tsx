@@ -1,186 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { loadArtworkForIp, loadThumbnailsForIp, type StoredArtwork } from '../services/artworkStorage.ts'
+import { saveLastWsIp } from '../services/appSettings.ts'
 
 interface HomePageProps {
   onSelectObject: (index: number, existingImage?: StoredArtwork) => void
   wsIp: string
   onWsIpChange: (ip: string) => void
-}
-
-const STORAGE_KEY = 'artlab_ip_thumbnails'
-const MAX_IP_GROUPS = 3
-const ARTWORK_DB_NAME = 'artlab_artwork_cache'
-const ARTWORK_DB_VERSION = 1
-const ARTWORK_STORE_NAME = 'artworks'
-
-interface IpThumbnailGroup {
-  ip: string
-  thumbnails: Record<number, string>
-  images?: Record<number, StoredArtwork>
-}
-
-interface StoredArtwork {
-  name: string
-  url: string
-  storageKey?: string
-}
-
-interface ArtworkRecord {
-  key: string
-  name: string
-  blob: Blob
-  updatedAt: number
-}
-
-const makeArtworkStorageKey = (ip: string, index: number) => `${ip.trim()}::${index}`
-
-const openArtworkDb = () => {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(new Error('IndexedDB is not available'))
-      return
-    }
-
-    const request = window.indexedDB.open(ARTWORK_DB_NAME, ARTWORK_DB_VERSION)
-
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(ARTWORK_STORE_NAME)) {
-        db.createObjectStore(ARTWORK_STORE_NAME, { keyPath: 'key' })
-      }
-    }
-
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('Failed to open artwork cache'))
-  })
-}
-
-const putArtworkBlob = async (key: string, name: string, blob: Blob) => {
-  const db = await openArtworkDb()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(ARTWORK_STORE_NAME, 'readwrite')
-      transaction.objectStore(ARTWORK_STORE_NAME).put({
-        key,
-        name,
-        blob,
-        updatedAt: Date.now()
-      } satisfies ArtworkRecord)
-
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save artwork blob'))
-    })
-  } finally {
-    db.close()
-  }
-}
-
-const getArtworkBlob = async (key: string) => {
-  const db = await openArtworkDb()
-  try {
-    return await new Promise<ArtworkRecord | undefined>((resolve, reject) => {
-      const transaction = db.transaction(ARTWORK_STORE_NAME, 'readonly')
-      const request = transaction.objectStore(ARTWORK_STORE_NAME).get(key)
-
-      request.onsuccess = () => resolve(request.result as ArtworkRecord | undefined)
-      request.onerror = () => reject(request.error ?? new Error('Failed to load artwork blob'))
-    })
-  } finally {
-    db.close()
-  }
-}
-
-const loadAllGroups = (): IpThumbnailGroup[] => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-const saveAllGroups = (groups: IpThumbnailGroup[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(groups))
-}
-
-const findGroupByIp = (ip: string): IpThumbnailGroup | undefined => {
-  return loadAllGroups().find(g => g.ip === ip)
-}
-
-const saveThumbnailToIp = (ip: string, index: number, dataUrl: string) => {
-  const groups = loadAllGroups()
-  let group = groups.find(g => g.ip === ip)
-  if (!group) {
-    if (groups.length >= MAX_IP_GROUPS) {
-      groups.shift()
-    }
-    group = { ip, thumbnails: {} }
-    groups.push(group)
-  }
-  group.thumbnails[index] = dataUrl
-  saveAllGroups(groups)
-}
-
-const saveArtworkToIp = async (ip: string, index: number, artwork: StoredArtwork, blob?: Blob) => {
-  const groups = loadAllGroups()
-  let group = groups.find(g => g.ip === ip)
-  if (!group) {
-    if (groups.length >= MAX_IP_GROUPS) {
-      groups.shift()
-    }
-    group = { ip, thumbnails: {}, images: {} }
-    groups.push(group)
-  }
-  if (!group.images) {
-    group.images = {}
-  }
-
-  let storageKey = blob ? makeArtworkStorageKey(ip, index) : artwork.storageKey
-  if (blob && storageKey) {
-    try {
-      await putArtworkBlob(storageKey, artwork.name, blob)
-    } catch (error) {
-      console.error('Failed to persist artwork blob:', error)
-      storageKey = undefined
-    }
-  }
-
-  group.images[index] = {
-    ...artwork,
-    storageKey
-  }
-  saveAllGroups(groups)
-}
-
-const loadThumbnailsForIp = (ip: string): Record<number, string> => {
-  const group = findGroupByIp(ip)
-  return group ? { ...group.thumbnails } : {}
-}
-
-const loadArtworkForIp = async (ip: string, index: number): Promise<StoredArtwork | undefined> => {
-  const group = findGroupByIp(ip)
-  const artwork = group?.images?.[index]
-  if (!artwork) return undefined
-
-  if (artwork.storageKey) {
-    try {
-      const cachedArtwork = await getArtworkBlob(artwork.storageKey)
-      if (cachedArtwork?.blob) {
-        return {
-          name: artwork.name || cachedArtwork.name,
-          url: URL.createObjectURL(cachedArtwork.blob),
-          storageKey: artwork.storageKey
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load cached artwork:', error)
-    }
-  }
-
-  if (artwork.url && !artwork.url.startsWith('blob:')) {
-    return artwork
-  }
-
-  return undefined
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange }) => {
@@ -203,6 +28,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   const handleLoadConfig = () => {
     const ip = wsIp.trim()
     if (!ip) return
+    saveLastWsIp(ip)
     setThumbnails(loadThumbnailsForIp(ip))
   }
 
@@ -220,6 +46,10 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
   }
 
   const handleObjectClick = (index: number) => {
+    const ip = wsIp.trim()
+    if (ip) {
+      saveLastWsIp(ip)
+    }
     sendHttpMessage(`GameObject:${index}`)
     setSelectedSlot(index)
     const selectionToken = selectionTokenRef.current + 1
@@ -229,7 +59,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
     }
     slotTimerRef.current = window.setTimeout(() => {
       void (async () => {
-        const storedArtwork = await loadArtworkForIp(wsIp.trim(), index)
+        const storedArtwork = await loadArtworkForIp(ip, index)
         const fallbackArtwork = thumbnails[index]
           ? { name: `slot-${index}.png`, url: thumbnails[index] }
           : undefined
@@ -310,5 +140,3 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange 
 }
 
 export default HomePage
-
-export { saveThumbnailToIp, saveArtworkToIp, loadThumbnailsForIp, loadArtworkForIp, STORAGE_KEY }

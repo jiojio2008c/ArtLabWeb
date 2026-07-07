@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import HomePage from './components/HomePage.tsx'
 import UploadPage from './components/UploadPage.tsx'
 import EditPage from './components/EditPage.tsx'
+import { loadLastWsIp } from './services/appSettings.ts'
 
 interface ImageData {
   name: string
@@ -22,7 +23,7 @@ function App() {
   const [transitionDirection, setTransitionDirection] = useState<TransitionDirection>('neutral')
   const [showHandoffTransition, setShowHandoffTransition] = useState(false)
   const [imageData, setImageData] = useState<ImageData | null>(null)
-  const [wsIp, setWsIp] = useState<string>('192.168.8.101')
+  const [wsIp, setWsIp] = useState<string>(() => loadLastWsIp())
   const [selectedName] = useState<string>('fish')
   const enableSupabaseUpload = false
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number>(0)
