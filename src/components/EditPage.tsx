@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import { removeArtworkFromIp } from '../services/artworkStorage.ts'
 
 interface EditPageProps {
   imageData: { name: string; url: string }
   wsIp: string
   selectedName: string
+  selectedObjectIndex: number
   onResetUpload: () => void
   onBackToHome: () => void
+  onDeleteArtwork: () => void
 }
 
 type ControlTool = 'scale' | 'rotate' | 'animation' | 'scene' | 'object'
@@ -43,7 +46,15 @@ const normalizeRotation = (value: number) => {
   return nextValue
 }
 
-const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onResetUpload, onBackToHome }) => {
+const EditPage: React.FC<EditPageProps> = ({
+  imageData,
+  wsIp,
+  selectedName,
+  selectedObjectIndex,
+  onResetUpload,
+  onBackToHome,
+  onDeleteArtwork
+}) => {
   const [position, setPosition] = useState({ x: 0.5, y: 0.5 })
   const [scale, setScale] = useState(1)
   const [rotation, setRotation] = useState(0)
@@ -55,6 +66,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
   const [activeTool, setActiveTool] = useState<ControlTool>('scale')
   const [isControlPanelOpen, setIsControlPanelOpen] = useState(false)
   const [animationPreviewError, setAnimationPreviewError] = useState(false)
+  const [isDeletingArtwork, setIsDeletingArtwork] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const lastTapTimeRef = useRef(0)
@@ -79,7 +91,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
   const lastSentRotationValueRef = useRef(rotation.toFixed(1))
   const lastSentRotationAtRef = useRef(0)
 
-  // 发送HTTP POST消息
+  // 發送 HTTP POST 訊息
   const sendHttpMessage = async (message: string) => {
     if (!wsIp) return
     
@@ -208,7 +220,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
     }
   }, [])
 
-  // 缩放处理（滑动条）
+  // 縮放處理（滑動條）
   const handleScaleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newScale = parseFloat(e.target.value)
     applyScale(newScale, true)
@@ -242,27 +254,51 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
   const handleAnimationSelect = (newAnimationId: number) => {
     setAnimationId(newAnimationId)
     setAnimationPreviewError(false)
-    // 发送动画ID
+    // 發送動畫 ID
     sendHttpMessage(`${imageData.name}:${newAnimationId}`)
   }
 
-  // 水平翻转处理
+  // 水平翻轉處理
   const handleFlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFlipped = e.target.checked
     setIsFlipped(newFlipped)
-    // 发送翻转状态
+    // 發送翻轉狀態
     sendHttpMessage(`${imageData.name}_Flip:${newFlipped}`)
   }
 
-  // 释放图片处理
+  // 釋放圖片處理
   const handleReleaseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newReleased = e.target.checked
     setIsReleased(newReleased)
-    // 发送释放状态
+    // 發送釋放狀態
     sendHttpMessage(`${imageData.name}_Release:${newReleased}`)
   }
 
-  // 重设位置
+  const handleDeleteArtwork = async () => {
+    if (isDeletingArtwork) return
+
+    const confirmed = window.confirm(`確定刪除槽位 ${selectedObjectIndex} 的作品嗎？`)
+    if (!confirmed) return
+
+    setIsDeletingArtwork(true)
+    try {
+      sendHttpMessage(`GameObjectDelete:${selectedObjectIndex}`)
+
+      const ip = wsIp.trim()
+      if (ip) {
+        await removeArtworkFromIp(ip, selectedObjectIndex)
+      }
+
+      onDeleteArtwork()
+    } catch (error) {
+      console.error('Failed to delete artwork:', error)
+      window.alert('刪除作品失敗，請稍後再試。')
+    } finally {
+      setIsDeletingArtwork(false)
+    }
+  }
+
+  // 重設位置
   const handleResetPosition = () => {
     const centerPosition = { x: 0.5, y: 0.5 }
     applyPosition(centerPosition, false)
@@ -412,13 +448,13 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
             首頁
           </button>
           <div className="min-w-0">
-            <p className="eyebrow">Art Lab</p>
+            <p className="eyebrow">MagicFloor</p>
             <h1 className="screen-title">作品控制</h1>
           </div>
         </div>
 
         <div className="edit-status-strip">
-          <span className="status-pill">Grid {gridIndex}</span>
+          <span className="status-pill">格位 {gridIndex}</span>
           <span className="status-pill">{scale.toFixed(1)}x</span>
           <span className="status-pill">{rotation.toFixed(0)}°</span>
           <span className="status-pill">{wsIp}:8080</span>
@@ -429,7 +465,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
         <div className="edit-stage-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Stage Preview</p>
+              <p className="eyebrow">舞台預覽</p>
               <h2>拖動作品定位，雙點開啟工具</h2>
             </div>
             <span className={`status-pill ${isReleased ? 'warning' : ''}`}>
@@ -493,7 +529,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
           <aside className="edit-control-drawer">
             <div className="drawer-heading">
               <div>
-                <p className="eyebrow">Tools</p>
+                <p className="eyebrow">工具</p>
                 <h2>作品工具</h2>
               </div>
               <button
@@ -520,7 +556,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
 
             {activeTool === 'scale' && (
               <section className="rail-section">
-                <p className="eyebrow">Scale</p>
+                <p className="eyebrow">縮放</p>
                 <div className="control-row">
                   <button type="button" onClick={() => handleScaleNudge(-0.1)} className="scale-step-button">
                     -
@@ -559,7 +595,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
 
             {activeTool === 'rotate' && (
               <section className="rail-section">
-                <p className="eyebrow">Rotate</p>
+                <p className="eyebrow">旋轉</p>
                 <div className="control-row">
                   <button type="button" onClick={() => handleRotationNudge(-5)} className="scale-step-button">
                     -
@@ -598,7 +634,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
 
             {activeTool === 'animation' && (
               <section className="rail-section">
-                <p className="eyebrow">Animation</p>
+                <p className="eyebrow">動畫</p>
                 <div className="animation-grid">
                   {Array.from({ length: 10 }, (_, i) => i).map((id) => (
                     <button
@@ -621,7 +657,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
                       <img
                         key={animationId}
                         src={`/animations/${animationId}.gif`}
-                        alt={`Animation ${animationId}`}
+                        alt={`動畫 ${animationId}`}
                         className="animation-preview-image"
                         onLoad={() => setAnimationPreviewError(false)}
                         onError={() => setAnimationPreviewError(true)}
@@ -629,7 +665,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
                     )}
                   </div>
                   <div className="animation-preview-meta">
-                    <span>Animation {animationId}</span>
+                    <span>動畫 {animationId}</span>
                     <strong>{animationId}</strong>
                   </div>
                 </div>
@@ -638,7 +674,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
 
             {activeTool === 'scene' && (
               <section className="rail-section">
-                <p className="eyebrow">Scene</p>
+                <p className="eyebrow">場景</p>
                 <div className="scene-stack">
                   {[
                     { value: 'fish', label: '海底珊瑚' },
@@ -664,7 +700,7 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
 
             {activeTool === 'object' && (
               <section className="rail-section">
-                <p className="eyebrow">Object</p>
+                <p className="eyebrow">物件</p>
                 <div className="toggle-stack">
                   <label className="toggle-control wide">
                     <input
@@ -702,6 +738,14 @@ const EditPage: React.FC<EditPageProps> = ({ imageData, wsIp, selectedName, onRe
           </button>
           <button onClick={onResetUpload} className="ipad-button danger-button">
             重新上載
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteArtwork}
+            disabled={isDeletingArtwork}
+            className="ipad-button danger-button"
+          >
+            {isDeletingArtwork ? '刪除中' : '刪除作品'}
           </button>
         </div>
       </section>

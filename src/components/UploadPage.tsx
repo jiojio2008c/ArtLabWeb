@@ -1,19 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import axios from 'axios'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
+import type { UploadMaskOption } from '../services/directUploadThemes.ts'
 
 type UploadMode = 'control' | 'direct'
+type ImageGestureMode = 'none' | 'drag' | 'pinch'
 
-interface MaskOption {
-  id: string
-  label: string
-  src?: string
+interface Point {
+  x: number
+  y: number
 }
 
-const CONTROL_MASK_OPTIONS: MaskOption[] = [
-  { id: '0', label: '无' },
+const MIN_UPLOAD_SCALE = 0.4
+const MAX_UPLOAD_SCALE = 4
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
+
+const CONTROL_MASK_OPTIONS: UploadMaskOption[] = [
+  { id: '0', label: '無' },
   { id: '1', label: '1', src: '/MaskTexture/Mask1.png' },
   { id: '2', label: '2', src: '/MaskTexture/Mask2.png' },
   { id: '3', label: '3', src: '/MaskTexture/Mask3.png' },
@@ -21,10 +28,8 @@ const CONTROL_MASK_OPTIONS: MaskOption[] = [
   { id: '5', label: '5', src: '/MaskTexture/Mask5.png' }
 ]
 
-const DIRECT_MASK_OPTIONS: MaskOption[] = [
-  { id: 'C-01', label: 'C-01', src: '/DirectMaskTexture/C-01.png' },
-  { id: 'A-02', label: 'A-02', src: '/DirectMaskTexture/A-02.png' },
-  { id: 'A-03', label: 'A-03', src: '/DirectMaskTexture/A-03.png' }
+const DIRECT_FALLBACK_MASK_OPTIONS: UploadMaskOption[] = [
+  { id: 'C-01', label: 'C-01', src: '/Mask/C-01.png' }
 ]
 
 interface UploadPageProps {
@@ -38,6 +43,8 @@ interface UploadPageProps {
   selectedObjectIndex: number
   uploadPort?: number
   shouldCacheArtwork?: boolean
+  maskOptions?: UploadMaskOption[]
+  directThemeName?: string
 }
 
 const saveThumbnailForObject = async (ip: string, index: number, imageUrl: string, imageName = `slot-${index}.png`, artworkBlob?: Blob) => {
@@ -68,7 +75,7 @@ const saveThumbnailForObject = async (ip: string, index: number, imageUrl: strin
         try {
           saveThumbnailToIp(ip, index, imageUrl)
         } catch {
-          // Ignore cache failures; uploading to Unity should not be blocked by local preview storage.
+          // Ignore cache failures; sending should not be blocked by local preview storage.
         }
       }
       resolve()
@@ -97,11 +104,13 @@ const UploadPage: React.FC<UploadPageProps> = ({
   enableSupabaseUpload,
   selectedObjectIndex,
   uploadPort = CONTROL_PORT,
-  shouldCacheArtwork = true
+  shouldCacheArtwork = true,
+  maskOptions,
+  directThemeName
 }) => {
   const isDirectMode = mode === 'direct'
-  const activeMaskOptions = isDirectMode ? DIRECT_MASK_OPTIONS : CONTROL_MASK_OPTIONS
-  const defaultMaskId = isDirectMode ? 'C-01' : '0'
+  const activeMaskOptions = isDirectMode ? (maskOptions?.length ? maskOptions : DIRECT_FALLBACK_MASK_OPTIONS) : CONTROL_MASK_OPTIONS
+  const defaultMaskId = activeMaskOptions[0]?.id ?? '0'
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -112,8 +121,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [isDragging, setIsDragging] = useState(false)
   const [showMaskPanel, setShowMaskPanel] = useState(false)
   const [selectedMask, setSelectedMask] = useState(defaultMaskId)
+  const [directMaskAspectRatio, setDirectMaskAspectRatio] = useState<number | null>(null)
+  const [directStageSize, setDirectStageSize] = useState<{ width: number; height: number } | null>(null)
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
-  const [isImageDragging, setIsImageDragging] = useState(false)
+  const [imageScale, setImageScale] = useState(1)
   const [, setImageDimensions] = useState({ width: 0, height: 0 })
   const [isRecording, setIsRecording] = useState(false)
   const [audioRecorded, setAudioRecorded] = useState(false)
@@ -123,23 +134,116 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const stageShellRef = useRef<HTMLDivElement>(null)
   const alignmentContainerRef = useRef<HTMLDivElement>(null)
-  const isDraggingImageRef = useRef(false)
-  const dragStartRef = useRef({ x: 0, y: 0 })
   const positionRef = useRef({ x: 0, y: 0 })
+  const imageScaleRef = useRef(1)
+  const pointersRef = useRef<Map<number, Point>>(new Map())
+  const gestureModeRef = useRef<ImageGestureMode>('none')
+  const dragStartRef = useRef<{ pointerId: number; point: Point; position: Point } | null>(null)
+  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
   const selectedMaskOption = activeMaskOptions.find((option) => option.id === selectedMask) ?? activeMaskOptions[0]
-  const selectedFileName = selectedFile?.name ?? '未选择文件'
+  const selectedFileName = selectedFile?.name ?? '未選擇檔案'
   const uploadModeLabel = isDirectMode ? `HTTP :${uploadPort}` : enableSupabaseUpload ? 'Supabase + HTTP' : 'HTTP 直送'
-  const title = isDirectMode ? '快速拍照上传' : '上传作品'
-  const eyebrow = isDirectMode ? 'Quick Upload' : `Slot ${selectedObjectIndex}`
-  const submitLabel = isDirectMode ? '发送快速上传' : '发送到 Unity'
+  const title = isDirectMode ? (directThemeName ?? '快速拍照上載') : '上載作品'
+  const eyebrow = isDirectMode ? '快速上載' : `槽位 ${selectedObjectIndex}`
+  const submitLabel = isDirectMode ? '發送快速上載' : '發送到藝術畫廊'
+  const directStageStyle = isDirectMode
+    ? ({
+        '--mask-aspect-ratio': directMaskAspectRatio ?? 1.414,
+        ...(directStageSize
+          ? {
+              width: `${directStageSize.width}px`,
+              height: `${directStageSize.height}px`
+            }
+          : {})
+      } as CSSProperties)
+    : undefined
 
   useEffect(() => {
     setSelectedMask(defaultMaskId)
   }, [defaultMaskId])
+
+  useEffect(() => {
+    imageScaleRef.current = imageScale
+  }, [imageScale])
+
+  useEffect(() => {
+    if (!isDirectMode || !selectedMaskOption?.src) {
+      setDirectMaskAspectRatio(null)
+      return
+    }
+
+    let cancelled = false
+    const maskImg = new Image()
+
+    maskImg.onload = () => {
+      if (cancelled || !maskImg.naturalWidth || !maskImg.naturalHeight) return
+      setDirectMaskAspectRatio(maskImg.naturalWidth / maskImg.naturalHeight)
+    }
+
+    maskImg.onerror = () => {
+      if (!cancelled) setDirectMaskAspectRatio(null)
+    }
+
+    maskImg.src = selectedMaskOption.src
+
+    return () => {
+      cancelled = true
+    }
+  }, [isDirectMode, selectedMaskOption?.src])
+
+  useEffect(() => {
+    if (!isDirectMode || !directMaskAspectRatio) {
+      setDirectStageSize(null)
+      return
+    }
+
+    const shell = stageShellRef.current
+    if (!shell) {
+      setDirectStageSize(null)
+      return
+    }
+
+    const updateStageSize = () => {
+      const rect = shell.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+
+      let width = rect.width
+      let height = width / directMaskAspectRatio
+
+      if (height > rect.height) {
+        height = rect.height
+        width = height * directMaskAspectRatio
+      }
+
+      const nextSize = {
+        width: Math.max(1, Math.floor(width)),
+        height: Math.max(1, Math.floor(height))
+      }
+
+      setDirectStageSize((currentSize) => {
+        if (currentSize?.width === nextSize.width && currentSize.height === nextSize.height) {
+          return currentSize
+        }
+        return nextSize
+      })
+    }
+
+    updateStageSize()
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateStageSize) : null
+    resizeObserver?.observe(shell)
+    window.addEventListener('resize', updateStageSize)
+
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updateStageSize)
+    }
+  }, [isDirectMode, directMaskAspectRatio, showMaskPanel, previewUrl])
 
   useEffect(() => {
     return () => {
@@ -150,78 +254,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
     }
   }, [])
 
-  useEffect(() => {
-    if (!isImageDragging) return
-
-    const container = alignmentContainerRef.current
-    if (!container) return
-
-    const clampPosition = (newX: number, newY: number) => {
-      const img = container.querySelector('.mask-source-image') as HTMLImageElement | null
-      if (!img) return { x: newX, y: newY }
-
-      const containerWidth = container.clientWidth
-      const containerHeight = container.clientHeight
-      const displayWidth = img.offsetWidth
-      const displayHeight = img.offsetHeight
-
-      if (displayWidth > containerWidth) {
-        newX = Math.max(-(displayWidth - containerWidth), Math.min(0, newX))
-      }
-      if (displayHeight > containerHeight) {
-        newY = Math.max(-(displayHeight - containerHeight), Math.min(0, newY))
-      }
-
-      return { x: newX, y: newY }
-    }
-
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isDraggingImageRef.current) return
-
-      const clamped = clampPosition(
-        event.clientX - dragStartRef.current.x,
-        event.clientY - dragStartRef.current.y
-      )
-      positionRef.current = clamped
-      setImagePosition(clamped)
-    }
-
-    const handleTouchMove = (event: TouchEvent) => {
-      if (!isDraggingImageRef.current) return
-
-      event.preventDefault()
-      const touch = event.touches[0]
-      const clamped = clampPosition(
-        touch.clientX - dragStartRef.current.x,
-        touch.clientY - dragStartRef.current.y
-      )
-      positionRef.current = clamped
-      setImagePosition(clamped)
-    }
-
-    const handleEnd = () => {
-      isDraggingImageRef.current = false
-      setIsImageDragging(false)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleEnd)
-    document.addEventListener('touchmove', handleTouchMove, { passive: false })
-    document.addEventListener('touchend', handleEnd)
-    document.addEventListener('touchcancel', handleEnd)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleEnd)
-      document.removeEventListener('touchmove', handleTouchMove)
-      document.removeEventListener('touchend', handleEnd)
-      document.removeEventListener('touchcancel', handleEnd)
-    }
-  }, [isImageDragging])
-
   const startAudioRecording = async () => {
     try {
-      setAudioStatus('正在录制音频...')
+      setAudioStatus('正在錄製音訊...')
       setIsRecording(true)
       setAudioRecorded(false)
       setAudioBlob(null)
@@ -241,14 +276,14 @@ const UploadPage: React.FC<UploadPageProps> = ({
         const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
         setAudioBlob(blob)
         setAudioRecorded(true)
-        setAudioStatus('录制完成，可发往 Unity')
+        setAudioStatus('錄製完成，可發往藝術畫廊')
         stream.getTracks().forEach((track) => track.stop())
       }
 
       mediaRecorder.start()
     } catch (error) {
       console.error('Audio recording failed:', error)
-      setAudioStatus('录制失败，请检查麦克风权限')
+      setAudioStatus('錄製失敗，請檢查麥克風權限')
       setIsRecording(false)
     }
   }
@@ -345,11 +380,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const handleFile = (file: File) => {
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
     if (!validTypes.includes(file.type)) {
-      setUploadError('不支持的文件类型，请选择 JPEG / PNG / GIF / WebP')
+      setUploadError('不支援的檔案類型，請選擇 JPEG / PNG / GIF / WebP')
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      setUploadError('文件过大，请选择 10MB 以内的图片')
+      setUploadError('檔案過大，請選擇 10MB 以內的圖片')
       return
     }
 
@@ -378,6 +413,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
         setShowMaskPanel(true)
         positionRef.current = { x: 0, y: 0 }
         setImagePosition({ x: 0, y: 0 })
+        imageScaleRef.current = 1
+        setImageScale(1)
+        pointersRef.current.clear()
       }
       img.onerror = () => {
         setSelectedFile(file)
@@ -386,6 +424,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
         setShowMaskPanel(true)
         positionRef.current = { x: 0, y: 0 }
         setImagePosition({ x: 0, y: 0 })
+        imageScaleRef.current = 1
+        setImageScale(1)
+        pointersRef.current.clear()
       }
       img.src = result
     }
@@ -402,7 +443,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
       }
     } catch (error) {
       console.error('Camera open failed:', error)
-      setUploadError('打开相机失败，请检查相机权限')
+      setUploadError('打開相機失敗，請檢查相機權限')
     }
   }
 
@@ -450,7 +491,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
             handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
             handleCloseCamera()
           } else {
-            setUploadError('拍照处理失败，请重试')
+            setUploadError('拍照處理失敗，請重試')
           }
         }, 'image/jpeg', 0.9)
       }
@@ -461,7 +502,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
           handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
           handleCloseCamera()
         } else {
-          setUploadError('拍照处理失败，请重试')
+          setUploadError('拍照處理失敗，請重試')
         }
       }, 'image/jpeg', 0.9)
     }
@@ -473,25 +514,115 @@ const UploadPage: React.FC<UploadPageProps> = ({
     }, 'image/jpeg', 0.9)
   }
 
-  const handleImageMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault()
-    isDraggingImageRef.current = true
-    dragStartRef.current = {
-      x: event.clientX - positionRef.current.x,
-      y: event.clientY - positionRef.current.y
+  const clampImagePosition = (nextPosition: Point, nextScale = imageScaleRef.current) => {
+    const container = alignmentContainerRef.current
+    const image = container?.querySelector('.mask-source-image') as HTMLImageElement | null
+    if (!container || !image) return nextPosition
+
+    const overflowX = Math.max((image.offsetWidth * nextScale - container.clientWidth) / 2, 0)
+    const overflowY = Math.max((image.offsetHeight * nextScale - container.clientHeight) / 2, 0)
+
+    return {
+      x: overflowX > 0 ? clamp(nextPosition.x, -overflowX, overflowX) : nextPosition.x,
+      y: overflowY > 0 ? clamp(nextPosition.y, -overflowY, overflowY) : nextPosition.y
     }
-    setIsImageDragging(true)
   }
 
-  const handleImageTouchStart = (event: React.TouchEvent) => {
+  const applyImagePosition = (nextPosition: Point, nextScale = imageScaleRef.current) => {
+    const clampedPosition = clampImagePosition(nextPosition, nextScale)
+    positionRef.current = clampedPosition
+    setImagePosition(clampedPosition)
+  }
+
+  const applyImageScale = (nextScale: number) => {
+    const clampedScale = clamp(nextScale, MIN_UPLOAD_SCALE, MAX_UPLOAD_SCALE)
+    imageScaleRef.current = clampedScale
+    setImageScale(clampedScale)
+    applyImagePosition(positionRef.current, clampedScale)
+  }
+
+  const handleImagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!previewUrl) return
+
     event.preventDefault()
-    isDraggingImageRef.current = true
-    const touch = event.touches[0]
-    dragStartRef.current = {
-      x: touch.clientX - positionRef.current.x,
-      y: touch.clientY - positionRef.current.y
+    event.currentTarget.setPointerCapture(event.pointerId)
+
+    const point = { x: event.clientX, y: event.clientY }
+    pointersRef.current.set(event.pointerId, point)
+
+    if (pointersRef.current.size === 1) {
+      gestureModeRef.current = 'drag'
+      dragStartRef.current = {
+        pointerId: event.pointerId,
+        point,
+        position: positionRef.current
+      }
+      pinchStartRef.current = null
+      return
     }
-    setIsImageDragging(true)
+
+    if (pointersRef.current.size === 2) {
+      const [firstPoint, secondPoint] = Array.from(pointersRef.current.values())
+      gestureModeRef.current = 'pinch'
+      pinchStartRef.current = {
+        distance: Math.max(getDistance(firstPoint, secondPoint), 1),
+        scale: imageScaleRef.current
+      }
+      dragStartRef.current = null
+    }
+  }
+
+  const handleImagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(event.pointerId)) return
+
+    event.preventDefault()
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    if (gestureModeRef.current === 'drag' && dragStartRef.current && pointersRef.current.size === 1) {
+      const dx = event.clientX - dragStartRef.current.point.x
+      const dy = event.clientY - dragStartRef.current.point.y
+      applyImagePosition({
+        x: dragStartRef.current.position.x + dx,
+        y: dragStartRef.current.position.y + dy
+      })
+      return
+    }
+
+    if (gestureModeRef.current === 'pinch' && pinchStartRef.current && pointersRef.current.size >= 2) {
+      const [firstPoint, secondPoint] = Array.from(pointersRef.current.values())
+      const nextDistance = Math.max(getDistance(firstPoint, secondPoint), 1)
+      applyImageScale(pinchStartRef.current.scale * (nextDistance / pinchStartRef.current.distance))
+    }
+  }
+
+  const handleImagePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.delete(event.pointerId)
+    }
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture can already be released by the WebView.
+    }
+
+    if (pointersRef.current.size === 0) {
+      gestureModeRef.current = 'none'
+      dragStartRef.current = null
+      pinchStartRef.current = null
+      return
+    }
+
+    if (pointersRef.current.size === 1) {
+      const [remainingPoint] = Array.from(pointersRef.current.values())
+      gestureModeRef.current = 'drag'
+      dragStartRef.current = {
+        pointerId: Array.from(pointersRef.current.keys())[0],
+        point: remainingPoint,
+        position: positionRef.current
+      }
+      pinchStartRef.current = null
+    }
   }
 
   const sendHttpImage = (file: File) => {
@@ -528,13 +659,13 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
     try {
       const container = alignmentContainerRef.current
-      if (!container) throw new Error('找不到遮罩对齐容器')
+      if (!container) throw new Error('找不到遮罩對齊容器')
 
       const containerWidth = container.clientWidth
       const containerHeight = container.clientHeight
       const screenshotCanvas = document.createElement('canvas')
       const ctx = screenshotCanvas.getContext('2d')
-      if (!ctx) throw new Error('无法创建 Canvas')
+      if (!ctx) throw new Error('無法建立 Canvas')
 
       screenshotCanvas.width = containerWidth
       screenshotCanvas.height = containerHeight
@@ -557,7 +688,15 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
       const centerX = (containerWidth - drawWidth) / 2
       const centerY = (containerHeight - drawHeight) / 2
-      ctx.drawImage(img, centerX + imagePosition.x, centerY + imagePosition.y, drawWidth, drawHeight)
+      const scaledDrawWidth = drawWidth * imageScaleRef.current
+      const scaledDrawHeight = drawHeight * imageScaleRef.current
+      ctx.drawImage(
+        img,
+        centerX + positionRef.current.x - (scaledDrawWidth - drawWidth) / 2,
+        centerY + positionRef.current.y - (scaledDrawHeight - drawHeight) / 2,
+        scaledDrawWidth,
+        scaledDrawHeight
+      )
 
       if (selectedMaskOption?.src) {
         const maskImg = new Image()
@@ -568,21 +707,26 @@ const UploadPage: React.FC<UploadPageProps> = ({
           maskImg.src = selectedMaskOption.src ?? ''
         })
 
-        const maskScale = Math.max(containerWidth / maskImg.width, containerHeight / maskImg.height)
-        const maskDrawWidth = maskImg.width * maskScale
-        const maskDrawHeight = maskImg.height * maskScale
-        const maskOffsetX = (containerWidth - maskDrawWidth) / 2
-        const maskOffsetY = (containerHeight - maskDrawHeight) / 2
+        if (isDirectMode) {
+          ctx.globalCompositeOperation = 'source-over'
+          ctx.drawImage(maskImg, 0, 0, containerWidth, containerHeight)
+        } else {
+          const maskScale = Math.max(containerWidth / maskImg.width, containerHeight / maskImg.height)
+          const maskDrawWidth = maskImg.width * maskScale
+          const maskDrawHeight = maskImg.height * maskScale
+          const maskOffsetX = (containerWidth - maskDrawWidth) / 2
+          const maskOffsetY = (containerHeight - maskDrawHeight) / 2
 
-        ctx.globalCompositeOperation = 'destination-out'
-        ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskDrawWidth, maskDrawHeight)
-        ctx.globalCompositeOperation = 'source-over'
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskDrawWidth, maskDrawHeight)
+          ctx.globalCompositeOperation = 'source-over'
+        }
       }
 
       const blob = await new Promise<Blob | null>((resolve) => {
         screenshotCanvas.toBlob((nextBlob) => resolve(nextBlob), 'image/png')
       })
-      if (!blob) throw new Error('截图生成失败')
+      if (!blob) throw new Error('截圖生成失敗')
 
       const processedName = `${selectedFile?.name.replace(/\.[^/.]+$/, '') || 'processed_image'}.png`
       const processedFile = new File([blob], processedName, { type: 'image/png' })
@@ -611,12 +755,12 @@ const UploadPage: React.FC<UploadPageProps> = ({
       sendHttpImage(processedFile)
 
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已发送到 Unity')
+        setUploadSuccess('已發送到藝術畫廊')
         await cacheAndFinish(blob, processedName, URL.createObjectURL(blob))
       }
     } catch (error) {
       console.error('Screenshot upload failed:', error)
-      setUploadError('上传失败，请检查图片、遮罩或网络连接')
+      setUploadError('上載失敗，請檢查圖片、遮罩或網路連線')
     } finally {
       setIsUploading(false)
       setShowMaskPanel(false)
@@ -655,12 +799,12 @@ const UploadPage: React.FC<UploadPageProps> = ({
       sendHttpImage(selectedFile)
 
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已发送到 Unity')
+        setUploadSuccess('已發送到藝術畫廊')
         await cacheAndFinish(selectedFile, selectedFile.name, URL.createObjectURL(selectedFile))
       }
     } catch (error) {
       console.error('Upload failed:', error)
-      setUploadError('上传失败，请检查 Unity IP 或网络连接')
+      setUploadError('上載失敗，請檢查藝術畫廊 IP 或網路連線')
     } finally {
       setIsUploading(false)
     }
@@ -687,7 +831,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
               value={wsIp}
               onChange={(event) => onWsIpChange(event.target.value)}
               className="ipad-input ip-input"
-              placeholder="Unity IP"
+              placeholder="藝術畫廊 IP"
             />
             <span className="port-chip">:{uploadPort}</span>
           </div>
@@ -717,10 +861,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
           </div>
           <div className="camera-actions">
             <button type="button" onClick={handleCloseCamera} className="ipad-button secondary-button">
-              关闭
+              關閉
             </button>
             <button type="button" onClick={handleTakePhoto} className="ipad-button primary-button">
-              拍摄
+              拍攝
             </button>
           </div>
         </section>
@@ -729,39 +873,59 @@ const UploadPage: React.FC<UploadPageProps> = ({
           <div className="mask-canvas-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Mask Alignment</p>
-                <h2>{isDirectMode ? '选择快速上传遮罩' : '调整作品与遮罩'}</h2>
+                <p className="eyebrow">遮罩對齊</p>
+                <h2>{isDirectMode ? '選擇快速上載遮罩' : '調整作品與遮罩'}</h2>
               </div>
               <span className="status-pill">{selectedFileName}</span>
             </div>
 
-            <div ref={alignmentContainerRef} className="mask-stage">
-              <img
-                src={previewUrl}
-                alt="上传预览"
-                className="mask-source-image"
-                style={{
-                  transform: `translate(${imagePosition.x}px, ${imagePosition.y}px)`,
-                  zIndex: 1
-                }}
-                onMouseDown={handleImageMouseDown}
-                onTouchStart={handleImageTouchStart}
-              />
-
-              {selectedMaskOption?.src && (
+            <div
+              ref={stageShellRef}
+              className={`mask-stage-shell ${isDirectMode ? 'direct-mask-stage-shell' : ''}`}
+            >
+              <div
+                ref={alignmentContainerRef}
+                className={`mask-stage ${isDirectMode ? 'direct-mask-stage' : ''}`}
+                style={directStageStyle}
+                onPointerDown={handleImagePointerDown}
+                onPointerMove={handleImagePointerMove}
+                onPointerUp={handleImagePointerEnd}
+                onPointerCancel={handleImagePointerEnd}
+                onLostPointerCapture={handleImagePointerEnd}
+              >
                 <img
-                  src={selectedMaskOption.src}
-                  alt={`遮罩 ${selectedMaskOption.label}`}
-                  className="mask-overlay-image"
-                  style={{ zIndex: 2 }}
+                  src={previewUrl}
+                  alt="上載預覽"
+                  className="mask-source-image"
+                  style={{
+                    transform: `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})`,
+                    zIndex: 1
+                  }}
                 />
-              )}
+
+                {selectedMaskOption?.src && (
+                  <img
+                    src={selectedMaskOption.src}
+                    alt={`遮罩 ${selectedMaskOption.label}`}
+                    className="mask-overlay-image"
+                    style={{ zIndex: 2 }}
+                  />
+                )}
+              </div>
             </div>
           </div>
 
           <aside className="upload-rail">
             <section className="rail-section">
-              <p className="eyebrow">Mask</p>
+              <p className="eyebrow">遮罩</p>
+              <div className="mask-preview-card">
+                {selectedMaskOption?.src ? (
+                  <img src={selectedMaskOption.src} alt={`目前遮罩 ${selectedMaskOption.label}`} />
+                ) : (
+                  <span className="mask-preview-empty">無遮罩</span>
+                )}
+                <strong>{selectedMaskOption?.label ?? '無'}</strong>
+              </div>
               <div className="mask-button-grid">
                 {activeMaskOptions.map((maskOption) => (
                   <button
@@ -770,7 +934,12 @@ const UploadPage: React.FC<UploadPageProps> = ({
                     onClick={() => setSelectedMask(maskOption.id)}
                     className={`mask-option ${selectedMask === maskOption.id ? 'active' : ''}`}
                   >
-                    {maskOption.label}
+                    {maskOption.src ? (
+                      <img src={maskOption.src} alt={`遮罩 ${maskOption.label}`} />
+                    ) : (
+                      <span className="mask-option-empty">無</span>
+                    )}
+                    <span>{maskOption.label}</span>
                   </button>
                 ))}
               </div>
@@ -778,14 +947,14 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
             {!isDirectMode && (
               <section className="rail-section">
-                <p className="eyebrow">Audio</p>
+                <p className="eyebrow">音訊</p>
                 {audioStatus && (
-                  <p className={`rail-status ${audioStatus.includes('失败') ? 'error' : 'success'}`}>
+                  <p className={`rail-status ${audioStatus.includes('失敗') ? 'error' : 'success'}`}>
                     {audioStatus}
                   </p>
                 )}
-                {audioRecorded && !audioStatus.includes('失败') && (
-                  <p className="rail-status success">已录制音频</p>
+                {audioRecorded && !audioStatus.includes('失敗') && (
+                  <p className="rail-status success">已錄製音訊</p>
                 )}
                 <div className="rail-two-buttons">
                   <button
@@ -794,7 +963,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
                     disabled={isRecording}
                     className="ipad-button secondary-button"
                   >
-                    {isRecording ? '录制中' : '录音'}
+                    {isRecording ? '錄製中' : '錄音'}
                   </button>
                   <button
                     type="button"
@@ -814,18 +983,18 @@ const UploadPage: React.FC<UploadPageProps> = ({
               disabled={isUploading}
               className="ipad-button primary-button send-button"
             >
-              {isUploading ? '发送中' : submitLabel}
+              {isUploading ? '發送中' : submitLabel}
             </button>
           </aside>
         </section>
       ) : previewUrl ? (
         <section className="upload-workspace preview-workspace">
           <div className="preview-panel">
-            <img src={previewUrl} alt="预览" className="preview-image" />
+            <img src={previewUrl} alt="預覽" className="preview-image" />
           </div>
           <aside className="upload-rail">
             <section className="rail-section">
-              <p className="eyebrow">Preview</p>
+              <p className="eyebrow">預覽</p>
               <h2>{selectedFileName}</h2>
             </section>
             <button
@@ -834,10 +1003,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
               disabled={isUploading}
               className="ipad-button primary-button send-button"
             >
-              {isUploading ? '发送中' : submitLabel}
+              {isUploading ? '發送中' : submitLabel}
             </button>
             <button type="button" onClick={() => fileInputRef.current?.click()} className="ipad-button secondary-button">
-              重新选择
+              重新選擇
             </button>
           </aside>
         </section>
@@ -852,17 +1021,17 @@ const UploadPage: React.FC<UploadPageProps> = ({
             className={`import-dropzone ${isDragging ? 'is-dragging' : ''}`}
           >
             <span className="import-plus">+</span>
-            <strong>{isDirectMode ? '选择快速上传图片' : '选择作品图片'}</strong>
+            <strong>{isDirectMode ? '選擇快速上載圖片' : '選擇作品圖片'}</strong>
             <span>JPEG / PNG / GIF / WebP</span>
           </button>
 
           <div className="capture-panel">
             <video src="people.mp4" autoPlay loop muted playsInline className="capture-video" />
             <div className="capture-content">
-              <p className="eyebrow light">Camera</p>
-              <h2>{isDirectMode ? '快速拍照上传' : '拍摄作品'}</h2>
+              <p className="eyebrow light">相機</p>
+              <h2>{isDirectMode ? '快速拍照上載' : '拍攝作品'}</h2>
               <button type="button" onClick={handleOpenCamera} className="hidden">
-                打开相机
+                打開相機
               </button>
             </div>
           </div>

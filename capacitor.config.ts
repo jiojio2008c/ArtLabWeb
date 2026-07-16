@@ -2,22 +2,22 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.artlab.web',
-  appName: 'Art Lab Web',
+  appName: 'MagicFloor',
   webDir: 'dist',
   plugins: {
     Camera: {
       permission: {
         photosLibrary: {
-          description: 'Allow Art Lab to access your photo library',
+          description: '允許 MagicFloor 存取您的照片圖庫',
         },
         camera: {
-          description: 'Allow Art Lab to use your camera',
+          description: '允許 MagicFloor 使用您的相機',
         },
       },
     },
     Filesystem: {
       permission: {
-        description: 'Allow Art Lab to access your files',
+        description: '允許 MagicFloor 存取您的檔案',
       },
     },
   },

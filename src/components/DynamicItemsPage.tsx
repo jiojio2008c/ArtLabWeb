@@ -1,0 +1,504 @@
+import { useEffect, useRef, useState } from 'react'
+import {
+  MAX_DYNAMIC_ITEMS_PER_GROUP,
+  addDynamicItem,
+  deleteDynamicItem,
+  updateDynamicItemMeta,
+  type DynamicGroup,
+  type DynamicItem
+} from '../services/dynamicArtStorage.ts'
+import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+
+interface DynamicItemsPageProps {
+  group: DynamicGroup
+  wsIp: string
+  dynamicPort: number
+  onBack: () => void
+  onGroupChange: (group: DynamicGroup) => void
+  onOpenControl: (itemId?: string) => void
+}
+
+interface MenuPosition {
+  x: number
+  y: number
+}
+
+const LONG_PRESS_DELAY_MS = 520
+const LONG_PRESS_MOVE_TOLERANCE = 12
+
+const getFileDefaultName = (file: File) => file.name.trim() || '未命名物件'
+
+const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
+  group,
+  wsIp,
+  dynamicPort,
+  onBack,
+  onGroupChange,
+  onOpenControl
+}) => {
+  const createInputRef = useRef<HTMLInputElement>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressPointRef = useRef<{ x: number; y: number } | null>(null)
+  const suppressClickRef = useRef(false)
+
+  const [isCreatorOpen, setIsCreatorOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createFile, setCreateFile] = useState<File | undefined>()
+  const [createPreview, setCreatePreview] = useState<string | undefined>()
+  const [isCreating, setIsCreating] = useState(false)
+  const [menuItemId, setMenuItemId] = useState('')
+  const [menuPosition, setMenuPosition] = useState<MenuPosition>({ x: 24, y: 96 })
+  const [editingItem, setEditingItem] = useState<DynamicItem | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editFile, setEditFile] = useState<File | undefined>()
+  const [editPreview, setEditPreview] = useState<string | undefined>()
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [deletingItemId, setDeletingItemId] = useState('')
+
+  const activeMenuItem = group.items.find((item) => item.id === menuItemId)
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  useEffect(() => () => clearLongPressTimer(), [])
+
+  const getMenuPosition = (clientX: number, clientY: number): MenuPosition => {
+    const menuWidth = 232
+    const menuHeight = 112
+    const margin = 18
+    const maxX = window.innerWidth - menuWidth - margin
+    const maxY = window.innerHeight - menuHeight - margin
+
+    return {
+      x: Math.min(Math.max(clientX - 20, margin), Math.max(margin, maxX)),
+      y: Math.min(Math.max(clientY + 14, margin), Math.max(margin, maxY))
+    }
+  }
+
+  const openItemMenu = (item: DynamicItem, clientX: number, clientY: number) => {
+    clearLongPressTimer()
+    suppressClickRef.current = true
+    setMenuPosition(getMenuPosition(clientX, clientY))
+    setMenuItemId(item.id)
+  }
+
+  const closeItemMenu = () => {
+    setMenuItemId('')
+    suppressClickRef.current = false
+  }
+
+  const resetCreator = () => {
+    setIsCreatorOpen(false)
+    setCreateName('')
+    setCreateFile(undefined)
+    setCreatePreview(undefined)
+  }
+
+  const resetEditor = () => {
+    setEditingItem(null)
+    setEditName('')
+    setEditFile(undefined)
+    setEditPreview(undefined)
+  }
+
+  const handleCreateFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setCreateFile(file)
+    setCreatePreview(URL.createObjectURL(file))
+    setCreateName((currentName) => currentName || getFileDefaultName(file))
+    event.target.value = ''
+  }
+
+  const handleEditFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setEditFile(file)
+    setEditPreview(URL.createObjectURL(file))
+    setEditName((currentName) => currentName || getFileDefaultName(file))
+    event.target.value = ''
+  }
+
+  const startEditItem = (item: DynamicItem) => {
+    suppressClickRef.current = false
+    setMenuItemId('')
+    setEditingItem(item)
+    setEditName(item.name)
+    setEditFile(undefined)
+    setEditPreview(item.media.url)
+  }
+
+  const handleItemPointerDown = (event: React.PointerEvent<HTMLButtonElement>, item: DynamicItem) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+
+    clearLongPressTimer()
+    longPressPointRef.current = { x: event.clientX, y: event.clientY }
+
+    const clientX = event.clientX
+    const clientY = event.clientY
+    longPressTimerRef.current = window.setTimeout(() => {
+      openItemMenu(item, clientX, clientY)
+    }, LONG_PRESS_DELAY_MS)
+  }
+
+  const handleItemPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const startPoint = longPressPointRef.current
+    if (!startPoint) return
+
+    const distance = Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y)
+    if (distance > LONG_PRESS_MOVE_TOLERANCE) {
+      clearLongPressTimer()
+      longPressPointRef.current = null
+    }
+  }
+
+  const handleItemPointerEnd = () => {
+    clearLongPressTimer()
+    longPressPointRef.current = null
+  }
+
+  const handleItemSelect = (item: DynamicItem) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+
+    if (menuItemId) {
+      setMenuItemId('')
+      return
+    }
+
+    sendDynamicEvent(wsIp, dynamicPort, 'ItemSelect', {
+      groupId: group.id,
+      itemId: item.id
+    })
+    onOpenControl(item.id)
+  }
+
+  const handleCreateItem = async () => {
+    if (isCreating) return
+
+    if (group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
+      window.alert('每個作品檔案最多可建立 30 張圖片。')
+      return
+    }
+
+    if (!createFile) {
+      window.alert('請先上載圖片。')
+      return
+    }
+
+    setIsCreating(true)
+    try {
+      const nextGroup = await addDynamicItem(group.id, createFile, createName)
+      if (!nextGroup) return
+
+      const createdItem = nextGroup.items.find((item) => item.order === group.items.length)
+        ?? nextGroup.items[nextGroup.items.length - 1]
+      uploadUnityAsset({
+        ip: wsIp,
+        port: dynamicPort,
+        file: createFile,
+        fields: {
+          role: 'item',
+          groupId: group.id,
+          itemId: createdItem.id,
+          assetId: createdItem.media.id,
+          mediaType: createdItem.media.type,
+          mimeType: createdItem.media.mimeType
+        }
+      })
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemCreate', {
+        groupId: group.id,
+        itemId: createdItem.id,
+        assetId: createdItem.media.id,
+        name: createdItem.name,
+        order: createdItem.order,
+        gridIndex: createdItem.gridIndex
+      })
+      onGroupChange(nextGroup)
+      resetCreator()
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  const handleUpdateItem = async () => {
+    if (!editingItem || isSavingEdit) return
+
+    setIsSavingEdit(true)
+    try {
+      const nextGroup = await updateDynamicItemMeta(group.id, editingItem.id, {
+        name: editName,
+        file: editFile
+      })
+      if (!nextGroup) return
+
+      const updatedItem = nextGroup.items.find((item) => item.id === editingItem.id)
+      if (!updatedItem) return
+
+      if (editFile) {
+        uploadUnityAsset({
+          ip: wsIp,
+          port: dynamicPort,
+          file: editFile,
+          fields: {
+            role: 'item',
+            groupId: group.id,
+            itemId: updatedItem.id,
+            assetId: updatedItem.media.id,
+            mediaType: updatedItem.media.type,
+            mimeType: updatedItem.media.mimeType
+          }
+        })
+      }
+
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemUpdate', {
+        groupId: group.id,
+        itemId: updatedItem.id,
+        assetId: updatedItem.media.id,
+        name: updatedItem.name,
+        mediaType: updatedItem.media.type,
+        mimeType: updatedItem.media.mimeType,
+        replacedAsset: Boolean(editFile)
+      })
+      onGroupChange(nextGroup)
+      resetEditor()
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleDeleteItem = async (item: DynamicItem) => {
+    if (deletingItemId) return
+
+    const confirmed = window.confirm('確定要刪除此物件？')
+    if (!confirmed) return
+
+    setDeletingItemId(item.id)
+    try {
+      const nextGroup = await deleteDynamicItem(group.id, item.id)
+      if (!nextGroup) return
+
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemDelete', {
+        groupId: group.id,
+        itemId: item.id
+      })
+      onGroupChange(nextGroup)
+      closeItemMenu()
+    } finally {
+      setDeletingItemId('')
+    }
+  }
+
+  return (
+    <main className="ipad-screen dynamic-screen apple-container">
+      <header className="ipad-topbar">
+        <div className="topbar-title-row">
+          <button type="button" className="ipad-button ghost-button" onClick={onBack}>
+            返回
+          </button>
+          <div className="min-w-0">
+            <p className="eyebrow">作品檔案</p>
+            <h1 className="screen-title">{group.name}</h1>
+          </div>
+        </div>
+      </header>
+
+      <section className="dynamic-items-workspace" aria-label="作品圖片列表">
+        <button
+          type="button"
+          className="dynamic-create-card"
+          disabled={isCreating || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP}
+          onClick={() => setIsCreatorOpen(true)}
+          aria-label="新增物件"
+        >
+          <span className="dynamic-plus-mark">+</span>
+          <strong>{isCreating ? '建立中' : '新增'}</strong>
+        </button>
+
+        {group.items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`dynamic-item-card ${menuItemId === item.id ? 'menu-active' : ''}`}
+            onClick={() => handleItemSelect(item)}
+            onPointerDown={(event) => handleItemPointerDown(event, item)}
+            onPointerMove={handleItemPointerMove}
+            onPointerUp={handleItemPointerEnd}
+            onPointerCancel={handleItemPointerEnd}
+            onPointerLeave={handleItemPointerEnd}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              openItemMenu(item, event.clientX, event.clientY)
+            }}
+          >
+            <img src={item.media.url} alt={item.name} />
+            <span>{item.name}</span>
+          </button>
+        ))}
+      </section>
+
+      {activeMenuItem && (
+        <>
+          <button
+            type="button"
+            className="dynamic-group-menu-overlay"
+            onClick={closeItemMenu}
+            aria-label="關閉物件選單"
+          />
+          <section
+            className="dynamic-group-menu-popover"
+            style={{ left: menuPosition.x, top: menuPosition.y }}
+            role="menu"
+            aria-label={`${activeMenuItem.name} 選單`}
+          >
+            <button type="button" onClick={() => startEditItem(activeMenuItem)} role="menuitem">
+              編輯物件
+            </button>
+            <button
+              type="button"
+              className="danger-menu-button"
+              onClick={() => handleDeleteItem(activeMenuItem)}
+              role="menuitem"
+            >
+              {deletingItemId === activeMenuItem.id ? '刪除中' : '刪除物件'}
+            </button>
+          </section>
+        </>
+      )}
+
+      {isCreatorOpen && (
+        <div className="dynamic-modal-overlay">
+          <button type="button" className="settings-scrim" onClick={resetCreator} aria-label="關閉" />
+          <section className="dynamic-create-modal">
+            <div className="settings-heading">
+              <div>
+                <p className="eyebrow">物件</p>
+                <h2>新增物件</h2>
+              </div>
+              <button type="button" className="mini-action-button" onClick={resetCreator}>
+                關閉
+              </button>
+            </div>
+
+            <input
+              ref={createInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleCreateFileChange}
+            />
+
+            <button
+              type="button"
+              className="dynamic-thumbnail-picker"
+              onClick={() => createInputRef.current?.click()}
+            >
+              {createPreview ? (
+                <img src={createPreview} alt="物件圖片預覽" />
+              ) : (
+                <span>上載圖片</span>
+              )}
+            </button>
+
+            <label className="settings-field">
+              <span>物件名稱</span>
+              <input
+                type="text"
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+                className="ipad-input"
+                placeholder="輸入物件名稱"
+              />
+            </label>
+
+            <div className="settings-actions">
+              <button type="button" className="ipad-button secondary-button" onClick={resetCreator}>
+                取消
+              </button>
+              <button type="button" className="ipad-button primary-button" onClick={handleCreateItem}>
+                {isCreating ? '建立中' : '建立'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {editingItem && (
+        <div className="dynamic-modal-overlay">
+          <button type="button" className="settings-scrim" onClick={resetEditor} aria-label="關閉" />
+          <section className="dynamic-create-modal">
+            <div className="settings-heading">
+              <div>
+                <p className="eyebrow">物件</p>
+                <h2>編輯物件</h2>
+              </div>
+              <button type="button" className="mini-action-button" onClick={resetEditor}>
+                關閉
+              </button>
+            </div>
+
+            <input
+              ref={editInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleEditFileChange}
+            />
+
+            <button
+              type="button"
+              className="dynamic-thumbnail-picker"
+              onClick={() => editInputRef.current?.click()}
+            >
+              {editPreview ? (
+                <img src={editPreview} alt="物件圖片預覽" />
+              ) : (
+                <span>更換圖片</span>
+              )}
+            </button>
+
+            <label className="settings-field">
+              <span>物件名稱</span>
+              <input
+                type="text"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                className="ipad-input"
+                placeholder="輸入物件名稱"
+              />
+            </label>
+
+            <div className="settings-actions">
+              <button type="button" className="ipad-button secondary-button" onClick={resetEditor}>
+                取消
+              </button>
+              <button type="button" className="ipad-button primary-button" onClick={handleUpdateItem}>
+                {isSavingEdit ? '儲存中' : '儲存'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <div className="dynamic-items-footer">
+        <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span>
+        {group.items.length > 0 && (
+          <button type="button" className="ipad-button primary-button" onClick={() => onOpenControl()}>
+            進入控制頁
+          </button>
+        )}
+      </div>
+    </main>
+  )
+}
+
+export default DynamicItemsPage

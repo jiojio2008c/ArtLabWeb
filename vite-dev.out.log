@@ -1,0 +1,117 @@
+
+> art-lab-web@0.0.0 dev
+> vite --host 0.0.0.0 --port 5175
+
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m304[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5175[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.5.0.2:[1m5175[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.1.14:[1m5175[22m/[39m
+[2m上午11:41:34[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:42:47[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:43:01[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:43:10[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:43:19[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:43:33[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:43:42[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:44:08[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:44:27[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m上午11:44:55[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m上午11:49:47[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午1:53:21[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午1:53:55[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午1:53:56[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx[22m
+[2m下午1:54:17[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午1:54:55[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午1:56:52[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午2:04:58[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:05:06[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:05:21[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:05:42[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:07:09[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午2:12:18[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:13:32[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午2:28:55[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[2m下午2:29:33[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:30:00[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:30:19[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:30:27[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:30:52[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx[22m
+[2m下午2:31:28[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx[22m
+[2m下午2:36:55[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:37:06[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:38:01[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:38:33[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:38:48[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:39:15[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:39:40[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:39:51[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午2:40:52[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:41:06[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:41:14[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:41:28[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:41:39[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午2:43:12[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午3:03:56[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:04:12[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:04:24[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:04:41[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:04:50[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:06:41[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午3:18:05[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/EntryPage.tsx, /src/index.css[22m
+[2m下午3:18:19[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[2m下午3:19:36[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:20:49[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/EntryPage.tsx, /src/index.css[22m
+[2m下午3:21:07[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/EntryPage.tsx, /src/index.css[22m
+[2m下午3:21:43[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:23:41[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午3:29:34[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/EntryPage.tsx, /src/index.css[22m
+[2m下午3:29:59[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[2m下午3:30:21[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:30:42[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:32:21[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午3:39:47[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:40:36[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:40:59[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:41:12[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:42:26[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午3:53:23[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:53:38[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:54:17[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:55:15[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午3:55:22[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午3:57:33[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午4:07:40[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:07:50[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:08:09[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:08:28[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:08:45[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午4:09:50[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午4:15:13[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:15:23[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:15:39[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:15:51[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午4:18:20[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午4:22:43[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午4:23:39[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午4:32:19[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css[22m
+[2m下午4:32:30[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m下午4:34:41[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午4:42:57[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午4:43:13[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/index.css?t=20260715163752[22m
+[2m下午4:44:14[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午5:02:53[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:03:51[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:04:07[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:04:20[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:05:13[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:05:39[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/index.css?t=20260715163752[22m
+[2m下午5:08:08[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午5:10:11[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午5:53:14[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:53:45[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicControlPage.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午5:56:12[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m
+[2m下午6:09:32[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午6:10:03[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/index.css?t=20260715163752, /src/components/DynamicBackgroundPage.tsx, /src/components/DynamicGroupsPage.tsx, /src/components/DynamicItemsPage.tsx, /src/components/DynamicControlPage.tsx, /src/components/DynamicControlPage.tsx?t=20260715163752[22m
+[2m下午6:11:22[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2mios/App/App/public/index.html[22m

@@ -136,6 +136,21 @@ const getArtworkBlob = async (key: string) => {
   }
 }
 
+const deleteArtworkBlob = async (key: string) => {
+  const db = await openArtworkDb()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(ARTWORK_STORE_NAME, 'readwrite')
+      transaction.objectStore(ARTWORK_STORE_NAME).delete(key)
+
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error ?? new Error('Failed to delete artwork blob'))
+    })
+  } finally {
+    db.close()
+  }
+}
+
 const saveArtworkBlobToFilesystem = async (ip: string, index: number, name: string, blob: Blob) => {
   const filePath = makeArtworkFilePath(ip, index, name, blob)
   const data = await blobToBase64(blob)
@@ -284,5 +299,39 @@ const loadArtworkForIp = async (ip: string, index: number): Promise<StoredArtwor
   return undefined
 }
 
+const removeArtworkFromIp = async (ip: string, index: number) => {
+  const groups = loadAllGroups()
+  const group = groups.find(g => g.ip === ip)
+  const artwork = group?.images?.[index]
+
+  if (artwork?.filePath && isNativeStorage()) {
+    try {
+      await Filesystem.deleteFile({
+        path: artwork.filePath,
+        directory: ARTWORK_DIRECTORY
+      })
+    } catch (error) {
+      console.error('Failed to delete artwork file:', error)
+    }
+  }
+
+  if (artwork?.storageKey) {
+    try {
+      await deleteArtworkBlob(artwork.storageKey)
+    } catch (error) {
+      console.error('Failed to delete cached artwork blob:', error)
+    }
+  }
+
+  if (!group) return
+
+  delete group.thumbnails[index]
+  if (group.images) {
+    delete group.images[index]
+  }
+
+  saveAllGroups(groups)
+}
+
 export type { StoredArtwork }
-export { STORAGE_KEY, loadArtworkForIp, loadThumbnailsForIp, saveArtworkToIp, saveThumbnailToIp }
+export { STORAGE_KEY, loadArtworkForIp, loadThumbnailsForIp, removeArtworkFromIp, saveArtworkToIp, saveThumbnailToIp }

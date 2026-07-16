@@ -1,0 +1,39 @@
+{
+  "name": "magicfloor-dynamic-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MagicFloor dynamic art desktop player runtime.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack:dir": "electron-builder --win dir",
+    "pack:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.magicfloor.dynamicruntime",
+    "productName": "MagicFloor Dynamic Player",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}

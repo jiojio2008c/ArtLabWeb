@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' http://127.0.0.1:8080; img-src 'self' data: blob: http://127.0.0.1:8080; media-src 'self' data: blob: http://127.0.0.1:8080; script-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MagicFloor Dynamic Player</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas id="stage" width="1920" height="1080"></canvas>
+    <section id="statusPanel" class="status-panel">
+      <div class="brand">MagicFloor Dynamic Player</div>
+      <div id="statusText" class="status-text">正在啟動 8080 接收服務...</div>
+      <div id="groupText" class="group-text">等待 iPad 傳入作品檔案</div>
+    </section>
+    <script src="./player.js"></script>
+  </body>
+</html>
