@@ -5,18 +5,27 @@ import {
   calculateGridIndex,
   copyDynamicItemSettings,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
   deleteDynamicBackgrounds,
   deleteDynamicItem,
+  deleteDynamicItems,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
+  MAX_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_APPEAR_INTERVAL_MS,
+  MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MIN_DYNAMIC_APPEAR_INTERVAL_MS,
+  reorderDynamicBackgrounds,
+  reorderDynamicItems,
   setActiveDynamicBackground,
   setDynamicBackground,
+  updateDynamicBackgroundPlayback,
   updateDynamicGroupAppearMode,
   upsertDynamicGroup,
   type DynamicAppearMode,
   type DynamicBackground,
+  type DynamicBackgroundPlayMode,
+  type DynamicCopyField,
   type DynamicGroup,
   type DynamicItem,
   type DynamicMoveMode,
@@ -30,9 +39,9 @@ import DynamicAnimationPreview, {
   getDynamicAnimationPreview
 } from './DynamicAnimationPreview.tsx'
 
-type ControlTab = 'motion' | 'animation' | 'transform' | 'deform' | 'copy'
+type ControlTab = 'motion' | 'animation' | 'transform' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
-type ToolPanelSide = 'left' | 'right'
+type BackgroundIntervalUnit = 'seconds' | 'minutes'
 
 interface Point {
   x: number
@@ -42,6 +51,52 @@ interface Point {
 interface MediaSize {
   width: number
   height: number
+}
+
+interface LayerDragState {
+  itemId: string
+  orderedIds: string[]
+  originalGroup: DynamicGroup
+  pointerId: number
+  pointerType: string
+  sourceElement: HTMLElement
+  sourceRect: { width: number; height: number }
+  pointerOffset: Point
+  startPoint: Point
+  lastPoint: Point
+  active: boolean
+  changed: boolean
+}
+
+interface LayerDragPreview {
+  itemId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface LayerDropHint {
+  itemId: string
+  placement: 'before' | 'after'
+}
+
+interface BackgroundDragState {
+  backgroundId: string
+  orderedIds: string[]
+  originalGroup: DynamicGroup
+  pointerId: number
+  pointerType: string
+  sourceElement: HTMLElement
+  startPoint: Point
+  lastPoint: Point
+  active: boolean
+  changed: boolean
+}
+
+interface BackgroundDropHint {
+  backgroundId: string
+  placement: 'before' | 'after'
 }
 
 interface DynamicControlPageProps {
@@ -65,10 +120,22 @@ const DEFAULT_ITEM_NATURAL_HEIGHT = 260
 const DEFAULT_STAGE_PREVIEW_WIDTH = 960
 const DEFAULT_STAGE_PREVIEW_HEIGHT = 540
 const HORIZONTAL_WAVE_CYCLES = 8
+const LAYER_TOUCH_HOLD_MS = 180
+const LAYER_MOUSE_DRAG_THRESHOLD = 6
+const LAYER_TOUCH_SCROLL_THRESHOLD = 18
+const LAYER_AUTO_SCROLL_EDGE = 52
+const LAYER_AUTO_SCROLL_MAX_SPEED = 14
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 const getAngle = (a: Point, b: Point) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI
+const getBackgroundIntervalUnit = (intervalMs: number): BackgroundIntervalUnit => (
+  intervalMs >= 60000 ? 'minutes' : 'seconds'
+)
+const formatBackgroundInterval = (intervalMs: number, unit: BackgroundIntervalUnit) => {
+  const value = intervalMs / (unit === 'minutes' ? 60000 : 1000)
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)))
+}
 const lerp = (from: number, to: number, ratio: number) => from + (to - from) * ratio
 const normalizeRotation = (value: number) => {
   let nextValue = value % 360
@@ -116,6 +183,15 @@ const trackOptions: { id: DynamicMoveTrack; label: string }[] = [
   { id: 'bottom', label: '下' }
 ]
 
+const copyFieldOptions: { id: DynamicCopyField; label: string }[] = [
+  { id: 'motion', label: '移動方式' },
+  { id: 'animation', label: '動畫' },
+  { id: 'size', label: '大小' },
+  { id: 'deform', label: '變形' }
+]
+
+const ALL_COPY_FIELDS = copyFieldOptions.map((option) => option.id)
+
 const getInitialItemId = (items: DynamicItem[], itemId = '') => {
   if (itemId && items.some((item) => item.id === itemId)) return itemId
   return items[0]?.id ?? ''
@@ -125,11 +201,6 @@ const getItemTrack = (item: DynamicItem) => item.moveTrack ?? getTrack(item.posi
 const getItemMoveSpeed = (item: DynamicItem) => clamp(item.moveSpeed ?? DEFAULT_MOVE_SPEED, 0, 100)
 const getItemFlipX = (item: DynamicItem) => item.flipX ?? false
 const getItemFlipY = (item: DynamicItem) => item.flipY ?? false
-
-const getToolSideForItem = (item?: DynamicItem) => {
-  if (!item) return 'right'
-  return item.position.x > 0.5 ? 'left' : 'right'
-}
 
 const getTrackBounds = (track: DynamicMoveTrack) => {
   if (track === 'top') return { start: 0, end: 1 / 3 }
@@ -280,6 +351,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const stageBackgroundVideoRef = useRef<HTMLVideoElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const layerItemInputRef = useRef<HTMLInputElement>(null)
+  const layerListRef = useRef<HTMLDivElement>(null)
+  const backgroundListRef = useRef<HTMLDivElement>(null)
   const latestGroupRef = useRef(group)
   const pointersRef = useRef<Map<number, Point>>(new Map())
   const gestureModeRef = useRef<GestureMode>('none')
@@ -287,21 +360,63 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const dragStartRef = useRef<{ point: Point; position: Point } | null>(null)
   const pinchStartRef = useRef<{ distance: number; angle: number; scale: number; rotation: number } | null>(null)
   const lastTransformSentAtRef = useRef<Record<string, number>>({})
-  const drawerDragStartRef = useRef<number | null>(null)
-  const lastTapRef = useRef<{ itemId: string; time: number } | null>(null)
+  const gestureMovedRef = useRef(false)
+  const layerDragRef = useRef<LayerDragState | null>(null)
+  const layerDragActivationTimerRef = useRef<number | null>(null)
+  const layerAutoScrollFrameRef = useRef<number | null>(null)
+  const layerSuppressClickRef = useRef(false)
+  const backgroundDragRef = useRef<BackgroundDragState | null>(null)
+  const backgroundDragActivationTimerRef = useRef<number | null>(null)
+  const backgroundSuppressClickRef = useRef(false)
+  const backgroundPointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void
+    end: (event: PointerEvent) => void
+    cancel: (event: PointerEvent) => void
+  } | null>(null)
+  const layerPointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void
+    end: (event: PointerEvent) => void
+    cancel: (event: PointerEvent) => void
+  } | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const previewReplayIdRef = useRef(0)
   const transformPersistTimerRef = useRef<number | null>(null)
 
   const [selectedItemId, setSelectedItemId] = useState(() => getInitialItemId(group.items, initialItemId))
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [toolOpen, setToolOpen] = useState(false)
-  const [toolSide, setToolSide] = useState<ToolPanelSide>('right')
   const [activeTab, setActiveTab] = useState<ControlTab>('motion')
   const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false)
+  const [backgroundIntervalUnit, setBackgroundIntervalUnit] = useState<BackgroundIntervalUnit>(() => {
+    const intervalMs = clamp(
+      group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+    )
+    return getBackgroundIntervalUnit(intervalMs)
+  })
+  const [backgroundIntervalDraft, setBackgroundIntervalDraft] = useState(() => {
+    const intervalMs = clamp(
+      group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+    )
+    return formatBackgroundInterval(intervalMs, getBackgroundIntervalUnit(intervalMs))
+  })
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false)
+  const [appearPanelOpen, setAppearPanelOpen] = useState(false)
   const [selectedBackgroundIds, setSelectedBackgroundIds] = useState<string[]>([])
+  const [selectedLayerItemIds, setSelectedLayerItemIds] = useState<string[]>([])
   const [copiedSourceItemId, setCopiedSourceItemId] = useState('')
+  const [selectedCopyFields, setSelectedCopyFields] = useState<DynamicCopyField[]>(ALL_COPY_FIELDS)
+  const [copyConfirmOpen, setCopyConfirmOpen] = useState(false)
   const [copyFeedbackItemId, setCopyFeedbackItemId] = useState('')
+  const [draggedLayerItemId, setDraggedLayerItemId] = useState('')
+  const [pressedLayerItemId, setPressedLayerItemId] = useState('')
+  const [layerDragPreview, setLayerDragPreview] = useState<LayerDragPreview | null>(null)
+  const [layerDropHint, setLayerDropHint] = useState<LayerDropHint | null>(null)
+  const [draggedBackgroundId, setDraggedBackgroundId] = useState('')
+  const [pressedBackgroundId, setPressedBackgroundId] = useState('')
+  const [backgroundDropHint, setBackgroundDropHint] = useState<BackgroundDropHint | null>(null)
   const [manipulatingItemId, setManipulatingItemId] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [itemImageSizes, setItemImageSizes] = useState<Record<string, MediaSize>>({})
@@ -310,10 +425,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [receiverSyncError, setReceiverSyncError] = useState('')
   const [previewMode, setPreviewMode] = useState(false)
   const [previewReplayId, setPreviewReplayId] = useState(0)
+  const [previewBackgroundId, setPreviewBackgroundId] = useState(group.background?.id ?? '')
 
   const sortedItems = [...group.items].sort((a, b) => a.order - b.order)
+  const layerItems = [...sortedItems].reverse()
   const selectedItem = sortedItems.find((item) => item.id === selectedItemId) ?? sortedItems[0]
+  const copySourceItem = sortedItems.find((item) => item.id === copiedSourceItemId)
   const backgrounds = getBackgrounds(group)
+  const backgroundIdsKey = backgrounds.map((background) => background.id).join('|')
+  const displayedBackground = previewMode
+    ? backgrounds.find((background) => background.id === previewBackgroundId) ?? group.background
+    : group.background
   const activeTrack = selectedItem ? getItemTrack(selectedItem) : 'middle'
   const selectedMoveSpeed = selectedItem ? getItemMoveSpeed(selectedItem) : DEFAULT_MOVE_SPEED
   const appearIntervalMs = clamp(
@@ -322,6 +444,60 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     MAX_DYNAMIC_APPEAR_INTERVAL_MS
   )
   const appearIntervalSeconds = (appearIntervalMs / 1000).toFixed(1)
+  const backgroundIntervalMs = clamp(
+    group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+    MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+    MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+  )
+  const allLayersSelected = group.items.length > 0 && selectedLayerItemIds.length === group.items.length
+  const someLayersSelected = selectedLayerItemIds.length > 0 && !allLayersSelected
+  const allBackgroundsSelected = backgrounds.length > 0 && selectedBackgroundIds.length === backgrounds.length
+  const someBackgroundsSelected = selectedBackgroundIds.length > 0 && !allBackgroundsSelected
+  const rightPanelMode = previewMode
+    ? 'preview'
+    : rightPanelCollapsed
+      ? 'collapsed'
+      : toolOpen && selectedItem
+        ? 'object'
+        : 'layers'
+  const rightPanelVisible = !previewMode && rightPanelMode !== 'collapsed'
+  const visibleActiveTab = activeTab
+
+  const buildGroupStatePayload = (nextGroup: DynamicGroup) => {
+    const nextBackgrounds = getBackgrounds(nextGroup)
+    return {
+      groupId: nextGroup.id,
+      name: nextGroup.name,
+      appearMode: nextGroup.appearMode,
+      appearIntervalMs: nextGroup.appearIntervalMs,
+      backgroundPlayMode: nextGroup.backgroundPlayMode,
+      backgroundIntervalMs: nextGroup.backgroundIntervalMs,
+      activeBackgroundId: nextGroup.activeBackgroundId,
+      background: toBackgroundPayload(nextGroup.background),
+      backgrounds: nextBackgrounds.map((background) => toBackgroundPayload(background)),
+      items: nextGroup.items.map((item) => ({
+        itemId: item.id,
+        assetId: item.media.id,
+        name: item.name,
+        gridIndex: item.gridIndex,
+        position: item.position,
+        scale: item.scale,
+        rotation: item.rotation,
+        flipX: getItemFlipX(item),
+        flipY: getItemFlipY(item),
+        animationId: item.animationId,
+        moveMode: item.moveMode,
+        movePercent: item.movePercent,
+        moveSpeed: getItemMoveSpeed(item),
+        moveTrack: getItemTrack(item),
+        order: item.order
+      }))
+    }
+  }
+
+  const sendGroupStateSync = (nextGroup: DynamicGroup) => {
+    sendDynamicEvent(wsIp, dynamicPort, 'GroupStateSync', buildGroupStatePayload(nextGroup))
+  }
 
   const persistCurrentGroup = () => {
     upsertDynamicGroup(latestGroupRef.current)
@@ -355,13 +531,34 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   useEffect(() => {
     setPreviewMode(false)
     setToolOpen(false)
-    setDrawerOpen(false)
     setBackgroundPanelOpen(false)
+    const intervalMs = clamp(
+      group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+    )
+    const intervalUnit = getBackgroundIntervalUnit(intervalMs)
+    setBackgroundIntervalUnit(intervalUnit)
+    setBackgroundIntervalDraft(formatBackgroundInterval(intervalMs, intervalUnit))
+    setRightPanelCollapsed(false)
+    setAppearPanelOpen(false)
+    setCopyConfirmOpen(false)
+    setCopiedSourceItemId('')
+    setSelectedLayerItemIds([])
+    setSelectedBackgroundIds([])
+    setPreviewBackgroundId(group.background?.id ?? '')
   }, [group.id])
 
   useEffect(() => {
+    setCopyConfirmOpen(false)
+    if (copiedSourceItemId === selectedItemId) {
+      setCopiedSourceItemId('')
+    }
+  }, [selectedItemId, copiedSourceItemId])
+
+  useEffect(() => {
     const video = stageBackgroundVideoRef.current
-    if (!video || group.background?.type !== 'video' || !group.background.url) return undefined
+    if (!video || displayedBackground?.type !== 'video' || !displayedBackground.url) return undefined
 
     let cancelled = false
     const playVideo = () => {
@@ -387,7 +584,37 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       video.removeEventListener('loadeddata', playVideo)
       video.removeEventListener('canplay', playVideo)
     }
-  }, [group.background?.id, group.background?.type, group.background?.url])
+  }, [displayedBackground?.id, displayedBackground?.type, displayedBackground?.url])
+
+  useEffect(() => {
+    const activeId = group.background?.id ?? backgrounds[0]?.id ?? ''
+    setPreviewBackgroundId(activeId)
+
+    if (
+      !previewMode
+      || group.backgroundPlayMode === 'fixed'
+      || backgrounds.length <= 1
+    ) {
+      return undefined
+    }
+
+    const timer = window.setInterval(() => {
+      setPreviewBackgroundId((currentId) => {
+        const currentIndex = Math.max(0, backgrounds.findIndex((background) => background.id === currentId))
+        if (group.backgroundPlayMode === 'sequence') {
+          return backgrounds[(currentIndex + 1) % backgrounds.length]?.id ?? activeId
+        }
+
+        let nextIndex = currentIndex
+        while (nextIndex === currentIndex && backgrounds.length > 1) {
+          nextIndex = Math.floor(Math.random() * backgrounds.length)
+        }
+        return backgrounds[nextIndex]?.id ?? activeId
+      })
+    }, backgroundIntervalMs)
+
+    return () => window.clearInterval(timer)
+  }, [backgroundIdsKey, backgroundIntervalMs, group.background?.id, group.backgroundPlayMode, previewMode, previewReplayId])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -408,6 +635,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const observer = new ResizeObserver(updateStageSize)
     observer.observe(stage)
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const preventNativeScrollDuringLayerDrag = (event: TouchEvent) => {
+      if (layerDragRef.current?.active || backgroundDragRef.current?.active) event.preventDefault()
+    }
+
+    document.addEventListener('touchmove', preventNativeScrollDuringLayerDrag, { passive: false, capture: true })
+    return () => {
+      document.removeEventListener('touchmove', preventNativeScrollDuringLayerDrag, true)
+    }
   }, [])
 
   useEffect(() => {
@@ -462,6 +700,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [group])
 
   useEffect(() => {
+    const validItemIds = new Set(group.items.map((item) => item.id))
+    setSelectedLayerItemIds((currentIds) => currentIds.filter((id) => validItemIds.has(id)))
+  }, [group.items])
+
+  useEffect(() => {
     const validMediaIds = new Set(group.items.map((item) => item.media.id))
     setItemImageSizes((currentSizes) => {
       const nextSizes = Object.fromEntries(
@@ -472,32 +715,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [group.items])
 
   useEffect(() => {
-    const currentBackgrounds = getBackgrounds(group)
-    sendDynamicEvent(wsIp, dynamicPort, 'GroupStateSync', {
-      groupId: group.id,
-      name: group.name,
-      appearMode: group.appearMode,
-      appearIntervalMs,
-      activeBackgroundId: group.activeBackgroundId,
-      background: toBackgroundPayload(group.background),
-      backgrounds: currentBackgrounds.map((background) => toBackgroundPayload(background)),
-      items: group.items.map((item) => ({
-        itemId: item.id,
-        assetId: item.media.id,
-        gridIndex: item.gridIndex,
-        position: item.position,
-        scale: item.scale,
-        rotation: item.rotation,
-        flipX: getItemFlipX(item),
-        flipY: getItemFlipY(item),
-        animationId: item.animationId,
-        moveMode: item.moveMode,
-        movePercent: item.movePercent,
-        moveSpeed: getItemMoveSpeed(item),
-        moveTrack: getItemTrack(item),
-        order: item.order
-      }))
-    })
+    sendGroupStateSync(group)
   }, [appearIntervalMs, dynamicPort, group.id, wsIp])
 
   useEffect(() => () => {
@@ -507,6 +725,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (transformPersistTimerRef.current !== null) {
       window.clearTimeout(transformPersistTimerRef.current)
       upsertDynamicGroup(latestGroupRef.current)
+    }
+    if (layerDragActivationTimerRef.current !== null) {
+      window.clearTimeout(layerDragActivationTimerRef.current)
+    }
+    if (layerAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(layerAutoScrollFrameRef.current)
+    }
+    if (backgroundDragActivationTimerRef.current !== null) {
+      window.clearTimeout(backgroundDragActivationTimerRef.current)
+    }
+    const listeners = layerPointerListenersRef.current
+    if (listeners) {
+      window.removeEventListener('pointermove', listeners.move)
+      window.removeEventListener('pointerup', listeners.end)
+      window.removeEventListener('pointercancel', listeners.cancel)
+      layerPointerListenersRef.current = null
+    }
+    const backgroundListeners = backgroundPointerListenersRef.current
+    if (backgroundListeners) {
+      window.removeEventListener('pointermove', backgroundListeners.move)
+      window.removeEventListener('pointerup', backgroundListeners.end)
+      window.removeEventListener('pointercancel', backgroundListeners.cancel)
+      backgroundPointerListenersRef.current = null
     }
   }, [])
 
@@ -563,11 +804,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
     setSelectedItemId(itemId)
     if (openTool) {
-      const item = latestGroupRef.current.items.find((nextItem) => nextItem.id === itemId)
-      setToolSide(getToolSideForItem(item))
+      setRightPanelCollapsed(false)
       setToolOpen(true)
       setBackgroundPanelOpen(false)
-      setDrawerOpen(false)
+      setAppearPanelOpen(false)
     }
     sendDynamicEvent(wsIp, dynamicPort, 'ItemSelect', {
       groupId: group.id,
@@ -587,6 +827,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     options: {
       appearMode?: DynamicAppearMode
       intervalMs?: number
+      backgroundPlayMode?: DynamicBackgroundPlayMode
+      backgroundIntervalMs?: number
       replayId?: number
     } = {}
   ) => {
@@ -595,6 +837,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       enabled,
       appearMode: options.appearMode ?? group.appearMode,
       intervalMs: options.intervalMs ?? appearIntervalMs,
+      backgroundPlayMode: options.backgroundPlayMode ?? group.backgroundPlayMode,
+      backgroundIntervalMs: options.backgroundIntervalMs ?? backgroundIntervalMs,
       replayId: options.replayId ?? previewReplayIdRef.current
     })
   }
@@ -613,9 +857,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setPreviewMode(enabled)
     if (enabled) {
       setToolOpen(false)
-      setDrawerOpen(false)
       setBackgroundPanelOpen(false)
+      setAppearPanelOpen(false)
+      setCopyConfirmOpen(false)
       setManipulatingItemId('')
+    } else {
+      setRightPanelCollapsed(false)
     }
 
     sendPreviewModeState(enabled, { replayId })
@@ -624,7 +871,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (previewMode) {
       event.preventDefault()
-      setPreviewModeEnabled(false)
       return
     }
 
@@ -633,18 +879,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const itemId = itemElement?.dataset.dynamicItemId ?? gestureItemIdRef.current
     if (!itemId) {
       setToolOpen(false)
+      setBackgroundPanelOpen(false)
+      setAppearPanelOpen(false)
+      setRightPanelCollapsed(false)
       return
     }
 
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
 
-    if (itemElement) {
-      const now = Date.now()
-      const lastTap = lastTapRef.current
-      const isDoubleTap = Boolean(lastTap && lastTap.itemId === itemId && now - lastTap.time < 330)
-      lastTapRef.current = { itemId, time: now }
-      selectItem(itemId, isDoubleTap)
+    if (itemElement && pointersRef.current.size === 0) {
+      gestureMovedRef.current = false
+      selectItem(itemId, false)
     }
 
     gestureItemIdRef.current = itemId
@@ -663,6 +909,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
 
     if (pointersRef.current.size >= 2) {
+      gestureMovedRef.current = true
       const [firstPoint, secondPoint] = Array.from(pointersRef.current.values())
       gestureModeRef.current = 'pinch'
       pinchStartRef.current = {
@@ -684,6 +931,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
 
     if (gestureModeRef.current === 'drag' && dragStartRef.current && pointersRef.current.size === 1) {
+      if (Math.hypot(
+        event.clientX - dragStartRef.current.point.x,
+        event.clientY - dragStartRef.current.point.y
+      ) > 8) {
+        gestureMovedRef.current = true
+      }
       const rect = stage.getBoundingClientRect()
       const dx = (event.clientX - dragStartRef.current.point.x) / rect.width
       const dy = (event.clientY - dragStartRef.current.point.y) / rect.height
@@ -718,6 +971,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
 
     if (gestureModeRef.current === 'pinch' && pinchStartRef.current && pointersRef.current.size >= 2) {
+      gestureMovedRef.current = true
       const [firstPoint, secondPoint] = Array.from(pointersRef.current.values())
       const nextDistance = Math.max(getDistance(firstPoint, secondPoint), 1)
       const nextAngle = getAngle(firstPoint, secondPoint)
@@ -730,6 +984,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleStagePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const itemIdAtEnd = gestureItemIdRef.current
+    const shouldOpenTool = Boolean(
+      itemIdAtEnd
+      && pointersRef.current.size === 1
+      && gestureModeRef.current === 'drag'
+      && !gestureMovedRef.current
+    )
+
     if (pointersRef.current.has(event.pointerId)) {
       pointersRef.current.delete(event.pointerId)
     }
@@ -752,6 +1014,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       dragStartRef.current = null
       pinchStartRef.current = null
       setManipulatingItemId('')
+      gestureMovedRef.current = false
+      if (shouldOpenTool && itemIdAtEnd) {
+        selectItem(itemIdAtEnd, true)
+      }
       return
     }
 
@@ -839,8 +1105,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
     onGroupChange(nextGroup)
     setToolOpen(false)
-    setDrawerOpen(false)
     setBackgroundPanelOpen(true)
+    setRightPanelCollapsed(false)
+    setAppearPanelOpen(false)
     event.target.value = ''
   }
 
@@ -893,7 +1160,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       setSelectedItemId(createdItem.id)
       setToolOpen(false)
       setBackgroundPanelOpen(false)
-      setDrawerOpen(true)
+      setRightPanelCollapsed(false)
+      setAppearPanelOpen(false)
     } finally {
       setIsAddingLayerItem(false)
     }
@@ -938,6 +1206,79 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         ? currentIds.filter((id) => id !== backgroundId)
         : [...currentIds, backgroundId]
     ))
+  }
+
+  const toggleAllBackgroundSelection = () => {
+    setSelectedBackgroundIds(allBackgroundsSelected ? [] : backgrounds.map((background) => background.id))
+  }
+
+  const setBackgroundPlayback = (
+    backgroundPlayMode: DynamicBackgroundPlayMode,
+    intervalMs = backgroundIntervalMs
+  ) => {
+    const updatedGroup = updateDynamicBackgroundPlayback(group.id, backgroundPlayMode, intervalMs)
+    if (!updatedGroup) return
+
+    const nextGroup: DynamicGroup = {
+      ...latestGroupRef.current,
+      backgroundPlayMode: updatedGroup.backgroundPlayMode,
+      backgroundIntervalMs: updatedGroup.backgroundIntervalMs,
+      updatedAt: updatedGroup.updatedAt
+    }
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendDynamicEvent(wsIp, dynamicPort, 'BackgroundPlayback', {
+      groupId: group.id,
+      mode: nextGroup.backgroundPlayMode,
+      intervalMs: nextGroup.backgroundIntervalMs
+    })
+  }
+
+  const commitBackgroundIntervalDraft = () => {
+    const draftValue = Number(backgroundIntervalDraft)
+    if (!Number.isFinite(draftValue) || draftValue <= 0) {
+      setBackgroundIntervalDraft(formatBackgroundInterval(backgroundIntervalMs, backgroundIntervalUnit))
+      return
+    }
+
+    const multiplier = backgroundIntervalUnit === 'minutes' ? 60000 : 1000
+    const nextIntervalMs = clamp(
+      Math.round(draftValue * multiplier),
+      MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+    )
+    setBackgroundIntervalDraft(formatBackgroundInterval(nextIntervalMs, backgroundIntervalUnit))
+    if (nextIntervalMs !== backgroundIntervalMs) {
+      setBackgroundPlayback(group.backgroundPlayMode, nextIntervalMs)
+    }
+  }
+
+  const handleBackgroundIntervalUnitChange = (unit: BackgroundIntervalUnit) => {
+    const draftValue = Number(backgroundIntervalDraft)
+    const currentMultiplier = backgroundIntervalUnit === 'minutes' ? 60000 : 1000
+    const draftIntervalMs = Number.isFinite(draftValue) && draftValue > 0
+      ? clamp(
+          Math.round(draftValue * currentMultiplier),
+          MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+          MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+        )
+      : backgroundIntervalMs
+    setBackgroundIntervalUnit(unit)
+    setBackgroundIntervalDraft(formatBackgroundInterval(draftIntervalMs, unit))
+  }
+
+  const openBackgroundEditor = () => {
+    const intervalUnit = getBackgroundIntervalUnit(backgroundIntervalMs)
+    setBackgroundIntervalUnit(intervalUnit)
+    setBackgroundIntervalDraft(formatBackgroundInterval(backgroundIntervalMs, intervalUnit))
+    setToolOpen(false)
+    setAppearPanelOpen(false)
+    setBackgroundPanelOpen(true)
+  }
+
+  const closeBackgroundEditor = () => {
+    setBackgroundPanelOpen(false)
+    setSelectedBackgroundIds([])
   }
 
   const handleBackgroundDelete = async () => {
@@ -1012,6 +1353,47 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (selectedItemId === itemId) {
       setSelectedItemId(nextGroup.items[0]?.id ?? '')
       setToolOpen(false)
+      setRightPanelCollapsed(false)
+    }
+  }
+
+  const toggleLayerSelection = (itemId: string) => {
+    setSelectedLayerItemIds((currentIds) => (
+      currentIds.includes(itemId)
+        ? currentIds.filter((id) => id !== itemId)
+        : [...currentIds, itemId]
+    ))
+  }
+
+  const toggleAllLayerSelection = () => {
+    setSelectedLayerItemIds(allLayersSelected ? [] : group.items.map((item) => item.id))
+  }
+
+  const handleLayerBulkDelete = async () => {
+    if (selectedLayerItemIds.length === 0) return
+
+    const confirmed = window.confirm(`確定要刪除選取的 ${selectedLayerItemIds.length} 個物件？`)
+    if (!confirmed) return
+
+    const deletedIds = [...selectedLayerItemIds]
+    const nextGroup = await deleteDynamicItems(group.id, deletedIds)
+    if (!nextGroup) return
+
+    deletedIds.forEach((itemId) => {
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemDelete', {
+        groupId: group.id,
+        itemId
+      })
+    })
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendGroupStateSync(nextGroup)
+    setSelectedLayerItemIds([])
+
+    if (deletedIds.includes(selectedItemId)) {
+      setSelectedItemId(nextGroup.items[0]?.id ?? '')
+      setToolOpen(false)
+      setRightPanelCollapsed(false)
     }
   }
 
@@ -1081,53 +1463,92 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
-  const handleCopySettings = async (sourceItemId: string) => {
-    if (!selectedItem) return
+  const toggleCopyField = (field: DynamicCopyField) => {
+    setSelectedCopyFields((currentFields) => (
+      currentFields.includes(field)
+        ? currentFields.filter((currentField) => currentField !== field)
+        : [...currentFields, field]
+    ))
+  }
 
-    const nextGroup = await copyDynamicItemSettings(group.id, selectedItem.id, sourceItemId, latestGroupRef.current)
+  const handleCopyRequest = () => {
+    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0) return
+    setCopyConfirmOpen(true)
+  }
+
+  const handleCopyConfirm = async () => {
+    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0) return
+
+    const targetItemId = selectedItem.id
+    const sourceItemId = copySourceItem.id
+    const copyFields = [...selectedCopyFields]
+    const nextGroup = await copyDynamicItemSettings(
+      group.id,
+      targetItemId,
+      sourceItemId,
+      copyFields,
+      latestGroupRef.current
+    )
     if (!nextGroup) return
 
     latestGroupRef.current = nextGroup
     onGroupChange(nextGroup)
+    const protocolFields = copyFields.flatMap((field) => {
+      if (field === 'motion') return ['moveMode', 'movePercent', 'moveSpeed', 'moveTrack']
+      if (field === 'animation') return ['animationId']
+      if (field === 'size') return ['scale', 'rotation']
+      return ['flipX', 'flipY']
+    })
     sendDynamicEvent(wsIp, dynamicPort, 'ItemSettingsCopy', {
       groupId: group.id,
-      targetItemId: selectedItem.id,
+      targetItemId,
       sourceItemId,
-      fields: ['scale', 'rotation', 'flipX', 'flipY', 'animationId', 'moveMode', 'movePercent', 'moveSpeed', 'moveTrack']
+      copyFields,
+      fields: protocolFields
     })
-    const copiedItem = nextGroup.items.find((item) => item.id === selectedItem.id)
+    const copiedItem = nextGroup.items.find((item) => item.id === targetItemId)
     if (copiedItem) {
-      emitTransform(copiedItem, true)
-      sendDynamicEvent(wsIp, dynamicPort, 'ItemDeform', {
-        groupId: group.id,
-        itemId: copiedItem.id,
-        flipX: getItemFlipX(copiedItem),
-        flipY: getItemFlipY(copiedItem)
-      })
-      sendDynamicEvent(wsIp, dynamicPort, 'ItemMotion', {
-        groupId: group.id,
-        itemId: copiedItem.id,
-        mode: copiedItem.moveMode,
-        percent: copiedItem.movePercent,
-        speed: getItemMoveSpeed(copiedItem),
-        track: getItemTrack(copiedItem)
-      })
+      if (copyFields.includes('motion') || copyFields.includes('size')) {
+        emitTransform(copiedItem, true)
+      }
+      if (copyFields.includes('deform')) {
+        sendDynamicEvent(wsIp, dynamicPort, 'ItemDeform', {
+          groupId: group.id,
+          itemId: copiedItem.id,
+          flipX: getItemFlipX(copiedItem),
+          flipY: getItemFlipY(copiedItem)
+        })
+      }
+      if (copyFields.includes('motion')) {
+        sendDynamicEvent(wsIp, dynamicPort, 'ItemMotion', {
+          groupId: group.id,
+          itemId: copiedItem.id,
+          mode: copiedItem.moveMode,
+          percent: copiedItem.movePercent,
+          speed: getItemMoveSpeed(copiedItem),
+          track: getItemTrack(copiedItem)
+        })
+      }
+      if (copyFields.includes('animation')) {
+        sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
+          groupId: group.id,
+          itemId: copiedItem.id,
+          animationId: copiedItem.animationId
+        })
+      }
     }
 
     if (copyFeedbackTimerRef.current !== null) {
       window.clearTimeout(copyFeedbackTimerRef.current)
     }
-    setCopiedSourceItemId(sourceItemId)
-    setCopyFeedbackItemId(selectedItem.id)
+    setCopyConfirmOpen(false)
+    setCopyFeedbackItemId(targetItemId)
     playUiSound('success')
 
     copyFeedbackTimerRef.current = window.setTimeout(() => {
-      setToolOpen(false)
-      setActiveTab('motion')
-      setCopiedSourceItemId('')
       setCopyFeedbackItemId('')
       copyFeedbackTimerRef.current = null
-    }, 560)
+    }, 1400)
   }
 
   const handleScaleNudge = (delta: number) => {
@@ -1163,145 +1584,648 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
-  const handleDrawerPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (previewMode) return
-
-    drawerDragStartRef.current = event.clientX
+  const applyLayerOrderLocally = (orderedIds: string[]) => {
+    const orderById = new Map(
+      orderedIds.map((itemId, index) => [itemId, orderedIds.length - 1 - index])
+    )
+    const currentGroup = latestGroupRef.current
+    const nextGroup: DynamicGroup = {
+      ...currentGroup,
+      items: currentGroup.items.map((item) => ({
+        ...item,
+        order: orderById.get(item.id) ?? item.order
+      })),
+      updatedAt: Date.now()
+    }
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
   }
 
-  const handleDrawerPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (previewMode) {
-      drawerDragStartRef.current = null
-      setDrawerOpen(false)
-      return
-    }
+  const clearLayerDragActivationTimer = () => {
+    if (layerDragActivationTimerRef.current === null) return
+    window.clearTimeout(layerDragActivationTimerRef.current)
+    layerDragActivationTimerRef.current = null
+  }
 
-    const startX = drawerDragStartRef.current
-    drawerDragStartRef.current = null
-    const applyDrawerOpen = (open: boolean) => {
-      if (open) {
-        setToolOpen(false)
-        setBackgroundPanelOpen(false)
+  const stopLayerAutoScroll = () => {
+    if (layerAutoScrollFrameRef.current === null) return
+    window.cancelAnimationFrame(layerAutoScrollFrameRef.current)
+    layerAutoScrollFrameRef.current = null
+  }
+
+  const detachLayerPointerListeners = () => {
+    const listeners = layerPointerListenersRef.current
+    if (!listeners) return
+    window.removeEventListener('pointermove', listeners.move)
+    window.removeEventListener('pointerup', listeners.end)
+    window.removeEventListener('pointercancel', listeners.cancel)
+    layerPointerListenersRef.current = null
+  }
+
+  const releaseLayerPointerCapture = (dragState: LayerDragState) => {
+    try {
+      if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+        dragState.sourceElement.releasePointerCapture(dragState.pointerId)
       }
-      setDrawerOpen(open)
+    } catch {
+      // Pointer capture may already be released by iPad WebView.
     }
+  }
 
-    if (startX === null) {
-      applyDrawerOpen(!drawerOpen)
+  const suppressLayerClickAfterDrag = () => {
+    layerSuppressClickRef.current = true
+    window.setTimeout(() => {
+      layerSuppressClickRef.current = false
+    }, 0)
+  }
+
+  const updateLayerDragOrderAtPoint = (clientY: number) => {
+    const dragState = layerDragRef.current
+    const layerList = layerListRef.current
+    if (!dragState?.active || !layerList) return
+
+    const cards = Array.from(layerList.querySelectorAll<HTMLElement>('[data-layer-item-id]'))
+      .filter((card) => card.dataset.layerItemId !== dragState.itemId)
+    if (cards.length === 0) {
+      setLayerDropHint(null)
       return
     }
 
-    const deltaX = event.clientX - startX
-    if (Math.abs(deltaX) < 20) {
-      applyDrawerOpen(!drawerOpen)
+    let targetCard = cards[cards.length - 1]
+    let placement: LayerDropHint['placement'] = 'after'
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) {
+        targetCard = card
+        placement = 'before'
+        break
+      }
+    }
+
+    const targetItemId = targetCard.dataset.layerItemId
+    if (!targetItemId) return
+
+    setLayerDropHint((currentHint) => (
+      currentHint?.itemId === targetItemId && currentHint.placement === placement
+        ? currentHint
+        : { itemId: targetItemId, placement }
+    ))
+
+    const nextIds = dragState.orderedIds.filter((itemId) => itemId !== dragState.itemId)
+    const targetIndex = nextIds.indexOf(targetItemId)
+    if (targetIndex < 0) return
+    nextIds.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, dragState.itemId)
+
+    if (nextIds.every((itemId, index) => itemId === dragState.orderedIds[index])) return
+
+    dragState.orderedIds = nextIds
+    dragState.changed = true
+    applyLayerOrderLocally(nextIds)
+  }
+
+  const runLayerAutoScroll = () => {
+    const dragState = layerDragRef.current
+    const layerList = layerListRef.current
+    if (!dragState?.active || !layerList) {
+      layerAutoScrollFrameRef.current = null
       return
     }
-    applyDrawerOpen(deltaX < 0)
+
+    const rect = layerList.getBoundingClientRect()
+    const distanceFromTop = dragState.lastPoint.y - rect.top
+    const distanceFromBottom = rect.bottom - dragState.lastPoint.y
+    let scrollDelta = 0
+
+    if (distanceFromTop < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromTop) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = -Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    } else if (distanceFromBottom < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromBottom) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    }
+
+    if (scrollDelta !== 0) {
+      const previousScrollTop = layerList.scrollTop
+      layerList.scrollTop += scrollDelta
+      if (layerList.scrollTop !== previousScrollTop) {
+        updateLayerDragOrderAtPoint(dragState.lastPoint.y)
+      }
+    }
+
+    layerAutoScrollFrameRef.current = window.requestAnimationFrame(runLayerAutoScroll)
+  }
+
+  const activateLayerDrag = (dragState: LayerDragState) => {
+    if (layerDragRef.current !== dragState || dragState.active) return
+    clearLayerDragActivationTimer()
+    dragState.active = true
+    layerSuppressClickRef.current = true
+    try {
+      dragState.sourceElement.setPointerCapture(dragState.pointerId)
+    } catch {
+      // iPad WebView can reject pointer capture if the touch has already ended.
+    }
+    setDraggedLayerItemId(dragState.itemId)
+    setPressedLayerItemId('')
+    setLayerDragPreview({
+      itemId: dragState.itemId,
+      x: dragState.lastPoint.x - dragState.pointerOffset.x,
+      y: dragState.lastPoint.y - dragState.pointerOffset.y,
+      width: dragState.sourceRect.width,
+      height: dragState.sourceRect.height
+    })
+    setLayerDropHint(null)
+    setToolOpen(false)
+    setBackgroundPanelOpen(false)
+    setAppearPanelOpen(false)
+    selectItem(dragState.itemId, false)
+    if (layerAutoScrollFrameRef.current === null) {
+      layerAutoScrollFrameRef.current = window.requestAnimationFrame(runLayerAutoScroll)
+    }
+  }
+
+  const handleLayerCardPointerDown = (event: React.PointerEvent<HTMLElement>, itemId: string) => {
+    if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    const target = event.target as HTMLElement
+    if (target.closest('.dynamic-layer-property-button, .dynamic-layer-delete-button, .dynamic-layer-select')) return
+
+    const sourceRect = event.currentTarget.getBoundingClientRect()
+
+    const dragState: LayerDragState = {
+      itemId,
+      orderedIds: layerItems.map((item) => item.id),
+      originalGroup: latestGroupRef.current,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      sourceElement: event.currentTarget,
+      sourceRect: { width: sourceRect.width, height: sourceRect.height },
+      pointerOffset: {
+        x: event.clientX - sourceRect.left,
+        y: event.clientY - sourceRect.top
+      },
+      startPoint: { x: event.clientX, y: event.clientY },
+      lastPoint: { x: event.clientX, y: event.clientY },
+      active: false,
+      changed: false
+    }
+    layerDragRef.current = dragState
+    setPressedLayerItemId(itemId)
+    detachLayerPointerListeners()
+    const listeners = {
+      move: handleLayerCardPointerMove,
+      end: handleLayerCardPointerEnd,
+      cancel: handleLayerCardPointerCancel
+    }
+    layerPointerListenersRef.current = listeners
+    window.addEventListener('pointermove', listeners.move, { passive: false })
+    window.addEventListener('pointerup', listeners.end)
+    window.addEventListener('pointercancel', listeners.cancel)
+
+    if (event.pointerType !== 'mouse') {
+      clearLayerDragActivationTimer()
+      layerDragActivationTimerRef.current = window.setTimeout(() => {
+        activateLayerDrag(dragState)
+      }, LAYER_TOUCH_HOLD_MS)
+    }
+  }
+
+  const handleLayerCardPointerMove = (event: PointerEvent) => {
+    const dragState = layerDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    dragState.lastPoint = { x: event.clientX, y: event.clientY }
+    const distance = Math.hypot(
+      event.clientX - dragState.startPoint.x,
+      event.clientY - dragState.startPoint.y
+    )
+
+    if (!dragState.active) {
+      if (dragState.pointerType === 'mouse' && distance >= LAYER_MOUSE_DRAG_THRESHOLD) {
+        activateLayerDrag(dragState)
+      } else if (dragState.pointerType !== 'mouse' && distance >= LAYER_TOUCH_SCROLL_THRESHOLD) {
+        clearLayerDragActivationTimer()
+        layerDragRef.current = null
+        setPressedLayerItemId('')
+        detachLayerPointerListeners()
+        return
+      } else {
+        return
+      }
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    setLayerDragPreview((currentPreview) => currentPreview
+      ? {
+          ...currentPreview,
+          x: event.clientX - dragState.pointerOffset.x,
+          y: event.clientY - dragState.pointerOffset.y
+        }
+      : currentPreview)
+    updateLayerDragOrderAtPoint(event.clientY)
+  }
+
+  const handleLayerCardPointerEnd = (event: PointerEvent) => {
+    const dragState = layerDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    clearLayerDragActivationTimer()
+    stopLayerAutoScroll()
+    detachLayerPointerListeners()
+    releaseLayerPointerCapture(dragState)
+    layerDragRef.current = null
+    setPressedLayerItemId('')
+
+    if (!dragState.active) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    if (dragState.changed) {
+      const nextGroup = reorderDynamicItems(
+        group.id,
+        dragState.orderedIds,
+        latestGroupRef.current
+      )
+      if (nextGroup) {
+        latestGroupRef.current = nextGroup
+        onGroupChange(nextGroup)
+        sendGroupStateSync(nextGroup)
+        playUiSound('success')
+      }
+    }
+    setDraggedLayerItemId('')
+    setLayerDragPreview(null)
+    setLayerDropHint(null)
+    suppressLayerClickAfterDrag()
+  }
+
+  const handleLayerCardPointerCancel = (event: PointerEvent) => {
+    const dragState = layerDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    clearLayerDragActivationTimer()
+    stopLayerAutoScroll()
+    detachLayerPointerListeners()
+    releaseLayerPointerCapture(dragState)
+    layerDragRef.current = null
+    setPressedLayerItemId('')
+
+    if (dragState.active && dragState.changed) {
+      latestGroupRef.current = dragState.originalGroup
+      onGroupChange(dragState.originalGroup)
+    }
+    setDraggedLayerItemId('')
+    setLayerDragPreview(null)
+    setLayerDropHint(null)
+    if (dragState.active) suppressLayerClickAfterDrag()
+  }
+
+  const handleLayerCardClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    if (!layerSuppressClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    layerSuppressClickRef.current = false
+  }
+
+  const applyBackgroundOrderLocally = (orderedIds: string[]) => {
+    const currentGroup = latestGroupRef.current
+    const currentBackgrounds = getBackgrounds(currentGroup)
+    const backgroundById = new Map(currentBackgrounds.map((background) => [background.id, background]))
+    const orderedBackgrounds = orderedIds
+      .map((backgroundId) => backgroundById.get(backgroundId))
+      .filter(Boolean) as DynamicBackground[]
+    currentBackgrounds.forEach((background) => {
+      if (!orderedBackgrounds.some((item) => item.id === background.id)) {
+        orderedBackgrounds.push(background)
+      }
+    })
+
+    const activeBackground = orderedBackgrounds.find((background) => background.id === currentGroup.activeBackgroundId)
+      ?? orderedBackgrounds.find((background) => background.id === currentGroup.background?.id)
+      ?? orderedBackgrounds[0]
+    const nextGroup = {
+      ...currentGroup,
+      backgrounds: orderedBackgrounds,
+      background: activeBackground,
+      activeBackgroundId: activeBackground?.id,
+      updatedAt: Date.now()
+    }
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+  }
+
+  const clearBackgroundDragActivationTimer = () => {
+    if (backgroundDragActivationTimerRef.current === null) return
+    window.clearTimeout(backgroundDragActivationTimerRef.current)
+    backgroundDragActivationTimerRef.current = null
+  }
+
+  const detachBackgroundPointerListeners = () => {
+    const listeners = backgroundPointerListenersRef.current
+    if (!listeners) return
+    window.removeEventListener('pointermove', listeners.move)
+    window.removeEventListener('pointerup', listeners.end)
+    window.removeEventListener('pointercancel', listeners.cancel)
+    backgroundPointerListenersRef.current = null
+  }
+
+  const releaseBackgroundPointerCapture = (dragState: BackgroundDragState) => {
+    try {
+      if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+        dragState.sourceElement.releasePointerCapture(dragState.pointerId)
+      }
+    } catch {
+      // Pointer capture may already be released by iPad WebView.
+    }
+  }
+
+  const suppressBackgroundClickAfterDrag = () => {
+    backgroundSuppressClickRef.current = true
+    window.setTimeout(() => {
+      backgroundSuppressClickRef.current = false
+    }, 0)
+  }
+
+  const updateBackgroundDragOrderAtPoint = (clientX: number, clientY: number) => {
+    const dragState = backgroundDragRef.current
+    const backgroundList = backgroundListRef.current
+    if (!dragState?.active || !backgroundList) return
+
+    const cards = Array.from(backgroundList.querySelectorAll<HTMLElement>('[data-background-id]'))
+      .filter((card) => card.dataset.backgroundId !== dragState.backgroundId)
+    if (cards.length === 0) {
+      setBackgroundDropHint(null)
+      return
+    }
+
+    let targetCard = cards[0]
+    let closestDistance = Number.POSITIVE_INFINITY
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      const distance = Math.hypot(clientX - centerX, clientY - centerY)
+      if (distance < closestDistance) {
+        closestDistance = distance
+        targetCard = card
+      }
+    }
+
+    const targetRect = targetCard.getBoundingClientRect()
+    const isInsideTargetRow = clientY >= targetRect.top && clientY <= targetRect.bottom
+    const placement: BackgroundDropHint['placement'] = isInsideTargetRow
+      ? (clientX < targetRect.left + targetRect.width / 2 ? 'before' : 'after')
+      : (clientY < targetRect.top + targetRect.height / 2 ? 'before' : 'after')
+
+    const targetBackgroundId = targetCard.dataset.backgroundId
+    if (!targetBackgroundId) return
+
+    setBackgroundDropHint((currentHint) => (
+      currentHint?.backgroundId === targetBackgroundId && currentHint.placement === placement
+        ? currentHint
+        : { backgroundId: targetBackgroundId, placement }
+    ))
+
+    const nextIds = dragState.orderedIds.filter((backgroundId) => backgroundId !== dragState.backgroundId)
+    const targetIndex = nextIds.indexOf(targetBackgroundId)
+    if (targetIndex < 0) return
+    nextIds.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, dragState.backgroundId)
+
+    if (nextIds.every((backgroundId, index) => backgroundId === dragState.orderedIds[index])) return
+
+    dragState.orderedIds = nextIds
+    dragState.changed = true
+    applyBackgroundOrderLocally(nextIds)
+  }
+
+  const activateBackgroundDrag = (dragState: BackgroundDragState) => {
+    if (backgroundDragRef.current !== dragState || dragState.active) return
+    clearBackgroundDragActivationTimer()
+    dragState.active = true
+    backgroundSuppressClickRef.current = true
+    try {
+      dragState.sourceElement.setPointerCapture(dragState.pointerId)
+    } catch {
+      // iPad WebView can reject pointer capture if the touch has already ended.
+    }
+    setDraggedBackgroundId(dragState.backgroundId)
+    setPressedBackgroundId('')
+    setBackgroundDropHint(null)
+  }
+
+  const handleBackgroundCardPointerDown = (event: React.PointerEvent<HTMLElement>, backgroundId: string) => {
+    if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    const target = event.target as HTMLElement
+    if (target.closest('.background-check, input, .background-card-delete')) return
+
+    const dragState: BackgroundDragState = {
+      backgroundId,
+      orderedIds: getBackgrounds(latestGroupRef.current).map((background) => background.id),
+      originalGroup: latestGroupRef.current,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      sourceElement: event.currentTarget,
+      startPoint: { x: event.clientX, y: event.clientY },
+      lastPoint: { x: event.clientX, y: event.clientY },
+      active: false,
+      changed: false
+    }
+    backgroundDragRef.current = dragState
+    setPressedBackgroundId(backgroundId)
+    detachBackgroundPointerListeners()
+    const listeners = {
+      move: handleBackgroundCardPointerMove,
+      end: handleBackgroundCardPointerEnd,
+      cancel: handleBackgroundCardPointerCancel
+    }
+    backgroundPointerListenersRef.current = listeners
+    window.addEventListener('pointermove', listeners.move, { passive: false })
+    window.addEventListener('pointerup', listeners.end)
+    window.addEventListener('pointercancel', listeners.cancel)
+
+    if (event.pointerType !== 'mouse') {
+      clearBackgroundDragActivationTimer()
+      backgroundDragActivationTimerRef.current = window.setTimeout(() => {
+        activateBackgroundDrag(dragState)
+      }, LAYER_TOUCH_HOLD_MS)
+    }
+  }
+
+  const handleBackgroundCardPointerMove = (event: PointerEvent) => {
+    const dragState = backgroundDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    dragState.lastPoint = { x: event.clientX, y: event.clientY }
+    const distance = Math.hypot(
+      event.clientX - dragState.startPoint.x,
+      event.clientY - dragState.startPoint.y
+    )
+
+    if (!dragState.active) {
+      if (dragState.pointerType === 'mouse' && distance >= LAYER_MOUSE_DRAG_THRESHOLD) {
+        activateBackgroundDrag(dragState)
+      } else if (dragState.pointerType !== 'mouse' && distance >= LAYER_TOUCH_SCROLL_THRESHOLD) {
+        clearBackgroundDragActivationTimer()
+        backgroundDragRef.current = null
+        setPressedBackgroundId('')
+        detachBackgroundPointerListeners()
+        return
+      } else {
+        return
+      }
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    updateBackgroundDragOrderAtPoint(event.clientX, event.clientY)
+  }
+
+  const handleBackgroundCardPointerEnd = (event: PointerEvent) => {
+    const dragState = backgroundDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    clearBackgroundDragActivationTimer()
+    detachBackgroundPointerListeners()
+    releaseBackgroundPointerCapture(dragState)
+    backgroundDragRef.current = null
+    setPressedBackgroundId('')
+
+    if (!dragState.active) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    if (dragState.changed) {
+      const nextGroup = reorderDynamicBackgrounds(group.id, dragState.orderedIds, latestGroupRef.current)
+      if (nextGroup) {
+        latestGroupRef.current = nextGroup
+        onGroupChange(nextGroup)
+        sendGroupStateSync(nextGroup)
+        playUiSound('success')
+      }
+    }
+    setDraggedBackgroundId('')
+    setBackgroundDropHint(null)
+    suppressBackgroundClickAfterDrag()
+  }
+
+  const handleBackgroundCardPointerCancel = (event: PointerEvent) => {
+    const dragState = backgroundDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    clearBackgroundDragActivationTimer()
+    detachBackgroundPointerListeners()
+    releaseBackgroundPointerCapture(dragState)
+    backgroundDragRef.current = null
+    setPressedBackgroundId('')
+
+    if (dragState.active && dragState.changed) {
+      latestGroupRef.current = dragState.originalGroup
+      onGroupChange(dragState.originalGroup)
+    }
+    setDraggedBackgroundId('')
+    setBackgroundDropHint(null)
+    if (dragState.active) suppressBackgroundClickAfterDrag()
+  }
+
+  const handleBackgroundCardClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    if (!backgroundSuppressClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    backgroundSuppressClickRef.current = false
+  }
+
+  const handleLayerKeyboardMove = (itemId: string, offset: -1 | 1) => {
+    if (previewMode) return
+    const orderedIds = layerItems.map((item) => item.id)
+    const currentIndex = orderedIds.indexOf(itemId)
+    const nextIndex = currentIndex + offset
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedIds.length) return
+
+    orderedIds.splice(currentIndex, 1)
+    orderedIds.splice(nextIndex, 0, itemId)
+    const nextGroup = reorderDynamicItems(group.id, orderedIds, latestGroupRef.current)
+    if (!nextGroup) return
+
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendGroupStateSync(nextGroup)
+    selectItem(itemId, false)
   }
 
   return (
-    <main className={`ipad-screen dynamic-control-screen apple-container ${previewMode ? 'dynamic-previewing' : ''}`}>
+    <main className={`ipad-screen dynamic-control-screen apple-container ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} dynamic-right-panel-${rightPanelMode}`}>
       <header className="ipad-topbar dynamic-control-topbar">
-        <div className="topbar-title-row">
-          <button
-            type="button"
-            className="ipad-button ghost-button"
-            onClick={() => {
-              if (previewMode) setPreviewModeEnabled(false)
-              onBack()
-            }}
-          >
-            返回
-          </button>
-          <div className="min-w-0">
-            <p className="eyebrow">作品檔案</p>
-            <h1 className="screen-title">{group.name}</h1>
-          </div>
-        </div>
-
-        <div className="dynamic-appear-mode-panel" aria-label="出現方式">
-          <span>出現方式</span>
-          <div className="dynamic-mode-segmented">
+        {previewMode ? (
+          <div className="dynamic-preview-lock-actions">
             <button
               type="button"
-              className={group.appearMode === 'sequence' ? 'active' : ''}
-              onClick={() => setAppearMode('sequence')}
+              className="ipad-button preview-action secondary-button preview-stop-button"
+              onClick={() => setPreviewModeEnabled(false)}
             >
-              逐個出現
-            </button>
-            <button
-              type="button"
-              className={group.appearMode === 'all' ? 'active' : ''}
-              onClick={() => setAppearMode('all')}
-            >
-              全部出現
+              停止預覽
             </button>
           </div>
-          <label className={`dynamic-interval-control ${group.appearMode === 'all' ? 'disabled' : ''}`}>
-            <span>間隔 {appearIntervalSeconds}s</span>
-            <input
-              type="range"
-              min={MIN_DYNAMIC_APPEAR_INTERVAL_MS}
-              max={MAX_DYNAMIC_APPEAR_INTERVAL_MS}
-              step="100"
-              value={appearIntervalMs}
-              disabled={group.appearMode === 'all'}
-              onChange={(event) => setAppearInterval(Number(event.target.value))}
-              className="ipad-slider compact"
-            />
-          </label>
-        </div>
+        ) : (
+          <>
+            <div className="topbar-title-row">
+              <button type="button" className="ipad-button ghost-button" onClick={onBack}>
+                返回
+              </button>
+              <div className="min-w-0">
+                <p className="eyebrow">作品檔案</p>
+                <h1 className="screen-title">{group.name}</h1>
+              </div>
+            </div>
 
-        <div className="dynamic-control-actions">
-          <input
-            ref={backgroundInputRef}
-            type="file"
-            accept="image/*,video/*"
-            className="hidden"
-            onChange={handleBackgroundChange}
-          />
-          <input
-            ref={layerItemInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleLayerItemChange}
-          />
-          <button
-            type="button"
-            className={`ipad-button ${previewMode ? 'secondary-button' : 'primary-button success-button'}`}
-            onClick={() => setPreviewModeEnabled(!previewMode)}
-          >
-            {previewMode ? '停止預覽' : '預覽'}
-          </button>
-          <button
-            type="button"
-            className="ipad-button secondary-button"
-            onClick={() => {
-              if (previewMode) setPreviewModeEnabled(false)
-              const nextOpen = !backgroundPanelOpen
-              if (nextOpen) {
-                setToolOpen(false)
-                setDrawerOpen(false)
-              }
-              setBackgroundPanelOpen(nextOpen)
-            }}
-          >
-            選擇背景
-          </button>
-          <button
-            type="button"
-            className="ipad-button primary-button"
-            onClick={() => {
-              if (previewMode) setPreviewModeEnabled(false)
-              setToolOpen(false)
-              setDrawerOpen(false)
-              backgroundInputRef.current?.click()
-            }}
-          >
-            新增背景
-          </button>
-        </div>
+            <div className="dynamic-control-actions">
+              <input
+                ref={backgroundInputRef}
+                type="file"
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={handleBackgroundChange}
+              />
+              <input
+                ref={layerItemInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleLayerItemChange}
+              />
+              <button
+                type="button"
+                className={`ipad-button secondary-button control-action-button appear-action ${appearPanelOpen ? 'active-action' : ''}`}
+                onClick={() => {
+                  const nextOpen = !appearPanelOpen
+                  setAppearPanelOpen(nextOpen)
+                  if (nextOpen) {
+                    setToolOpen(false)
+                    setBackgroundPanelOpen(false)
+                    setRightPanelCollapsed(false)
+                  }
+                }}
+              >
+                出現設定
+              </button>
+              <button
+                type="button"
+                className={`ipad-button secondary-button control-action-button background-action ${backgroundPanelOpen ? 'active-action' : ''}`}
+                onClick={() => backgroundPanelOpen ? closeBackgroundEditor() : openBackgroundEditor()}
+                aria-expanded={backgroundPanelOpen}
+                aria-haspopup="dialog"
+              >
+                編輯背景
+              </button>
+              <button
+                type="button"
+                className="ipad-button preview-action primary-button success-button"
+                onClick={() => setPreviewModeEnabled(true)}
+              >
+                預覽
+              </button>
+            </div>
+          </>
+        )}
       </header>
 
       {(receiverSyncStatus || receiverSyncError) && (
@@ -1311,27 +2235,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       )}
 
       <section className="dynamic-control-workspace">
-        <div className="dynamic-stage-shell">
-          <div
-            ref={stageRef}
-            className={`dynamic-stage ${activeTab === 'motion' && toolOpen ? 'show-zones' : ''}`}
-            onPointerDown={handleStagePointerDown}
-            onPointerMove={handleStagePointerMove}
-            onPointerUp={handleStagePointerEnd}
-            onPointerCancel={handleStagePointerEnd}
-            onLostPointerCapture={handleStagePointerEnd}
-          >
+        <div className={`dynamic-editor-row ${previewMode ? 'preview-only' : ''} ${rightPanelVisible ? 'right-panel-open' : 'right-panel-collapsed'}`}>
+          <div className="dynamic-stage-shell">
+            <div
+              ref={stageRef}
+              className={`dynamic-stage ${activeTab === 'motion' && toolOpen ? 'show-zones' : ''}`}
+              onPointerDown={handleStagePointerDown}
+              onPointerMove={handleStagePointerMove}
+              onPointerUp={handleStagePointerEnd}
+              onPointerCancel={handleStagePointerEnd}
+              onLostPointerCapture={handleStagePointerEnd}
+            >
             <div className="dynamic-stage-zones" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
 
-            {group.background ? (
-              group.background.type === 'video' ? (
+            {displayedBackground ? (
+              displayedBackground.type === 'video' ? (
                 <video
                   ref={stageBackgroundVideoRef}
-                  src={group.background.url}
+                  key={displayedBackground.id}
+                  src={displayedBackground.url}
                   autoPlay
                   loop
                   muted
@@ -1340,7 +2266,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   className="dynamic-stage-background"
                 />
               ) : (
-                <img src={group.background.url} alt={group.background.name} className="dynamic-stage-background" />
+                <img src={displayedBackground.url} alt={displayedBackground.name} className="dynamic-stage-background" />
               )
             ) : (
               <div className="dynamic-empty-stage">
@@ -1388,82 +2314,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </div>
               )
             })}
+            </div>
           </div>
-        </div>
 
-        {!previewMode && backgroundPanelOpen && (
-          <aside className="dynamic-background-drawer">
-            <div className="drawer-heading">
-              <div>
-                <p className="eyebrow">背景素材</p>
-                <h2>{backgrounds.length} 個</h2>
-              </div>
-              <button type="button" className="mini-action-button" onClick={() => setBackgroundPanelOpen(false)}>
-                收起
-              </button>
-            </div>
-
-            <div className="background-library-list">
-              {backgrounds.map((background) => (
-                <article
-                  key={background.id}
-                  className={`background-library-card ${group.background?.id === background.id ? 'active' : ''}`}
-                >
-                  <label className="background-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedBackgroundIds.includes(background.id)}
-                      onChange={() => toggleBackgroundSelection(background.id)}
-                    />
-                    <span>選取</span>
-                  </label>
-                  <button type="button" className="background-preview-button" onClick={() => handleBackgroundSelect(background.id)}>
-                    {background.type === 'video' ? (
-                      <video src={background.url} muted playsInline />
-                    ) : (
-                      <img src={background.url} alt={background.name} />
-                    )}
-                    <strong>{background.name}</strong>
-                  </button>
-                </article>
-              ))}
-              {backgrounds.length === 0 && (
-                <div className="background-empty-state">尚未加入背景</div>
-              )}
-            </div>
-
-            <div className="background-drawer-actions">
-              <button type="button" className="ipad-button secondary-button" onClick={() => backgroundInputRef.current?.click()}>
-                新增
-              </button>
-              <button
-                type="button"
-                className="ipad-button danger-button"
-                disabled={selectedBackgroundIds.length === 0}
-                onClick={handleBackgroundDelete}
-              >
-                刪除選取
-              </button>
-            </div>
-          </aside>
-        )}
-
-        {!previewMode && (
-          <aside className={`dynamic-layer-drawer ${drawerOpen ? 'open' : ''}`}>
-          <button
-            type="button"
-            className="dynamic-drawer-handle"
-            onPointerDown={handleDrawerPointerDown}
-            onPointerUp={handleDrawerPointerUp}
-            aria-label="開關圖層"
+        {rightPanelMode === 'layers' && (
+          <aside
+            className="dynamic-layer-panel"
+            aria-label="圖層"
+            style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
-            <span />
-          </button>
-          <div className="dynamic-layer-content">
-            <div className="drawer-heading">
+            <div className="dynamic-layer-header">
               <div>
-                <p className="eyebrow">圖層</p>
-                <h2>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</h2>
+                <p className="eyebrow">舞台結構</p>
+                <h2>圖層 <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
               </div>
               <button
                 type="button"
@@ -1472,65 +2335,193 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 onClick={() => {
                   setToolOpen(false)
                   setBackgroundPanelOpen(false)
+                  setRightPanelCollapsed(false)
+                  setAppearPanelOpen(false)
                   layerItemInputRef.current?.click()
                 }}
-                aria-label="新增圖片"
+                aria-label="新增物件"
+                title="新增物件"
               >
                 +
               </button>
+              <button
+                type="button"
+                className="dynamic-panel-collapse-button"
+                onClick={() => {
+                  setRightPanelCollapsed(true)
+                  setToolOpen(false)
+                  setBackgroundPanelOpen(false)
+                  setAppearPanelOpen(false)
+                }}
+                aria-label="收起圖層"
+                title="收起圖層"
+              >
+                ›
+              </button>
             </div>
-            <div className="dynamic-layer-list">
-              {sortedItems.map((item) => (
-                <article key={item.id} className={`dynamic-layer-card ${selectedItem?.id === item.id ? 'active' : ''}`}>
-                  <button type="button" className="dynamic-layer-main" onClick={() => selectItem(item.id, true)}>
-                    <img src={item.media.url} alt={item.name} />
-                    <span>{item.name}</span>
-                  </button>
-                  <div className="dynamic-layer-actions">
-                    <button type="button" onClick={() => {
-                      selectItem(item.id, true)
-                      setActiveTab('copy')
-                    }}>
-                      復用
-                    </button>
-                    <button type="button" className="danger-inline-button" onClick={() => handleItemDelete(item.id)}>
-                      刪除
-                    </button>
-                  </div>
-                </article>
-              ))}
+
+            <div className="dynamic-layer-bulk-toolbar">
+              <label className="dynamic-layer-select-all">
+                <input
+                  type="checkbox"
+                  checked={allLayersSelected}
+                  ref={(input) => {
+                    if (input) input.indeterminate = someLayersSelected
+                  }}
+                  onChange={toggleAllLayerSelection}
+                />
+                <span aria-hidden="true" />
+                <strong>全選</strong>
+              </label>
+              <span className="dynamic-layer-selected-count">已選 {selectedLayerItemIds.length}</span>
+              <button
+                type="button"
+                className="dynamic-layer-bulk-delete danger-inline-button"
+                disabled={selectedLayerItemIds.length === 0}
+                onClick={handleLayerBulkDelete}
+              >
+                刪除
+              </button>
             </div>
-          </div>
+
+            <div
+              ref={layerListRef}
+              className={`dynamic-layer-list ${draggedLayerItemId ? 'is-reordering' : ''}`}
+            >
+              {layerItems.map((item) => {
+                const motionLabel = motionOptions.find((option) => option.id === item.moveMode)?.label ?? '停止'
+                return (
+                  <article
+                    key={item.id}
+                    data-layer-item-id={item.id}
+                    className={`dynamic-layer-card ${selectedItem?.id === item.id ? 'active' : ''} ${selectedLayerItemIds.includes(item.id) ? 'is-checked' : ''} ${pressedLayerItemId === item.id ? 'is-pressed' : ''} ${draggedLayerItemId === item.id ? 'dragging' : ''} ${layerDropHint?.itemId === item.id ? `drop-${layerDropHint.placement}` : ''}`}
+                    onPointerDown={(event) => handleLayerCardPointerDown(event, item.id)}
+                    onClickCapture={handleLayerCardClickCapture}
+                    onContextMenu={(event) => event.preventDefault()}
+                    aria-grabbed={draggedLayerItemId === item.id}
+                  >
+                    <label
+                      className="dynamic-layer-select"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      aria-label={`選取 ${item.name}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedLayerItemIds.includes(item.id)}
+                        onChange={() => toggleLayerSelection(item.id)}
+                      />
+                      <span aria-hidden="true" />
+                    </label>
+                    <button
+                      type="button"
+                      className="dynamic-layer-main"
+                      onClick={() => selectItem(item.id, true)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowUp') {
+                          event.preventDefault()
+                          handleLayerKeyboardMove(item.id, -1)
+                        } else if (event.key === 'ArrowDown') {
+                          event.preventDefault()
+                          handleLayerKeyboardMove(item.id, 1)
+                        }
+                      }}
+                    >
+                      <span className="dynamic-layer-order">{String(item.order + 1).padStart(2, '0')}</span>
+                      <img src={item.media.url} alt={item.name} />
+                      <span className="dynamic-layer-copy">
+                        <strong>{item.name}</strong>
+                        <small>{motionLabel} · 動畫 {item.animationId}</small>
+                      </span>
+                    </button>
+                    <div className="dynamic-layer-actions">
+                      <button
+                        type="button"
+                        className="dynamic-layer-property-button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          selectItem(item.id, true)
+                        }}
+                        aria-label={`開啟 ${item.name} 的物件屬性`}
+                        title="物件屬性"
+                      >
+                        屬性
+                      </button>
+                      <button
+                        type="button"
+                        className="dynamic-layer-delete-button"
+                        onClick={() => handleItemDelete(item.id)}
+                        aria-label={`刪除 ${item.name}`}
+                        title="刪除物件"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
           </aside>
         )}
 
-        {selectedItem && toolOpen && !previewMode && (
-          <aside className={`dynamic-tool-panel side-${toolSide}`}>
+        {rightPanelMode === 'collapsed' && (
+          <button
+            type="button"
+            className="dynamic-right-panel-reopen"
+            onClick={() => {
+              setRightPanelCollapsed(false)
+              setToolOpen(false)
+              setBackgroundPanelOpen(false)
+              setAppearPanelOpen(false)
+            }}
+            aria-label="展開圖層"
+            title="展開圖層"
+          >
+            圖層
+          </button>
+        )}
+
+        {rightPanelMode === 'object' && selectedItem && (
+          <aside
+            className="dynamic-tool-panel side-right dynamic-property-overlay-panel"
+            aria-label="物件屬性"
+            style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
+          >
             <div className="dynamic-tool-header">
               <div className="dynamic-tool-title">
                 <img src={selectedItem.media.url} alt={selectedItem.name} />
                 <div>
-                  <p className="eyebrow">控制工具</p>
+                  <p className="eyebrow">物件屬性</p>
                   <h2>{selectedItem.name}</h2>
                 </div>
               </div>
-              <button type="button" className="mini-action-button" onClick={() => setToolOpen(false)}>
-                收起
+              <button
+                type="button"
+                className="dynamic-panel-close"
+                onClick={() => {
+                  setToolOpen(false)
+                  setBackgroundPanelOpen(false)
+                  setRightPanelCollapsed(false)
+                }}
+                aria-label="返回圖層"
+                title="返回圖層"
+              >
+                ×
               </button>
             </div>
 
             <div className="tool-tabs dynamic-tool-tabs">
               {[
-                { id: 'motion', label: '移動' },
+                { id: 'motion', label: '移動方式' },
                 { id: 'animation', label: '動畫' },
-                { id: 'transform', label: '大小' },
-                { id: 'deform', label: '物件變形' },
-                { id: 'copy', label: '復用' }
+                { id: 'transform', label: '變形' },
+                { id: 'copy', label: '屬性複製' }
               ].map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
-                  className={`tool-tab ${activeTab === tab.id ? 'active' : ''}`}
+                  className={`tool-tab ${visibleActiveTab === tab.id ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.id as ControlTab)}
                 >
                   {tab.label}
@@ -1538,7 +2529,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               ))}
             </div>
 
-            {activeTab === 'motion' && (
+            {visibleActiveTab === 'motion' && (
               <div className="dynamic-tool-body">
                 <div className="motion-button-row">
                   {motionOptions.map((motion) => (
@@ -1595,7 +2586,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </div>
             )}
 
-            {activeTab === 'animation' && (
+            {visibleActiveTab === 'animation' && (
               <div className="dynamic-tool-body compact">
                 <div className="animation-grid dynamic-animation-grid">
                   {DYNAMIC_ANIMATION_PREVIEWS.map((animation) => (
@@ -1619,12 +2610,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </div>
             )}
 
-            {activeTab === 'transform' && (
+            {visibleActiveTab === 'transform' && (
               <div className="dynamic-tool-body compact">
-                <div className="dynamic-transform-readout">
-                  <span>網格 {selectedItem.gridIndex}</span>
-                  <span>{selectedItem.scale.toFixed(1)}x</span>
-                  <span>{selectedItem.rotation.toFixed(0)}°</span>
+                <div className="dynamic-transform-readout dynamic-transform-readout-clean">
+                  <span>
+                    <small>縮放</small>
+                    <strong>{Math.round(selectedItem.scale * 100)}%</strong>
+                  </span>
+                  <span>
+                    <small>旋轉</small>
+                    <strong>{selectedItem.rotation.toFixed(0)}°</strong>
+                  </span>
                 </div>
                 <div className="control-row">
                   <button type="button" className="scale-step-button" onClick={() => handleScaleNudge(-0.1)}>-</button>
@@ -1636,11 +2632,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <strong>旋轉</strong>
                   <button type="button" className="scale-step-button" onClick={() => handleRotationNudge(5)}>+</button>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'deform' && (
-              <div className="dynamic-tool-body compact">
                 <div className="dynamic-deform-stack">
                   <label className="toggle-control wide">
                     <input
@@ -1662,33 +2653,373 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </div>
             )}
 
-            {activeTab === 'copy' && (
+            {visibleActiveTab === 'copy' && (
               <div className="dynamic-tool-body compact">
+                <div className="dynamic-copy-section-heading">
+                  <span>來源物件</span>
+                  <small>選擇要複製屬性的物件</small>
+                </div>
                 <div className="copy-source-list">
                   {sortedItems.filter((item) => item.id !== selectedItem.id).map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      data-silent="true"
-                      className={`copy-source-button ${copiedSourceItemId === item.id ? 'copied' : ''}`}
-                      onClick={() => handleCopySettings(item.id)}
+                      className={`copy-source-button ${copiedSourceItemId === item.id ? 'selected' : ''}`}
+                      onClick={() => {
+                        setCopiedSourceItemId(item.id)
+                        setCopyConfirmOpen(false)
+                      }}
                     >
                       <img src={item.media.url} alt={item.name} />
                       <span>{item.name}</span>
+                      <span className="copy-source-check" aria-hidden="true">
+                        {copiedSourceItemId === item.id ? '✓' : ''}
+                      </span>
                     </button>
                   ))}
                   {sortedItems.length <= 1 && (
-                    <span className="copy-empty">暫無其他圖片可復用。</span>
+                    <span className="copy-empty">暫無其他物件可複製。</span>
                   )}
                 </div>
+
+                {sortedItems.length > 1 && (
+                  <>
+                    <div className="dynamic-copy-section-heading copy-options-heading">
+                      <span>複製內容</span>
+                      <button
+                        type="button"
+                        className="dynamic-copy-select-all"
+                        onClick={() => setSelectedCopyFields(
+                          selectedCopyFields.length === ALL_COPY_FIELDS.length ? [] : [...ALL_COPY_FIELDS]
+                        )}
+                      >
+                        {selectedCopyFields.length === ALL_COPY_FIELDS.length ? '全部取消' : '全選'}
+                      </button>
+                    </div>
+                    <div className="dynamic-copy-options">
+                      {copyFieldOptions.map((option) => (
+                        <label key={option.id} className="dynamic-copy-option">
+                          <input
+                            type="checkbox"
+                            checked={selectedCopyFields.includes(option.id)}
+                            onChange={() => toggleCopyField(option.id)}
+                          />
+                          <span className="dynamic-copy-checkbox" aria-hidden="true" />
+                          <strong>{option.label}</strong>
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="ipad-button primary-button dynamic-copy-submit"
+                      disabled={!copySourceItem || selectedCopyFields.length === 0}
+                      onClick={handleCopyRequest}
+                    >
+                      複製屬性
+                    </button>
+                  </>
+                )}
                 {copyFeedbackItemId === selectedItem.id && (
-                  <div className="dynamic-copy-feedback">已套用參數</div>
+                  <div className="dynamic-copy-feedback">屬性已複製</div>
                 )}
               </div>
             )}
           </aside>
         )}
+
+        {layerDragPreview && (() => {
+          const draggedItem = group.items.find((item) => item.id === layerDragPreview.itemId)
+          if (!draggedItem) return null
+          const motionLabel = motionOptions.find((option) => option.id === draggedItem.moveMode)?.label ?? '停止'
+          return (
+            <div
+              className="dynamic-layer-drag-preview"
+              style={{
+                left: `${layerDragPreview.x}px`,
+                top: `${layerDragPreview.y}px`,
+                width: `${layerDragPreview.width}px`,
+                height: `${layerDragPreview.height}px`
+              }}
+              aria-hidden="true"
+            >
+              <img src={draggedItem.media.url} alt="" />
+              <span>
+                <strong>{draggedItem.name}</strong>
+                <small>{motionLabel} · 動畫 {draggedItem.animationId}</small>
+              </span>
+            </div>
+          )
+        })()}
+
+        {!previewMode && appearPanelOpen && (
+          <aside className="dynamic-appear-popover" aria-label="出現設定">
+            <div className="drawer-heading">
+              <div>
+                <p className="eyebrow">舞台</p>
+                <h2>出現設定</h2>
+              </div>
+              <button type="button" className="mini-action-button" onClick={() => setAppearPanelOpen(false)}>
+                關閉
+              </button>
+            </div>
+            <div className="dynamic-mode-segmented">
+              <button
+                type="button"
+                className={group.appearMode === 'sequence' ? 'active' : ''}
+                onClick={() => setAppearMode('sequence')}
+              >
+                逐個出現
+              </button>
+              <button
+                type="button"
+                className={group.appearMode === 'all' ? 'active' : ''}
+                onClick={() => setAppearMode('all')}
+              >
+                全部出現
+              </button>
+            </div>
+            <label className={`dynamic-percent-control ${group.appearMode === 'all' ? 'disabled' : ''}`}>
+              <span>間隔 {appearIntervalSeconds}s</span>
+              <input
+                type="range"
+                min={MIN_DYNAMIC_APPEAR_INTERVAL_MS}
+                max={MAX_DYNAMIC_APPEAR_INTERVAL_MS}
+                step="100"
+                value={appearIntervalMs}
+                disabled={group.appearMode === 'all'}
+                onChange={(event) => setAppearInterval(Number(event.target.value))}
+                className="ipad-slider"
+              />
+            </label>
+            <p className="dynamic-appear-order-note">依圖層順序播放</p>
+          </aside>
+        )}
+
+        </div>
       </section>
+
+      {!previewMode && backgroundPanelOpen && (
+        <div
+          className="dynamic-background-modal-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeBackgroundEditor()
+          }}
+        >
+          <section
+            className="dynamic-background-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="background-editor-title"
+          >
+            <div className="drawer-heading dynamic-background-modal-heading">
+              <div>
+                <p className="eyebrow">舞台背景</p>
+                <h2 id="background-editor-title">編輯背景 <span>{backgrounds.length} 個素材</span></h2>
+              </div>
+              <button
+                type="button"
+                className="dynamic-panel-close"
+                onClick={closeBackgroundEditor}
+                aria-label="關閉編輯背景"
+                title="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className={`dynamic-background-playback ${group.backgroundPlayMode === 'fixed' ? 'fixed-mode' : ''}`}>
+              <div className="dynamic-mode-segmented" aria-label="背景切換方式">
+                {([
+                  ['fixed', '固定背景'],
+                  ['random', '隨機切換'],
+                  ['sequence', '逐個切換']
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={group.backgroundPlayMode === mode ? 'active' : ''}
+                    onClick={() => setBackgroundPlayback(mode)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {group.backgroundPlayMode !== 'fixed' && (
+                <label className="dynamic-interval-input">
+                  <span>切換間隔</span>
+                  <span className="dynamic-interval-fields">
+                    <input
+                      type="number"
+                      min={backgroundIntervalUnit === 'minutes' ? 0.02 : 1}
+                      max={backgroundIntervalUnit === 'minutes' ? 10 : 600}
+                      step={backgroundIntervalUnit === 'minutes' ? 0.5 : 1}
+                      inputMode="decimal"
+                      value={backgroundIntervalDraft}
+                      onChange={(event) => setBackgroundIntervalDraft(event.target.value)}
+                      onBlur={commitBackgroundIntervalDraft}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur()
+                        if (event.key === 'Escape') {
+                          setBackgroundIntervalDraft(formatBackgroundInterval(backgroundIntervalMs, backgroundIntervalUnit))
+                          event.currentTarget.blur()
+                        }
+                      }}
+                      aria-label="背景切換間隔"
+                    />
+                    <select
+                      value={backgroundIntervalUnit}
+                      onChange={(event) => handleBackgroundIntervalUnitChange(event.target.value as BackgroundIntervalUnit)}
+                      aria-label="背景切換間隔單位"
+                    >
+                      <option value="seconds">秒</option>
+                      <option value="minutes">分鐘</option>
+                    </select>
+                  </span>
+                </label>
+              )}
+            </div>
+
+            <div className="dynamic-background-modal-toolbar">
+              <label className="dynamic-background-select-all">
+                <input
+                  type="checkbox"
+                  checked={allBackgroundsSelected}
+                  ref={(input) => {
+                    if (input) input.indeterminate = someBackgroundsSelected
+                  }}
+                  onChange={toggleAllBackgroundSelection}
+                />
+                <span aria-hidden="true" />
+                <strong>全選</strong>
+              </label>
+              <span>按住卡片拖拽可調整播放順序</span>
+              <strong>已選 {selectedBackgroundIds.length}</strong>
+            </div>
+
+            <div
+              ref={backgroundListRef}
+              className={`background-library-list ${draggedBackgroundId ? 'is-reordering' : ''}`}
+            >
+              {backgrounds.map((background, index) => (
+                <article
+                  key={background.id}
+                  data-background-id={background.id}
+                  className={`background-library-card ${group.background?.id === background.id ? 'active' : ''} ${selectedBackgroundIds.includes(background.id) ? 'is-checked' : ''} ${pressedBackgroundId === background.id ? 'is-pressed' : ''} ${draggedBackgroundId === background.id ? 'dragging' : ''} ${backgroundDropHint?.backgroundId === background.id ? `drop-${backgroundDropHint.placement}` : ''}`}
+                  onPointerDown={(event) => handleBackgroundCardPointerDown(event, background.id)}
+                  onClickCapture={handleBackgroundCardClickCapture}
+                  onContextMenu={(event) => event.preventDefault()}
+                  aria-grabbed={draggedBackgroundId === background.id}
+                >
+                  <label
+                    className="background-check"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`選取 ${background.name}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedBackgroundIds.includes(background.id)}
+                      onChange={() => toggleBackgroundSelection(background.id)}
+                    />
+                    <span aria-hidden="true" />
+                  </label>
+                  <button type="button" className="background-preview-button" onClick={() => handleBackgroundSelect(background.id)}>
+                    <span className="background-order">{String(index + 1).padStart(2, '0')}</span>
+                    {background.type === 'video' ? (
+                      <video src={background.url} muted playsInline />
+                    ) : (
+                      <img src={background.url} alt={background.name} />
+                    )}
+                    <span className="background-copy">
+                      <strong>{background.name}</strong>
+                      <small>{background.type === 'video' ? '影片背景' : '圖片背景'}</small>
+                    </span>
+                  </button>
+                </article>
+              ))}
+              {backgrounds.length === 0 && (
+                <div className="background-empty-state">尚未加入背景</div>
+              )}
+            </div>
+
+            <div className="background-drawer-actions dynamic-background-modal-actions">
+              <button
+                type="button"
+                className="ipad-button danger-button"
+                disabled={selectedBackgroundIds.length === 0}
+                onClick={handleBackgroundDelete}
+              >
+                刪除選取
+              </button>
+              <button
+                type="button"
+                className="ipad-button primary-button"
+                onClick={() => backgroundInputRef.current?.click()}
+              >
+                新增背景
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {copyConfirmOpen && selectedItem && copySourceItem && (
+        <div className="dynamic-modal-overlay dynamic-copy-modal-overlay" role="presentation">
+          <button
+            type="button"
+            className="settings-scrim"
+            onClick={() => setCopyConfirmOpen(false)}
+            aria-label="取消複製"
+          />
+          <section className="dynamic-copy-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="copy-confirm-title">
+            <div className="dynamic-copy-confirm-heading">
+              <div>
+                <p className="eyebrow">屬性複製</p>
+                <h2 id="copy-confirm-title">確認複製屬性</h2>
+              </div>
+              <button
+                type="button"
+                className="dynamic-panel-close"
+                onClick={() => setCopyConfirmOpen(false)}
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="dynamic-copy-route">
+              <div className="dynamic-copy-route-item">
+                <img src={copySourceItem.media.url} alt={copySourceItem.name} />
+                <span>來源</span>
+                <strong>{copySourceItem.name}</strong>
+              </div>
+              <span className="dynamic-copy-route-arrow" aria-hidden="true">→</span>
+              <div className="dynamic-copy-route-item target">
+                <img src={selectedItem.media.url} alt={selectedItem.name} />
+                <span>目標</span>
+                <strong>{selectedItem.name}</strong>
+              </div>
+            </div>
+
+            <div className="dynamic-copy-confirm-fields" aria-label="複製內容">
+              {copyFieldOptions
+                .filter((option) => selectedCopyFields.includes(option.id))
+                .map((option) => <span key={option.id}>{option.label}</span>)}
+            </div>
+
+            <p className="dynamic-copy-confirm-note">目標物件所選的屬性將被取代，其他屬性維持不變。</p>
+            <div className="dynamic-copy-confirm-actions">
+              <button type="button" className="ipad-button secondary-button" onClick={() => setCopyConfirmOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="ipad-button primary-button" onClick={handleCopyConfirm}>
+                確認複製
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

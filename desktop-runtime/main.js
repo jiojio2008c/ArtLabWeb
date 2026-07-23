@@ -24,6 +24,8 @@ const runtimeState = {
     groupId: null,
     appearMode: 'all',
     intervalMs: 800,
+    backgroundPlayMode: 'fixed',
+    backgroundIntervalMs: 5000,
     replayId: 0,
     startedAt: Date.now()
   },
@@ -168,6 +170,8 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       name: name || '作品檔案',
       activeBackgroundId: null,
       backgrounds: [],
+      backgroundPlayMode: 'fixed',
+      backgroundIntervalMs: 5000,
       items: [],
       appearMode: 'all',
       appearIntervalMs: 800,
@@ -297,6 +301,8 @@ const applyDynamicEvent = (eventName, payload) => {
       group.name = payload.name ?? group.name
       group.appearMode = payload.appearMode ?? group.appearMode ?? 'all'
       group.appearIntervalMs = payload.appearIntervalMs ?? group.appearIntervalMs ?? 800
+      group.backgroundPlayMode = payload.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
+      group.backgroundIntervalMs = payload.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000
       group.activeBackgroundId = payload.activeBackgroundId ?? group.activeBackgroundId
 
       const backgrounds = Array.isArray(payload.backgrounds)
@@ -368,6 +374,8 @@ const applyDynamicEvent = (eventName, payload) => {
         groupId,
         appearMode: payload.appearMode ?? ensureGroup(groupId).appearMode ?? 'all',
         intervalMs: payload.intervalMs ?? ensureGroup(groupId).appearIntervalMs ?? 800,
+        backgroundPlayMode: payload.backgroundPlayMode ?? ensureGroup(groupId).backgroundPlayMode ?? 'fixed',
+        backgroundIntervalMs: payload.backgroundIntervalMs ?? ensureGroup(groupId).backgroundIntervalMs ?? 5000,
         replayId: payload.replayId ?? runtimeState.preview.replayId + 1,
         startedAt: Date.now()
       }
@@ -386,6 +394,14 @@ const applyDynamicEvent = (eventName, payload) => {
       const deleteIds = new Set(payload.assetIds ?? [])
       group.backgrounds = group.backgrounds.filter((background) => !deleteIds.has(background.assetId))
       group.activeBackgroundId = payload.nextActiveAssetId ?? group.backgrounds[0]?.assetId ?? null
+      group.updatedAt = Date.now()
+      break
+    }
+
+    case 'BackgroundPlayback': {
+      const group = ensureGroup(payload.groupId)
+      group.backgroundPlayMode = payload.mode ?? payload.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
+      group.backgroundIntervalMs = payload.intervalMs ?? payload.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000
       group.updatedAt = Date.now()
       break
     }

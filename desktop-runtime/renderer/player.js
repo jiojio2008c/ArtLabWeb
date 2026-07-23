@@ -16,7 +16,9 @@ let runtimeState = {
     replayId: 0,
     startedAt: Date.now(),
     appearMode: 'all',
-    intervalMs: 800
+    intervalMs: 800,
+    backgroundPlayMode: 'fixed',
+    backgroundIntervalMs: 5000
   },
   server: {
     status: 'starting',
@@ -31,6 +33,8 @@ let stageOffsetX = 0
 let stageOffsetY = 0
 let lastPreviewKey = ''
 let previewStartTime = performance.now()
+let lastDrawnBackgroundAssetId = ''
+let randomBackgroundState = { key: '', cycle: 0, index: 0 }
 
 const imageCache = new Map()
 const videoCache = new Map()
@@ -196,9 +200,42 @@ const drawPlaceholderBackground = (time) => {
   context.restore()
 }
 
+const getPreviewBackground = (group, now) => {
+  const backgrounds = group?.backgrounds ?? []
+  if (backgrounds.length === 0) return null
+
+  const activeIndex = Math.max(0, backgrounds.findIndex((item) => item.assetId === group.activeBackgroundId))
+  const preview = runtimeState.preview ?? {}
+  const mode = preview.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
+  if (!preview.enabled || mode === 'fixed' || backgrounds.length === 1) {
+    return backgrounds[activeIndex] ?? backgrounds[0]
+  }
+
+  const intervalMs = clamp(
+    Number(preview.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000),
+    1000,
+    600000
+  )
+  const cycle = Math.max(0, Math.floor((now - previewStartTime) / intervalMs))
+  if (mode === 'sequence') {
+    return backgrounds[(activeIndex + cycle) % backgrounds.length]
+  }
+
+  const key = `${group.groupId}:${preview.replayId}:${backgrounds.map((item) => item.assetId).join(',')}`
+  if (randomBackgroundState.key !== key || cycle < randomBackgroundState.cycle) {
+    randomBackgroundState = { key, cycle: 0, index: activeIndex }
+  }
+  while (randomBackgroundState.cycle < cycle) {
+    const nextCycle = randomBackgroundState.cycle + 1
+    const offset = 1 + (hashString(`${key}:${nextCycle}`) % (backgrounds.length - 1))
+    randomBackgroundState.index = (randomBackgroundState.index + offset) % backgrounds.length
+    randomBackgroundState.cycle = nextCycle
+  }
+  return backgrounds[randomBackgroundState.index]
+}
+
 const drawBackground = (group, time) => {
-  const activeBackground = group?.backgrounds?.find((item) => item.assetId === group.activeBackgroundId)
-    ?? group?.backgrounds?.[0]
+  const activeBackground = getPreviewBackground(group, time)
   const asset = getAsset(activeBackground?.assetId)
 
   if (!asset?.url) {
@@ -209,12 +246,18 @@ const drawBackground = (group, time) => {
   if (asset.mediaType === 'video') {
     const video = getVideo(asset)
     if (video?.loaded && video.element.readyState >= 2) {
+      if (lastDrawnBackgroundAssetId !== activeBackground.assetId) {
+        video.element.currentTime = 0
+        video.element.play().catch(() => {})
+      }
+      lastDrawnBackgroundAssetId = activeBackground.assetId
       drawCover(video.element, video.width, video.height)
       return
     }
   } else {
     const image = getImage(asset)
     if (image?.loaded) {
+      lastDrawnBackgroundAssetId = activeBackground.assetId
       drawCover(image.element, image.width, image.height)
       return
     }
@@ -561,7 +604,7 @@ const receiveState = (state) => {
   clearUnusedMedia()
 
   const preview = runtimeState.preview ?? {}
-  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${preview.appearMode}:${preview.intervalMs}`
+  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${preview.appearMode}:${preview.intervalMs}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}`
   if (key !== lastPreviewKey) {
     lastPreviewKey = key
     previewStartTime = performance.now()

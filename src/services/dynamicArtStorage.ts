@@ -12,12 +12,17 @@ const GRID_ROWS = 9
 const DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS = 800
 const MIN_DYNAMIC_APPEAR_INTERVAL_MS = 100
 const MAX_DYNAMIC_APPEAR_INTERVAL_MS = 5000
+const DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS = 5000
+const MIN_DYNAMIC_BACKGROUND_INTERVAL_MS = 1000
+const MAX_DYNAMIC_BACKGROUND_INTERVAL_MS = 600000
 const DEFAULT_DYNAMIC_MOVE_SPEED = 50
 
 type DynamicMediaType = 'image' | 'video'
 type DynamicMoveMode = 'none' | 'verticalWave' | 'left' | 'right' | 'orbit' | 'random'
 type DynamicMoveTrack = 'top' | 'middle' | 'bottom'
 type DynamicAppearMode = 'sequence' | 'all'
+type DynamicBackgroundPlayMode = 'fixed' | 'random' | 'sequence'
+type DynamicCopyField = 'motion' | 'animation' | 'size' | 'deform'
 
 interface DynamicMedia {
   id: string
@@ -65,6 +70,8 @@ interface DynamicGroup {
   background?: DynamicBackground
   backgrounds?: DynamicBackground[]
   activeBackgroundId?: string
+  backgroundPlayMode: DynamicBackgroundPlayMode
+  backgroundIntervalMs: number
   appearMode: DynamicAppearMode
   appearIntervalMs: number
   items: DynamicItem[]
@@ -134,6 +141,19 @@ const getDynamicAppearIntervalFromGroup = (group: DynamicGroup) => {
   const interval = Number(group.appearIntervalMs)
   if (!Number.isFinite(interval)) return DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS
   return Math.min(MAX_DYNAMIC_APPEAR_INTERVAL_MS, Math.max(MIN_DYNAMIC_APPEAR_INTERVAL_MS, Math.round(interval)))
+}
+
+const getDynamicBackgroundIntervalFromGroup = (group: DynamicGroup) => {
+  const interval = Number(group.backgroundIntervalMs)
+  if (!Number.isFinite(interval)) return DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS
+  return Math.min(MAX_DYNAMIC_BACKGROUND_INTERVAL_MS, Math.max(MIN_DYNAMIC_BACKGROUND_INTERVAL_MS, Math.round(interval)))
+}
+
+const getDynamicBackgroundPlayModeFromGroup = (group: DynamicGroup): DynamicBackgroundPlayMode => {
+  if (group.backgroundPlayMode === 'random' || group.backgroundPlayMode === 'sequence') {
+    return group.backgroundPlayMode
+  }
+  return 'fixed'
 }
 
 const blobToBase64 = (blob: Blob) => {
@@ -430,6 +450,8 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
     background,
     backgrounds,
     activeBackgroundId: background?.id,
+    backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
+    backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
     items
   }
@@ -608,6 +630,8 @@ const createDynamicGroup = async (name: string, thumbnailFile?: File, background
     background,
     backgrounds: background ? [background] : [],
     activeBackgroundId: background?.id,
+    backgroundPlayMode: 'fixed',
+    backgroundIntervalMs: DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
     appearMode: 'all',
     appearIntervalMs: DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
     items: [],
@@ -668,6 +692,8 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
   const existingGroup = index >= 0 ? groups[index] : undefined
   const nextGroup = mergeGroupPersistentMedia({
     ...group,
+    backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
+    backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
     updatedAt: Date.now()
   }, existingGroup)
@@ -746,6 +772,49 @@ const deleteDynamicBackgrounds = async (groupId: string, backgroundIds: string[]
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return hydrateGroup(group)
+}
+
+const reorderDynamicBackgrounds = (
+  groupId: string,
+  orderedBackgroundIds: string[],
+  currentGroup?: DynamicGroup
+) => {
+  const groups = loadRawGroups()
+  const groupIndex = groups.findIndex((item) => item.id === groupId)
+  const storedGroup = groupIndex >= 0 ? groups[groupIndex] : undefined
+  const group = currentGroup?.id === groupId
+    ? mergeGroupPersistentMedia(currentGroup, storedGroup)
+    : storedGroup
+  if (!group) return undefined
+
+  const currentBackgrounds = getGroupBackgrounds(group)
+  const validIds = new Set(currentBackgrounds.map((background) => background.id))
+  const orderedIds = orderedBackgroundIds.filter((backgroundId) => validIds.has(backgroundId))
+  currentBackgrounds.forEach((background) => {
+    if (!orderedIds.includes(background.id)) orderedIds.push(background.id)
+  })
+
+  const backgroundById = new Map(currentBackgrounds.map((background) => [background.id, background]))
+  const backgrounds = orderedIds
+    .map((backgroundId) => backgroundById.get(backgroundId))
+    .filter(Boolean) as DynamicBackground[]
+  const activeBackground = backgrounds.find((background) => background.id === group.activeBackgroundId)
+    ?? backgrounds.find((background) => background.id === group.background?.id)
+    ?? backgrounds[0]
+
+  group.backgrounds = backgrounds
+  group.background = activeBackground
+  group.activeBackgroundId = activeBackground?.id
+  group.updatedAt = Date.now()
+
+  if (groupIndex >= 0) {
+    groups[groupIndex] = group
+  } else {
+    groups.unshift(group)
+  }
+
+  saveDynamicGroups(groups)
+  return group
 }
 
 const addDynamicItem = async (groupId: string, file: File, itemName?: string) => {
@@ -827,26 +896,43 @@ const updateDynamicItem = (groupId: string, itemId: string, updater: (item: Dyna
   return group
 }
 
-const deleteDynamicItem = async (groupId: string, itemId: string) => {
+const deleteDynamicItems = async (groupId: string, itemIds: string[]) => {
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
+  if (!group || itemIds.length === 0) return undefined
 
-  const item = group.items.find((nextItem) => nextItem.id === itemId)
-  await deleteDynamicMedia(item?.media)
+  const deleteSet = new Set(itemIds)
+  const deletedItems = group.items.filter((item) => deleteSet.has(item.id))
+  if (deletedItems.length === 0) return hydrateGroup(group)
 
   group.items = group.items
-    .filter((nextItem) => nextItem.id !== itemId)
+    .filter((item) => !deleteSet.has(item.id))
     .map((nextItem, index) => ({ ...nextItem, order: index, updatedAt: Date.now() }))
+
+  const remainingMediaIds = new Set(
+    groups.flatMap((nextGroup) => collectDynamicGroupMedia(nextGroup).map((media) => media.id))
+  )
+  const deletedMedia = Array.from(
+    new Map(deletedItems.map((item) => [item.media.id, item.media])).values()
+  )
+  await Promise.all(
+    deletedMedia
+      .filter((media) => !remainingMediaIds.has(media.id))
+      .map(deleteDynamicMedia)
+  )
+
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return hydrateGroup(group)
 }
 
+const deleteDynamicItem = async (groupId: string, itemId: string) => deleteDynamicItems(groupId, [itemId])
+
 const copyDynamicItemSettings = async (
   groupId: string,
   targetItemId: string,
   sourceItemId: string,
+  copyFields: DynamicCopyField[] = ['motion', 'animation', 'size', 'deform'],
   currentGroup?: DynamicGroup
 ) => {
   const groups = loadRawGroups()
@@ -860,26 +946,29 @@ const copyDynamicItemSettings = async (
   const source = group.items.find((item) => item.id === sourceItemId)
   if (!source) return undefined
 
+  const fieldSet = new Set(copyFields)
   const sourceTrack = source.moveTrack ?? getDynamicMoveTrackFromPosition(source.position.y)
   group.items = group.items.map((item) => {
     if (item.id !== targetItemId) return item
-    const position = {
-      x: item.position.x,
-      y: getDynamicMoveTrackCenter(sourceTrack)
-    }
+    const position = fieldSet.has('motion')
+      ? {
+          x: item.position.x,
+          y: getDynamicMoveTrackCenter(sourceTrack)
+        }
+      : item.position
     return {
       ...item,
       position,
       gridIndex: calculateGridIndex(position.x, position.y),
-      scale: source.scale,
-      rotation: source.rotation,
-      flipX: source.flipX ?? false,
-      flipY: source.flipY ?? false,
-      animationId: source.animationId,
-      moveMode: source.moveMode,
-      movePercent: source.movePercent,
-      moveSpeed: getDynamicMoveSpeedFromItem(source),
-      moveTrack: sourceTrack,
+      scale: fieldSet.has('size') ? source.scale : item.scale,
+      rotation: fieldSet.has('size') ? source.rotation : item.rotation,
+      flipX: fieldSet.has('deform') ? source.flipX ?? false : item.flipX,
+      flipY: fieldSet.has('deform') ? source.flipY ?? false : item.flipY,
+      animationId: fieldSet.has('animation') ? source.animationId : item.animationId,
+      moveMode: fieldSet.has('motion') ? source.moveMode : item.moveMode,
+      movePercent: fieldSet.has('motion') ? source.movePercent : item.movePercent,
+      moveSpeed: fieldSet.has('motion') ? getDynamicMoveSpeedFromItem(source) : item.moveSpeed,
+      moveTrack: fieldSet.has('motion') ? sourceTrack : item.moveTrack,
       updatedAt: Date.now()
     }
   })
@@ -893,6 +982,44 @@ const copyDynamicItemSettings = async (
 
   saveDynamicGroups(groups)
   return hydrateGroup(group)
+}
+
+const reorderDynamicItems = (
+  groupId: string,
+  orderedItemIdsFromFront: string[],
+  currentGroup?: DynamicGroup
+) => {
+  const groups = loadRawGroups()
+  const groupIndex = groups.findIndex((item) => item.id === groupId)
+  const storedGroup = groupIndex >= 0 ? groups[groupIndex] : undefined
+  const group = currentGroup?.id === groupId
+    ? mergeGroupPersistentMedia(currentGroup, storedGroup)
+    : storedGroup
+  if (!group) return undefined
+
+  const validIds = new Set(group.items.map((item) => item.id))
+  const orderedIds = orderedItemIdsFromFront.filter((itemId) => validIds.has(itemId))
+  group.items.forEach((item) => {
+    if (!orderedIds.includes(item.id)) orderedIds.push(item.id)
+  })
+
+  const orderById = new Map(
+    orderedIds.map((itemId, index) => [itemId, orderedIds.length - 1 - index])
+  )
+  group.items = group.items.map((item) => ({
+    ...item,
+    order: orderById.get(item.id) ?? item.order,
+    updatedAt: Date.now()
+  }))
+  group.updatedAt = Date.now()
+
+  if (groupIndex >= 0) {
+    groups[groupIndex] = group
+  } else {
+    groups.unshift(group)
+  }
+  saveDynamicGroups(groups)
+  return group
 }
 
 const updateDynamicGroupAppearMode = (
@@ -914,9 +1041,30 @@ const updateDynamicGroupAppearMode = (
   return group
 }
 
+const updateDynamicBackgroundPlayback = (
+  groupId: string,
+  backgroundPlayMode: DynamicBackgroundPlayMode,
+  backgroundIntervalMs?: number
+) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  group.backgroundPlayMode = backgroundPlayMode
+  group.backgroundIntervalMs = getDynamicBackgroundIntervalFromGroup({
+    ...group,
+    backgroundIntervalMs: backgroundIntervalMs ?? group.backgroundIntervalMs
+  })
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return group
+}
+
 export type {
   DynamicAppearMode,
   DynamicBackground,
+  DynamicBackgroundPlayMode,
+  DynamicCopyField,
   DynamicGroup,
   DynamicItem,
   DynamicMedia,
@@ -927,9 +1075,12 @@ export type {
 export {
   DYNAMIC_GROUPS_KEY,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+  MAX_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_APPEAR_INTERVAL_MS,
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   MIN_DYNAMIC_APPEAR_INTERVAL_MS,
+  MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
   addDynamicItem,
   calculateGridIndex,
   copyDynamicItemSettings,
@@ -937,15 +1088,19 @@ export {
   deleteDynamicBackgrounds,
   deleteDynamicGroup,
   deleteDynamicItem,
+  deleteDynamicItems,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
   getDynamicMediaFile,
   loadDynamicGroups,
   persistDynamicMedia,
+  reorderDynamicBackgrounds,
+  reorderDynamicItems,
   saveDynamicGroups,
   setActiveDynamicBackground,
   setDynamicBackground,
   updateDynamicGroupAppearMode,
+  updateDynamicBackgroundPlayback,
   updateDynamicGroupMeta,
   updateDynamicItemMeta,
   updateDynamicItem,

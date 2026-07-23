@@ -85,6 +85,8 @@ const buildGroupSyncPayload = (group: DynamicGroup) => {
     name: group.name,
     appearMode: group.appearMode,
     appearIntervalMs: group.appearIntervalMs,
+    backgroundPlayMode: group.backgroundPlayMode,
+    backgroundIntervalMs: group.backgroundIntervalMs,
     activeBackgroundId: group.activeBackgroundId ?? activeBackground?.id,
     background: toBackgroundPayload(activeBackground),
     backgrounds: backgrounds.map((background) => toBackgroundPayload(background)),

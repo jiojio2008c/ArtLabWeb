@@ -1,6 +1,6 @@
 # MagicFloor Unity 交互文档
 
-更新时间：2026-07-14
+更新时间：2026-07-23
 
 本文档用于 Unity 端实现 MagicFloor 当前与下一版动态艺术功能的接收协议。前端仍以 HTTP 为主，Unity 端只需要监听对应端口，处理 `multipart/form-data` 文件上传和 `text/plain` 控制指令。
 
@@ -143,14 +143,14 @@ all      全部出现
 
 #### PreviewMode
 
-进入或退出前端预览模式。预览模式用于让客户查看已设置的移动方式和出现方式；编辑模式下前端图片保持静止，方便双击、拖拽和双指缩放旋转。
+进入或退出前端预览模式。预览模式用于让客户查看已设置的移动方式和出现方式；编辑模式下前端图片保持静止，方便单击打开物件属性、单指拖拽，以及双指缩放和旋转。
 
 ```text
-MF|DynamicArt|PreviewMode|{"groupId":"group_a","enabled":true,"appearMode":"sequence","intervalMs":800,"replayId":1}
-MF|DynamicArt|PreviewMode|{"groupId":"group_a","enabled":false,"appearMode":"sequence","intervalMs":800,"replayId":1}
+MF|DynamicArt|PreviewMode|{"groupId":"group_a","enabled":true,"appearMode":"sequence","intervalMs":800,"backgroundPlayMode":"sequence","backgroundIntervalMs":5000,"replayId":1}
+MF|DynamicArt|PreviewMode|{"groupId":"group_a","enabled":false,"appearMode":"sequence","intervalMs":800,"backgroundPlayMode":"sequence","backgroundIntervalMs":5000,"replayId":1}
 ```
 
-`replayId` 每次前端重新播放预览时递增。进入预览会递增一次；预览模式下点击 `逐个出现` / `全部出现` 也会递增一次，用于通知 Unity 端从头播放当前出现方式。
+`replayId` 每次前端重新播放预览时递增。`backgroundPlayMode` 可为 `fixed`、`random`、`sequence`；`backgroundIntervalMs` 为背景切换间隔。当前 iPad 预览会锁定编辑界面，只能点击 `停止预览` 退出。
 
 ### 3.2 背景事件
 
@@ -212,6 +212,22 @@ MF|DynamicArt|BackgroundDelete|{"groupId":"group_a","assetIds":["media_bg_1","me
 | `nextActiveAssetId` | string \| null | 删除后前端当前选中的背景；如果为 `null`，表示该作品檔案暂无背景 |
 
 Unity 端建议在删除当前背景后，使用 `nextActiveAssetId` 切换到剩余背景；前端也会在当前背景发生变化时补发一次 `BackgroundSet`。
+
+#### BackgroundPlayback
+
+设置当前作品檔案的背景播放方式。该事件只修改播放参数，不代表上传、删除或立即切换背景素材。
+
+```text
+MF|DynamicArt|BackgroundPlayback|{"groupId":"group_a","mode":"sequence","intervalMs":5000}
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `groupId` | string | 作品檔案 ID |
+| `mode` | string | `fixed` 固定、`random` 随机、`sequence` 逐个 |
+| `intervalMs` | number | 自动切换间隔，前端限制为 `1000-600000ms` |
+
+自动背景切换只在 `PreviewMode.enabled=true` 时运行；编辑模式显示 `activeBackgroundId` 对应背景。`sequence` 应按 `GroupStateSync` / `GroupSelectAndSync` 中 `backgrounds` 数组顺序，从当前背景开始依次循环；`random` 应避免连续显示同一个背景。iPad 端现在允许通过背景卡片拖拽调整该数组顺序。
 
 ### 3.3 图片对象事件
 
@@ -374,15 +390,24 @@ bottom
 
 前端会保存每个物件的 `moveTrack`。拖动物件时会根据当前 Y 坐标同步更新轨道；在工具栏手动切换轨道时，前端只改变 Y 到该轨道中心，X 坐标保持不变。Unity 端可根据 `track` 决定左右循环的起点 / 基准线高度。
 
-### 3.7 复用参数事件
+### 3.7 属性复制事件
 
 #### ItemSettingsCopy
 
 ```text
-MF|DynamicArt|ItemSettingsCopy|{"groupId":"group_a","targetItemId":"item_002","sourceItemId":"item_001","fields":["scale","rotation","flipX","flipY","animationId","moveMode","movePercent","moveSpeed","moveTrack"]}
+MF|DynamicArt|ItemSettingsCopy|{"groupId":"group_a","targetItemId":"item_002","sourceItemId":"item_001","copyFields":["motion","animation"],"fields":["moveMode","movePercent","moveSpeed","moveTrack","animationId"]}
 ```
 
-前端会先在本地把目标图片参数改成源图片参数，再发送该事件。复制字段包含动画、移动方式、移动百分比、轨道、缩放、旋转、水平翻转和垂直翻转。轨道复用时目标物件的 X 坐标保持不变，Y 坐标移动到源物件轨道中心。
+前端会先显示确认弹窗，再在本地把用户勾选的目标属性改成来源物件参数，然后发送该事件。`copyFields` 是 UI 分类，`fields` 是接收端实际需要复制的展开字段：
+
+| `copyFields` | UI 名称 | `fields` |
+| --- | --- | --- |
+| `motion` | 移动方式 | `moveMode`、`movePercent`、`moveSpeed`、`moveTrack` |
+| `animation` | 动画 | `animationId` |
+| `size` | 大小 | `scale`、`rotation` |
+| `deform` | 变形 | `flipX`、`flipY` |
+
+用户可以只选一类，也可以任意多选。未列入 `fields` 的参数必须保持不变，图片媒体、素材路径和图层顺序绝不参与复制。复制移动方式时，目标物件的 X 坐标保持不变，Y 坐标移动到来源物件轨道中心；前端还会补发对应的 `ItemTransform`、`ItemMotion`、`ItemAnimation` 或 `ItemDeform`，供接收端即时刷新。
 
 ### 3.8 状态同步事件
 
@@ -391,15 +416,17 @@ MF|DynamicArt|ItemSettingsCopy|{"groupId":"group_a","targetItemId":"item_002","s
 进入控制页时，前端可以发送完整作品檔案状态，方便 Unity 端重建场景。
 
 ```text
-MF|DynamicArt|GroupStateSync|{"groupId":"group_a","name":"森林作品檔案","appearMode":"all","appearIntervalMs":800,"activeBackgroundId":"media_bg_1","background":{"assetId":"media_bg_1","mediaType":"image"},"backgrounds":[{"assetId":"media_bg_1","mediaType":"image"},{"assetId":"media_bg_2","mediaType":"video"}],"items":[{"itemId":"item_001","assetId":"media_001","gridIndex":72,"position":{"x":0.5,"y":0.5},"scale":1,"rotation":0,"flipX":false,"flipY":false,"animationId":0,"moveMode":"none","movePercent":50,"moveSpeed":50,"moveTrack":"middle"}]}
+MF|DynamicArt|GroupStateSync|{"groupId":"group_a","name":"森林作品檔案","appearMode":"all","appearIntervalMs":800,"backgroundPlayMode":"fixed","backgroundIntervalMs":5000,"activeBackgroundId":"media_bg_1","background":{"assetId":"media_bg_1","mediaType":"image"},"backgrounds":[{"assetId":"media_bg_1","mediaType":"image"},{"assetId":"media_bg_2","mediaType":"video"}],"items":[{"itemId":"item_001","assetId":"media_001","gridIndex":72,"position":{"x":0.5,"y":0.5},"scale":1,"rotation":0,"flipX":false,"flipY":false,"animationId":0,"moveMode":"none","movePercent":50,"moveSpeed":50,"moveTrack":"middle","order":0}]}
 ```
 
 Unity 端建议在收到该事件时：
 
 1. 清理当前动态艺术作品檔案运行态。
 2. 加载 `backgrounds` 中的背景素材，并将 `background` / `activeBackgroundId` 设为当前背景。
-3. 按 items 创建图片对象。
+3. 按 `items` 创建图片对象，并按 `order` 从小到大绘制；数值越大表示越靠前。
 4. 应用每张图片的坐标、缩放、旋转、翻转、动画和移动方式。
+
+控制页图层列表顶部为前景、底部为后景。用户拖曳图层后，前端会持久化每个物件的新 `order`，并发送完整 `GroupStateSync`；逐个出现仍按 `order` 从小到大，也就是由后景至前景播放。
 
 ## 4. 旧作品控制协议
 

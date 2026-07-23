@@ -61,9 +61,6 @@ function App() {
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
-  const hasDynamicBackground = (group: DynamicGroup) => Boolean(
-    group.background ?? group.backgrounds?.find((background) => background.id === group.activeBackgroundId) ?? group.backgrounds?.[0]
-  )
 
   const navigateTo = (nextPage: Page) => {
     const nextDirection =
@@ -159,7 +156,7 @@ function App() {
   const handleCreateDynamicGroup = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
-    navigateTo(hasDynamicBackground(group) ? 'dynamicItems' : 'dynamicBackground')
+    navigateTo('dynamicControl')
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
@@ -171,7 +168,7 @@ function App() {
   const handleSelectDynamicGroup = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
-    navigateTo(hasDynamicBackground(group) ? 'dynamicItems' : 'dynamicBackground')
+    navigateTo('dynamicControl')
   }
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
@@ -239,7 +236,7 @@ function App() {
             group={selectedDynamicGroup}
             wsIp={networkSettings.wsIp}
             dynamicPort={networkSettings.dynamicPort}
-            onBack={() => navigateTo('dynamicItems')}
+            onBack={() => navigateTo('dynamicGroups')}
             onGroupChange={updateDynamicGroupState}
             initialItemId={selectedDynamicItemId}
           />
