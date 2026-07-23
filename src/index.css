@@ -2062,6 +2062,949 @@ code {
   }
 }
 
+/* Dynamic Art asset library and final control-workspace refinements. */
+.dynamic-library-screen {
+  gap: 0;
+  padding: calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 22px)
+    calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 22px);
+  color: var(--ink);
+  background: #eef2f3;
+}
+
+.dynamic-library-topbar {
+  min-height: 76px;
+  border-bottom: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.dynamic-library-back {
+  min-width: 98px;
+  padding: 0 14px;
+}
+
+.dynamic-library-back svg,
+.dynamic-library-create-action svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+
+.dynamic-library-toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.dynamic-library-view-switch {
+  height: 46px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 8px;
+  padding: 3px;
+  display: grid;
+  grid-template-columns: repeat(2, 42px);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dynamic-library-view-switch button {
+  width: 42px;
+  height: 38px;
+  border: 0;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #66716c;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dynamic-library-view-switch button.active {
+  color: #fff;
+  background: #171a18;
+  box-shadow: 0 4px 12px rgba(23, 26, 24, 0.18);
+}
+
+.dynamic-library-view-switch button:active {
+  transform: scale(0.94);
+}
+
+.dynamic-library-view-switch svg {
+  width: 19px;
+  height: 19px;
+}
+
+.dynamic-library-sort {
+  height: 46px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 8px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6d7772;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dynamic-library-sort select {
+  min-width: 92px;
+  border: 0;
+  outline: 0;
+  color: #171a18;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dynamic-library-create-action {
+  min-height: 46px;
+  padding: 0 14px;
+}
+
+.dynamic-library-breadcrumbs {
+  min-height: 48px;
+  border-top: 1px solid rgba(23, 23, 23, 0.07);
+  border-bottom: 1px solid rgba(23, 23, 23, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.dynamic-library-breadcrumbs > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.dynamic-library-breadcrumbs svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: #89928e;
+}
+
+.dynamic-library-breadcrumbs button {
+  min-width: 0;
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 9px;
+  overflow: hidden;
+  color: #69736e;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dynamic-library-breadcrumbs button.current {
+  color: #171a18;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.dynamic-library-browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 14px;
+  overflow: hidden;
+}
+
+.dynamic-library-icon-grid {
+  height: 100%;
+  padding: 2px 4px 18px 2px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: 202px;
+  align-content: start;
+  gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dynamic-library-icon-card {
+  position: relative;
+  min-width: 0;
+  height: 202px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(30, 45, 52, 0.08);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: border-color 170ms ease, box-shadow 170ms ease, transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dynamic-library-icon-card:active,
+.dynamic-library-icon-card.menu-active {
+  border-color: rgba(5, 125, 152, 0.54);
+  box-shadow: 0 0 0 3px rgba(18, 169, 201, 0.12), 0 12px 28px rgba(30, 45, 52, 0.14);
+  transform: scale(0.985);
+}
+
+.dynamic-library-icon-main {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 58px;
+  color: #171a18;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dynamic-library-icon-preview {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(23, 23, 23, 0.026) 25%, transparent 25%, transparent 75%, rgba(23, 23, 23, 0.026) 75%),
+    linear-gradient(45deg, rgba(23, 23, 23, 0.026) 25%, transparent 25%, transparent 75%, rgba(23, 23, 23, 0.026) 75%),
+    #f6f8f7;
+  background-position: 0 0, 8px 8px;
+  background-size: 16px 16px;
+}
+
+.dynamic-library-icon-preview > img,
+.dynamic-library-icon-preview > video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.dynamic-library-icon-card.folder .dynamic-library-icon-preview {
+  background: #f8faf9;
+}
+
+.dynamic-library-icon-card.folder .dynamic-library-icon-preview > svg {
+  width: 86px;
+  height: 86px;
+  color: #7a5a12;
+  fill: #f2c45b;
+  stroke-width: 1.35;
+  filter: drop-shadow(0 10px 14px rgba(117, 82, 12, 0.14));
+}
+
+.dynamic-library-icon-copy {
+  min-width: 0;
+  border-top: 1px solid rgba(23, 23, 23, 0.07);
+  padding: 9px 46px 8px 12px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  background: #fff;
+}
+
+.dynamic-library-icon-copy strong,
+.dynamic-library-icon-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-icon-copy strong {
+  font-size: 14px;
+  font-weight: 930;
+}
+
+.dynamic-library-icon-copy small {
+  color: #77817c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dynamic-library-more-button {
+  position: absolute;
+  z-index: 3;
+  right: 7px;
+  bottom: 7px;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #5e6964;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+.dynamic-library-more-button:hover,
+.dynamic-library-more-button:focus-visible {
+  color: #171a18;
+  background: #edf2ef;
+}
+
+.dynamic-library-more-button:active {
+  transform: scale(0.92);
+}
+
+.dynamic-library-more-button svg {
+  width: 21px;
+  height: 21px;
+}
+
+.dynamic-library-preview-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #8a9590;
+  background: #f3f6f5;
+}
+
+.dynamic-library-preview-fallback svg {
+  width: 40px;
+  height: 40px;
+}
+
+.dynamic-library-detail-header,
+.dynamic-library-detail-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.45fr) 184px 92px minmax(180px, 1fr) 48px;
+  align-items: center;
+}
+
+.dynamic-library-detail-header {
+  height: 42px;
+  border-bottom: 1px solid rgba(23, 23, 23, 0.1);
+  padding: 0 8px 0 12px;
+  color: #727c77;
+  background: #eef2f3;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dynamic-library-detail-list {
+  height: calc(100% - 42px);
+  padding: 0 3px 16px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dynamic-library-detail-row {
+  position: relative;
+  min-height: 62px;
+  border-bottom: 1px solid rgba(23, 23, 23, 0.075);
+  background: rgba(255, 255, 255, 0.74);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dynamic-library-detail-row:nth-child(even) {
+  background: rgba(248, 250, 249, 0.84);
+}
+
+.dynamic-library-detail-row:active,
+.dynamic-library-detail-row.menu-active {
+  z-index: 1;
+  background: #edf7f5;
+  box-shadow: inset 3px 0 0 #087f75;
+  transform: scale(0.997);
+}
+
+.dynamic-library-detail-main {
+  min-width: 0;
+  min-height: 62px;
+  grid-column: 1 / 5;
+  border: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  color: #26302b;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dynamic-library-detail-main > span,
+.dynamic-library-detail-main > time {
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  color: #66716c;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-detail-name {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #171a18 !important;
+}
+
+.dynamic-library-detail-name strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 920;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-detail-thumbnail {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #f1f4f2;
+}
+
+.dynamic-library-detail-thumbnail > img,
+.dynamic-library-detail-thumbnail > video,
+.dynamic-library-detail-thumbnail > .dynamic-library-preview-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.dynamic-library-detail-row.folder .dynamic-library-detail-thumbnail > svg {
+  width: 30px;
+  height: 30px;
+  color: #7a5a12;
+  fill: #f2c45b;
+  stroke-width: 1.4;
+}
+
+.dynamic-library-detail-row > .dynamic-library-more-button {
+  position: static;
+  grid-column: 5;
+  justify-self: center;
+}
+
+.dynamic-library-empty-state {
+  grid-column: 1 / -1;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  color: #6d7772;
+}
+
+.dynamic-library-empty-state > span {
+  width: 74px;
+  height: 74px;
+  border: 1px solid rgba(23, 23, 23, 0.08);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #7a5a12;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dynamic-library-empty-state > span svg {
+  width: 42px;
+  height: 42px;
+  fill: #f2c45b;
+}
+
+.dynamic-library-empty-state > strong {
+  color: #424c47;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.dynamic-library-empty-state > div {
+  display: flex;
+  gap: 8px;
+}
+
+.dynamic-library-empty-state button {
+  min-height: 44px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 7px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #26302b;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dynamic-library-empty-state button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dynamic-library-menu-popover {
+  width: 244px;
+  padding: 7px;
+  background: rgba(244, 248, 247, 0.84);
+}
+
+.dynamic-library-menu-popover button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dynamic-library-menu-popover button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.dynamic-library-modal-overlay {
+  align-items: center;
+  justify-content: center;
+}
+
+.dynamic-library-form-modal,
+.dynamic-library-delete-modal {
+  position: relative;
+  z-index: 1;
+  width: min(470px, calc(100vw - 40px));
+  max-height: calc(100dvh - 52px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  overflow: hidden;
+  color: #171a18;
+  background: rgba(247, 250, 249, 0.9);
+  box-shadow: 0 26px 70px rgba(25, 38, 44, 0.28);
+  backdrop-filter: blur(30px) saturate(1.16);
+  -webkit-backdrop-filter: blur(30px) saturate(1.16);
+  animation: dynamic-library-modal-in 210ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.dynamic-library-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dynamic-library-modal-heading h2,
+.dynamic-library-delete-modal h2 {
+  margin: 0;
+  color: #171a18;
+  font-size: 24px;
+  font-weight: 940;
+  line-height: 1.12;
+}
+
+.dynamic-library-modal-heading .dynamic-panel-close {
+  flex: 0 0 42px;
+}
+
+.dynamic-library-modal-heading .dynamic-panel-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dynamic-library-thumbnail-picker {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px dashed rgba(5, 125, 152, 0.38);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #087f75;
+  background: #f0f6f5;
+  cursor: pointer;
+}
+
+.dynamic-library-thumbnail-picker img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.dynamic-library-thumbnail-picker > span {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+}
+
+.dynamic-library-thumbnail-picker svg {
+  width: 32px;
+  height: 32px;
+}
+
+.dynamic-library-thumbnail-picker strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dynamic-library-form-modal .settings-actions {
+  margin-top: 2px;
+}
+
+.dynamic-library-move-modal {
+  height: min(610px, calc(100dvh - 52px));
+}
+
+.dynamic-library-folder-destinations {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.dynamic-library-folder-destinations label {
+  position: relative;
+  min-height: 50px;
+  border: 1px solid rgba(23, 23, 23, 0.09);
+  border-radius: 7px;
+  display: grid;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.dynamic-library-folder-destinations label.active {
+  border-color: rgba(8, 127, 117, 0.44);
+  background: #edf7f5;
+  box-shadow: inset 3px 0 0 #087f75;
+}
+
+.dynamic-library-folder-destinations input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.dynamic-library-folder-destinations label > span {
+  min-width: 0;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dynamic-library-folder-destinations svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  color: #7a5a12;
+  fill: #f2c45b;
+}
+
+.dynamic-library-folder-destinations strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 880;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-delete-modal {
+  width: min(560px, calc(100vw - 40px));
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.dynamic-library-delete-icon {
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(201, 75, 61, 0.18);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #c94b3d;
+  background: rgba(201, 75, 61, 0.08);
+}
+
+.dynamic-library-delete-icon svg {
+  width: 25px;
+  height: 25px;
+}
+
+.dynamic-library-delete-modal p:not(.eyebrow) {
+  margin: 8px 0 0;
+  color: #6d7772;
+  font-size: 13px;
+  font-weight: 780;
+  line-height: 1.55;
+}
+
+.dynamic-library-delete-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@keyframes dynamic-library-modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* The collapsed layer control occupies a dedicated utility gutter outside the 16:9 stage. */
+.dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+  --control-collapsed-gutter: clamp(56px, 7vw, 84px);
+  width: min(
+    100%,
+    calc((100dvh - var(--control-topbar-height) - 22px) * 16 / 9 + var(--control-collapsed-gutter) * 2)
+  );
+  grid-template-columns: var(--control-collapsed-gutter) minmax(0, 1fr) var(--control-collapsed-gutter);
+  gap: 0;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) .dynamic-stage-shell {
+  grid-column: 2;
+  transform: none;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open .dynamic-stage-shell {
+  grid-column: 1;
+}
+
+.dynamic-right-panel-reopen {
+  position: relative;
+  z-index: 44;
+  top: auto;
+  right: auto;
+  grid-column: 3;
+  justify-self: center;
+  align-self: center;
+  min-width: 54px;
+  width: 54px;
+  min-height: 46px;
+  padding: 0 8px;
+  transform: none;
+}
+
+.dynamic-right-panel-reopen:active {
+  transform: scale(0.95);
+}
+
+/* Background playback order uses the same one-dimensional drag language as the layer list. */
+.dynamic-background-modal .background-library-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.dynamic-background-modal .background-library-card {
+  min-height: 76px;
+}
+
+.dynamic-background-modal .background-library-card.is-pressed:not(.dragging) {
+  transform: scale(0.988);
+  box-shadow: 0 9px 22px rgba(30, 45, 52, 0.14);
+}
+
+.dynamic-background-modal .background-library-card.dragging {
+  opacity: 0.18;
+}
+
+.dynamic-background-drag-preview {
+  position: fixed;
+  z-index: 190;
+  min-width: 0;
+  min-height: 74px;
+  border: 1px solid rgba(8, 127, 117, 0.54);
+  border-radius: 7px;
+  padding: 7px 10px;
+  display: grid;
+  grid-template-columns: 34px 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #171a18;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 22px 48px rgba(25, 38, 44, 0.28), 0 0 0 2px rgba(8, 127, 117, 0.1);
+  pointer-events: none;
+  transform: scale(1.018);
+  backdrop-filter: blur(20px) saturate(1.12);
+  -webkit-backdrop-filter: blur(20px) saturate(1.12);
+}
+
+.dynamic-background-drag-preview .background-order {
+  color: #77817b;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.dynamic-background-drag-preview img,
+.dynamic-background-drag-preview video {
+  width: 72px;
+  height: 52px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: #edf1ef;
+}
+
+.dynamic-background-drag-preview .background-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dynamic-background-drag-preview strong,
+.dynamic-background-drag-preview small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-background-drag-preview strong {
+  font-size: 12px;
+  font-weight: 920;
+}
+
+.dynamic-background-drag-preview small {
+  color: #77817b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* Preview reserves its own frame space so the recording indicator is never clipped. */
+.dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only {
+  box-sizing: border-box;
+  width: min(100%, calc((100dvh - var(--control-topbar-height) - 22px) * 16 / 9 + 20px));
+  padding: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only .dynamic-stage-shell {
+  box-sizing: border-box;
+  grid-column: 1;
+  padding: 0;
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-stage-shell::after {
+  inset: -7px;
+  border-width: 3px;
+  border-radius: 12px;
+}
+
+@media (min-width: 1101px) and (max-width: 1279px) {
+  .dynamic-library-icon-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .dynamic-library-screen {
+    padding-left: calc(env(safe-area-inset-left) + 16px);
+    padding-right: calc(env(safe-area-inset-right) + 16px);
+  }
+
+  .dynamic-library-topbar .screen-title {
+    font-size: 27px;
+  }
+
+  .dynamic-library-back {
+    min-width: 46px;
+    width: 46px;
+    padding: 0;
+  }
+
+  .dynamic-library-back span,
+  .dynamic-library-sort > span {
+    display: none;
+  }
+
+  .dynamic-library-sort select {
+    min-width: 86px;
+  }
+
+  .dynamic-library-create-action {
+    padding: 0 11px;
+  }
+
+  .dynamic-library-icon-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 190px;
+  }
+
+  .dynamic-library-icon-card {
+    height: 190px;
+  }
+
+  .dynamic-library-detail-header,
+  .dynamic-library-detail-row {
+    grid-template-columns: minmax(220px, 1.35fr) 160px 80px minmax(150px, 1fr) 46px;
+  }
+
+  .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+    --control-collapsed-gutter: 58px;
+  }
+}
+
+@media (max-height: 760px) {
+  .dynamic-library-screen {
+    padding-top: calc(env(safe-area-inset-top) + 10px);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
+  }
+
+  .dynamic-library-topbar {
+    min-height: 66px;
+  }
+
+  .dynamic-library-breadcrumbs {
+    min-height: 42px;
+  }
+
+  .dynamic-library-icon-grid {
+    grid-auto-rows: 174px;
+  }
+
+  .dynamic-library-icon-card {
+    height: 174px;
+  }
+
+  .dynamic-library-icon-main {
+    grid-template-rows: minmax(0, 1fr) 54px;
+  }
+
+  .dynamic-library-icon-card.folder .dynamic-library-icon-preview > svg {
+    width: 72px;
+    height: 72px;
+  }
+
+  .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+    width: min(
+      100%,
+      calc((100dvh - var(--control-topbar-height) - 16px) * 16 / 9 + var(--control-collapsed-gutter) * 2)
+    );
+  }
+
+  .dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only {
+    width: min(100%, calc((100dvh - var(--control-topbar-height) - 16px) * 16 / 9 + 18px));
+    padding: 9px;
+  }
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -7798,5 +8741,338 @@ button.ui-pressed {
   .dynamic-background-modal .background-preview-button video {
     width: 60px;
     height: 46px;
+  }
+}
+
+/* Final cascade layer for the current dynamic-art library and control page. */
+.dynamic-library-screen {
+  background: #eef2f3;
+}
+
+.dynamic-library-menu-popover {
+  width: 244px;
+  background: rgba(244, 248, 247, 0.86);
+}
+
+.dynamic-library-detail-main {
+  grid-template-columns: minmax(240px, 1.45fr) 184px 92px minmax(180px, 1fr);
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open {
+  grid-template-columns: 0 minmax(0, 1fr) calc(var(--control-layer-width) + var(--control-workspace-gap));
+  gap: 0;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open .dynamic-stage-shell {
+  grid-column: 2;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-layer-panel,
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-tool-panel {
+  grid-column: 3;
+  width: var(--control-layer-width);
+  justify-self: end;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+  --control-collapsed-gutter: clamp(56px, 7vw, 84px);
+  width: min(
+    100%,
+    calc((100dvh - var(--control-topbar-height) - 22px) * 16 / 9 + var(--control-collapsed-gutter) * 2)
+  );
+  grid-template-columns: var(--control-collapsed-gutter) minmax(0, 1fr) var(--control-collapsed-gutter);
+  gap: 0;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) .dynamic-stage-shell {
+  grid-column: 2;
+  transform: none;
+}
+
+.dynamic-control-screen .dynamic-right-panel-reopen {
+  position: relative;
+  z-index: 44;
+  top: auto;
+  right: auto;
+  grid-column: 3;
+  justify-self: center;
+  align-self: center;
+  min-width: 54px;
+  width: 54px;
+  min-height: 46px;
+  padding: 0 8px;
+  transform: none;
+}
+
+.dynamic-control-screen .dynamic-right-panel-reopen:active {
+  transform: scale(0.95);
+}
+
+.dynamic-background-modal .background-library-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only {
+  box-sizing: border-box;
+  width: min(100%, calc((100dvh - var(--control-topbar-height) - 22px) * 16 / 9 + 20px));
+  padding: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only .dynamic-stage-shell {
+  box-sizing: border-box;
+  grid-column: 1;
+  padding: 0;
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-stage-shell::after {
+  inset: -7px;
+  border-width: 3px;
+  border-radius: 12px;
+}
+
+@media (max-width: 1100px) {
+  .dynamic-library-detail-main {
+    grid-template-columns: minmax(220px, 1.35fr) 160px 80px minmax(150px, 1fr);
+  }
+
+  .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+    --control-collapsed-gutter: 58px;
+  }
+}
+
+@media (max-height: 760px) {
+  .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
+    width: min(
+      100%,
+      calc((100dvh - var(--control-topbar-height) - 16px) * 16 / 9 + var(--control-collapsed-gutter) * 2)
+    );
+  }
+
+  .dynamic-control-screen.dynamic-previewing .dynamic-editor-row.preview-only {
+    width: min(100%, calc((100dvh - var(--control-topbar-height) - 16px) * 16 / 9 + 18px));
+    padding: 9px;
+  }
+}
+
+/* Dynamic Art shared page geometry and iPad safe-area refinements. */
+:is(.dynamic-screen, .dynamic-control-screen) {
+  --dynamic-safe-top: calc(max(env(safe-area-inset-top), 24px) + 10px);
+  --dynamic-header-content-height: 58px;
+  --dynamic-topbar-height: calc(var(--dynamic-safe-top) + var(--dynamic-header-content-height));
+  --dynamic-inline-start: max(22px, env(safe-area-inset-left));
+  --dynamic-inline-end: max(22px, env(safe-area-inset-right));
+  --dynamic-bottom-safe: max(16px, env(safe-area-inset-bottom));
+  --dynamic-nav-width: 124px;
+}
+
+.dynamic-screen {
+  box-sizing: border-box;
+  padding: 0;
+  gap: 0;
+}
+
+:is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--dynamic-topbar-height);
+  min-height: var(--dynamic-topbar-height);
+  flex: 0 0 var(--dynamic-topbar-height);
+  padding: var(--dynamic-safe-top) var(--dynamic-inline-end) 0 var(--dynamic-inline-start);
+  border-bottom: 1px solid rgba(23, 23, 23, 0.08);
+  align-items: center;
+  background: rgba(248, 250, 248, 0.96);
+  box-shadow: 0 7px 20px rgba(30, 45, 52, 0.07);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+}
+
+:is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar .topbar-title-row {
+  min-width: 0;
+  height: 100%;
+  gap: 12px;
+  align-items: center;
+}
+
+:is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar .topbar-title-row > .ghost-button {
+  box-sizing: border-box;
+  width: var(--dynamic-nav-width);
+  min-width: var(--dynamic-nav-width);
+  min-height: 44px;
+  max-height: 44px;
+  padding: 0 12px;
+  justify-content: center;
+}
+
+:is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar .screen-title {
+  max-width: min(30vw, 360px);
+  font-size: 27px;
+  line-height: 1.08;
+}
+
+:is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar .eyebrow {
+  margin-bottom: 2px;
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+.dynamic-library-topbar {
+  min-height: var(--dynamic-topbar-height);
+}
+
+.dynamic-library-browser {
+  box-sizing: border-box;
+  padding: 14px var(--dynamic-inline-end) 0 var(--dynamic-inline-start);
+}
+
+.dynamic-library-breadcrumbs {
+  box-sizing: border-box;
+  min-height: 48px;
+  margin: 0 var(--dynamic-inline-end) 0 var(--dynamic-inline-start);
+  animation: dynamic-breadcrumb-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.dynamic-background-workspace {
+  box-sizing: border-box;
+  padding: 12px var(--dynamic-inline-end) var(--dynamic-bottom-safe) var(--dynamic-inline-start);
+}
+
+.dynamic-items-workspace {
+  box-sizing: border-box;
+  padding: 12px var(--dynamic-inline-end) calc(var(--dynamic-bottom-safe) + 82px) var(--dynamic-inline-start);
+}
+
+.dynamic-control-screen {
+  --control-safe-top: var(--dynamic-safe-top);
+  --control-topbar-height: var(--dynamic-topbar-height);
+}
+
+.dynamic-control-screen .dynamic-control-topbar {
+  height: var(--dynamic-topbar-height);
+  min-height: var(--dynamic-topbar-height);
+  padding: var(--dynamic-safe-top) var(--dynamic-inline-end) 0 var(--dynamic-inline-start);
+}
+
+.dynamic-control-screen .dynamic-control-workspace {
+  box-sizing: border-box;
+  padding: 10px 14px var(--dynamic-bottom-safe);
+}
+
+.dynamic-background-stage,
+.dynamic-control-screen .dynamic-stage {
+  border-radius: 14px;
+  overflow: hidden;
+  clip-path: inset(0 round 14px);
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  isolation: isolate;
+}
+
+.dynamic-control-screen.dynamic-previewing .dynamic-stage-shell::after {
+  border-radius: 18px;
+}
+
+.dynamic-library-form-modal:focus {
+  outline: none;
+}
+
+.dynamic-library-form-modal .ipad-input {
+  font-size: 16px;
+}
+
+.dynamic-library-modal-overlay > .settings-scrim {
+  cursor: default;
+}
+
+:is(
+  .page-view-dynamicGroups,
+  .page-view-dynamicBackground,
+  .page-view-dynamicItems,
+  .page-view-dynamicControl
+) {
+  animation: none;
+  will-change: auto;
+}
+
+:is(
+  .page-view-dynamicGroups,
+  .page-view-dynamicBackground,
+  .page-view-dynamicItems,
+  .page-view-dynamicControl
+) > .apple-container {
+  animation: none;
+}
+
+:is(
+  .page-view-dynamicGroups,
+  .page-view-dynamicBackground,
+  .page-view-dynamicItems,
+  .page-view-dynamicControl
+) :is(
+  .dynamic-library-breadcrumbs,
+  .dynamic-library-browser,
+  .dynamic-background-workspace,
+  .dynamic-items-workspace,
+  .dynamic-control-workspace
+) {
+  animation: dynamic-page-content-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes dynamic-breadcrumb-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dynamic-page-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 1100px) {
+  :is(.dynamic-screen, .dynamic-control-screen) {
+    --dynamic-inline-start: max(16px, env(safe-area-inset-left));
+    --dynamic-inline-end: max(16px, env(safe-area-inset-right));
+    --dynamic-nav-width: 112px;
+  }
+
+  :is(.dynamic-screen, .dynamic-control-screen) > .ipad-topbar .screen-title {
+    max-width: 220px;
+    font-size: 24px;
+  }
+}
+
+@media (max-height: 760px) {
+  :is(.dynamic-screen, .dynamic-control-screen) {
+    --dynamic-safe-top: calc(max(env(safe-area-inset-top), 24px) + 8px);
+    --dynamic-header-content-height: 56px;
+    --dynamic-bottom-safe: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .dynamic-control-screen .dynamic-control-topbar {
+    min-height: var(--dynamic-topbar-height);
+    padding-top: var(--dynamic-safe-top);
+    padding-bottom: 0;
+  }
+
+  .dynamic-control-screen .dynamic-control-workspace {
+    padding-top: 8px;
+    padding-bottom: var(--dynamic-bottom-safe);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .page-view-dynamicGroups,
+    .page-view-dynamicBackground,
+    .page-view-dynamicItems,
+    .page-view-dynamicControl
+  ) :is(
+    .dynamic-library-breadcrumbs,
+    .dynamic-library-browser,
+    .dynamic-background-workspace,
+    .dynamic-items-workspace,
+    .dynamic-control-workspace
+  ) {
+    animation: none;
   }
 }

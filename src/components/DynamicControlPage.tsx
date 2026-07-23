@@ -88,10 +88,20 @@ interface BackgroundDragState {
   pointerId: number
   pointerType: string
   sourceElement: HTMLElement
+  sourceRect: { width: number; height: number }
+  pointerOffset: Point
   startPoint: Point
   lastPoint: Point
   active: boolean
   changed: boolean
+}
+
+interface BackgroundDragPreview {
+  backgroundId: string
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 interface BackgroundDropHint {
@@ -367,6 +377,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const layerSuppressClickRef = useRef(false)
   const backgroundDragRef = useRef<BackgroundDragState | null>(null)
   const backgroundDragActivationTimerRef = useRef<number | null>(null)
+  const backgroundAutoScrollFrameRef = useRef<number | null>(null)
   const backgroundSuppressClickRef = useRef(false)
   const backgroundPointerListenersRef = useRef<{
     move: (event: PointerEvent) => void
@@ -416,6 +427,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [layerDropHint, setLayerDropHint] = useState<LayerDropHint | null>(null)
   const [draggedBackgroundId, setDraggedBackgroundId] = useState('')
   const [pressedBackgroundId, setPressedBackgroundId] = useState('')
+  const [backgroundDragPreview, setBackgroundDragPreview] = useState<BackgroundDragPreview | null>(null)
   const [backgroundDropHint, setBackgroundDropHint] = useState<BackgroundDropHint | null>(null)
   const [manipulatingItemId, setManipulatingItemId] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
@@ -734,6 +746,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
     if (backgroundDragActivationTimerRef.current !== null) {
       window.clearTimeout(backgroundDragActivationTimerRef.current)
+    }
+    if (backgroundAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(backgroundAutoScrollFrameRef.current)
     }
     const listeners = layerPointerListenersRef.current
     if (listeners) {
@@ -1920,6 +1935,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     backgroundDragActivationTimerRef.current = null
   }
 
+  const stopBackgroundAutoScroll = () => {
+    if (backgroundAutoScrollFrameRef.current === null) return
+    window.cancelAnimationFrame(backgroundAutoScrollFrameRef.current)
+    backgroundAutoScrollFrameRef.current = null
+  }
+
   const detachBackgroundPointerListeners = () => {
     const listeners = backgroundPointerListenersRef.current
     if (!listeners) return
@@ -1946,7 +1967,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }, 0)
   }
 
-  const updateBackgroundDragOrderAtPoint = (clientX: number, clientY: number) => {
+  const updateBackgroundDragOrderAtPoint = (clientY: number) => {
     const dragState = backgroundDragRef.current
     const backgroundList = backgroundListRef.current
     if (!dragState?.active || !backgroundList) return
@@ -1958,24 +1979,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       return
     }
 
-    let targetCard = cards[0]
-    let closestDistance = Number.POSITIVE_INFINITY
+    let targetCard = cards[cards.length - 1]
+    let placement: BackgroundDropHint['placement'] = 'after'
     for (const card of cards) {
       const rect = card.getBoundingClientRect()
-      const centerX = rect.left + rect.width / 2
-      const centerY = rect.top + rect.height / 2
-      const distance = Math.hypot(clientX - centerX, clientY - centerY)
-      if (distance < closestDistance) {
-        closestDistance = distance
+      if (clientY < rect.top + rect.height / 2) {
         targetCard = card
+        placement = 'before'
+        break
       }
     }
-
-    const targetRect = targetCard.getBoundingClientRect()
-    const isInsideTargetRow = clientY >= targetRect.top && clientY <= targetRect.bottom
-    const placement: BackgroundDropHint['placement'] = isInsideTargetRow
-      ? (clientX < targetRect.left + targetRect.width / 2 ? 'before' : 'after')
-      : (clientY < targetRect.top + targetRect.height / 2 ? 'before' : 'after')
 
     const targetBackgroundId = targetCard.dataset.backgroundId
     if (!targetBackgroundId) return
@@ -1998,6 +2011,38 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     applyBackgroundOrderLocally(nextIds)
   }
 
+  const runBackgroundAutoScroll = () => {
+    const dragState = backgroundDragRef.current
+    const backgroundList = backgroundListRef.current
+    if (!dragState?.active || !backgroundList) {
+      backgroundAutoScrollFrameRef.current = null
+      return
+    }
+
+    const rect = backgroundList.getBoundingClientRect()
+    const distanceFromTop = dragState.lastPoint.y - rect.top
+    const distanceFromBottom = rect.bottom - dragState.lastPoint.y
+    let scrollDelta = 0
+
+    if (distanceFromTop < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromTop) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = -Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    } else if (distanceFromBottom < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromBottom) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    }
+
+    if (scrollDelta !== 0) {
+      const previousScrollTop = backgroundList.scrollTop
+      backgroundList.scrollTop += scrollDelta
+      if (backgroundList.scrollTop !== previousScrollTop) {
+        updateBackgroundDragOrderAtPoint(dragState.lastPoint.y)
+      }
+    }
+
+    backgroundAutoScrollFrameRef.current = window.requestAnimationFrame(runBackgroundAutoScroll)
+  }
+
   const activateBackgroundDrag = (dragState: BackgroundDragState) => {
     if (backgroundDragRef.current !== dragState || dragState.active) return
     clearBackgroundDragActivationTimer()
@@ -2010,13 +2055,25 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
     setDraggedBackgroundId(dragState.backgroundId)
     setPressedBackgroundId('')
+    setBackgroundDragPreview({
+      backgroundId: dragState.backgroundId,
+      x: dragState.lastPoint.x - dragState.pointerOffset.x,
+      y: dragState.lastPoint.y - dragState.pointerOffset.y,
+      width: dragState.sourceRect.width,
+      height: dragState.sourceRect.height
+    })
     setBackgroundDropHint(null)
+    if (backgroundAutoScrollFrameRef.current === null) {
+      backgroundAutoScrollFrameRef.current = window.requestAnimationFrame(runBackgroundAutoScroll)
+    }
   }
 
   const handleBackgroundCardPointerDown = (event: React.PointerEvent<HTMLElement>, backgroundId: string) => {
     if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
     const target = event.target as HTMLElement
     if (target.closest('.background-check, input, .background-card-delete')) return
+
+    const sourceRect = event.currentTarget.getBoundingClientRect()
 
     const dragState: BackgroundDragState = {
       backgroundId,
@@ -2025,6 +2082,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       pointerId: event.pointerId,
       pointerType: event.pointerType,
       sourceElement: event.currentTarget,
+      sourceRect: { width: sourceRect.width, height: sourceRect.height },
+      pointerOffset: {
+        x: event.clientX - sourceRect.left,
+        y: event.clientY - sourceRect.top
+      },
       startPoint: { x: event.clientX, y: event.clientY },
       lastPoint: { x: event.clientX, y: event.clientY },
       active: false,
@@ -2077,7 +2139,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
     event.preventDefault()
     event.stopPropagation()
-    updateBackgroundDragOrderAtPoint(event.clientX, event.clientY)
+    setBackgroundDragPreview((currentPreview) => currentPreview
+      ? {
+          ...currentPreview,
+          x: event.clientX - dragState.pointerOffset.x,
+          y: event.clientY - dragState.pointerOffset.y
+        }
+      : currentPreview)
+    updateBackgroundDragOrderAtPoint(event.clientY)
   }
 
   const handleBackgroundCardPointerEnd = (event: PointerEvent) => {
@@ -2085,6 +2154,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!dragState || dragState.pointerId !== event.pointerId) return
 
     clearBackgroundDragActivationTimer()
+    stopBackgroundAutoScroll()
     detachBackgroundPointerListeners()
     releaseBackgroundPointerCapture(dragState)
     backgroundDragRef.current = null
@@ -2104,6 +2174,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       }
     }
     setDraggedBackgroundId('')
+    setBackgroundDragPreview(null)
     setBackgroundDropHint(null)
     suppressBackgroundClickAfterDrag()
   }
@@ -2113,6 +2184,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!dragState || dragState.pointerId !== event.pointerId) return
 
     clearBackgroundDragActivationTimer()
+    stopBackgroundAutoScroll()
     detachBackgroundPointerListeners()
     releaseBackgroundPointerCapture(dragState)
     backgroundDragRef.current = null
@@ -2123,6 +2195,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       onGroupChange(dragState.originalGroup)
     }
     setDraggedBackgroundId('')
+    setBackgroundDragPreview(null)
     setBackgroundDropHint(null)
     if (dragState.active) suppressBackgroundClickAfterDrag()
   }
@@ -2746,6 +2819,35 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <span>
                 <strong>{draggedItem.name}</strong>
                 <small>{motionLabel} · 動畫 {draggedItem.animationId}</small>
+              </span>
+            </div>
+          )
+        })()}
+
+        {backgroundDragPreview && (() => {
+          const draggedBackground = backgrounds.find((background) => background.id === backgroundDragPreview.backgroundId)
+          if (!draggedBackground) return null
+          const order = backgrounds.findIndex((background) => background.id === draggedBackground.id) + 1
+          return (
+            <div
+              className="dynamic-background-drag-preview"
+              style={{
+                left: `${backgroundDragPreview.x}px`,
+                top: `${backgroundDragPreview.y}px`,
+                width: `${backgroundDragPreview.width}px`,
+                height: `${backgroundDragPreview.height}px`
+              }}
+              aria-hidden="true"
+            >
+              <span className="background-order">{String(order).padStart(2, '0')}</span>
+              {draggedBackground.type === 'video' ? (
+                <video src={draggedBackground.url} muted playsInline />
+              ) : (
+                <img src={draggedBackground.url} alt="" />
+              )}
+              <span className="background-copy">
+                <strong>{draggedBackground.name}</strong>
+                <small>{draggedBackground.type === 'video' ? '影片背景' : '圖片背景'}</small>
               </span>
             </div>
           )

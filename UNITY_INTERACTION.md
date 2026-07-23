@@ -15,6 +15,16 @@
 
 端口可以在 iPad 设置页修改，所以 Unity 端部署时需要保证对应端口与前端设置一致。
 
+### 1.1 iPad 本地作品檔案資料夾
+
+作品檔案頁的 `資料夾 / 子資料夾` 是 iPad 本地素材整理功能，不是接收端的場景層級或協議實體：
+
+- 資料夾只保存在 iPad 本地，不建立新的 HTTP 事件。
+- `folderId` 和素材庫排序偏好不會發送給 PC / Unity。
+- PC / Unity 仍只按既有 `groupId` 區分作品，繼續處理 `GroupCreate`、`GroupSelect`、`GroupSelectAndSync`、`GroupStateSync`、`GroupDelete` 等事件。
+- 把作品移入、移出或跨資料夾整理時，不會觸發組切換、媒體重傳或場景重建。
+- 沒有本地 `folderId` 的舊作品會顯示在 iPad 素材庫根目錄，對接收端沒有任何差異。
+
 ## 2. HTTP 基础规则
 
 ### 2.1 文本指令

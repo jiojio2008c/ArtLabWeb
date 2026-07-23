@@ -66,6 +66,8 @@ interface DynamicItem {
 interface DynamicGroup {
   id: string
   name: string
+  folderId?: string
+  libraryOrder?: number
   thumbnail?: DynamicMedia
   background?: DynamicBackground
   backgrounds?: DynamicBackground[]
@@ -77,6 +79,11 @@ interface DynamicGroup {
   items: DynamicItem[]
   createdAt: number
   updatedAt: number
+}
+
+interface DynamicGroupOrganization {
+  folderId?: string
+  libraryOrder?: number
 }
 
 interface DynamicMediaRecord {
@@ -619,13 +626,20 @@ const collectDynamicGroupMedia = (group: DynamicGroup) => {
   return Array.from(mediaById.values())
 }
 
-const createDynamicGroup = async (name: string, thumbnailFile?: File, background?: DynamicBackground) => {
+const createDynamicGroup = async (
+  name: string,
+  thumbnailFile?: File,
+  background?: DynamicBackground,
+  organization: DynamicGroupOrganization = {}
+) => {
   const now = Date.now()
   const groupId = generateId('group')
   const thumbnail = thumbnailFile ? await persistDynamicMedia(thumbnailFile, `${groupId}/thumbnail`) : undefined
   const nextGroup: DynamicGroup = {
     id: groupId,
     name: name.trim() || '未命名作品檔案',
+    folderId: organization.folderId,
+    libraryOrder: organization.libraryOrder,
     thumbnail,
     background,
     backgrounds: background ? [background] : [],
@@ -643,6 +657,23 @@ const createDynamicGroup = async (name: string, thumbnailFile?: File, background
   const nextGroups = [nextGroup, ...groups]
   saveDynamicGroups(nextGroups)
   return hydrateGroup(nextGroup)
+}
+
+const updateDynamicGroupOrganization = async (
+  groupId: string,
+  organization: DynamicGroupOrganization
+) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  group.folderId = organization.folderId
+  if (organization.libraryOrder !== undefined) {
+    group.libraryOrder = organization.libraryOrder
+  }
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return hydrateGroup(group)
 }
 
 const updateDynamicGroupMeta = async (groupId: string, values: { name: string; thumbnailFile?: File }) => {
@@ -1066,6 +1097,7 @@ export type {
   DynamicBackgroundPlayMode,
   DynamicCopyField,
   DynamicGroup,
+  DynamicGroupOrganization,
   DynamicItem,
   DynamicMedia,
   DynamicMediaType,
@@ -1102,6 +1134,7 @@ export {
   updateDynamicGroupAppearMode,
   updateDynamicBackgroundPlayback,
   updateDynamicGroupMeta,
+  updateDynamicGroupOrganization,
   updateDynamicItemMeta,
   updateDynamicItem,
   upsertDynamicGroup

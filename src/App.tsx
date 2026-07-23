@@ -192,7 +192,7 @@ function App() {
         </div>
       </div>
 
-      <div key={currentPage} className={`page-frame page-${transitionDirection}`}>
+      <div key={currentPage} className={`page-frame page-${transitionDirection} page-view-${currentPage}`}>
         {currentPage === 'entry' ? (
           <EntryPage
             wsIp={networkSettings.wsIp}
