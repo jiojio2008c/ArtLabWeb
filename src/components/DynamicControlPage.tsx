@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  MAX_DYNAMIC_ITEMS_PER_GROUP,
+  addDynamicItem,
   calculateGridIndex,
   copyDynamicItemSettings,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
@@ -21,7 +23,12 @@ import {
   type DynamicMoveTrack
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+import { syncDynamicGroupToReceiver } from '../services/dynamicArtReceiverSync.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
+import DynamicAnimationPreview, {
+  DYNAMIC_ANIMATION_PREVIEWS,
+  getDynamicAnimationPreview
+} from './DynamicAnimationPreview.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'deform' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
@@ -30,6 +37,11 @@ type ToolPanelSide = 'left' | 'right'
 interface Point {
   x: number
   y: number
+}
+
+interface MediaSize {
+  width: number
+  height: number
 }
 
 interface DynamicControlPageProps {
@@ -44,6 +56,12 @@ interface DynamicControlPageProps {
 const MIN_ITEM_SCALE = 0.1
 const MAX_ITEM_SCALE = 3
 const DEFAULT_MOVE_SPEED = 50
+const RUNTIME_STAGE_WIDTH = 1920
+const RUNTIME_STAGE_HEIGHT = 1080
+const RUNTIME_ITEM_MAX_SIZE = 380
+const RUNTIME_ITEM_MIN_SIZE = 120
+const DEFAULT_ITEM_NATURAL_WIDTH = 360
+const DEFAULT_ITEM_NATURAL_HEIGHT = 260
 const DEFAULT_STAGE_PREVIEW_WIDTH = 960
 const DEFAULT_STAGE_PREVIEW_HEIGHT = 540
 const HORIZONTAL_WAVE_CYCLES = 8
@@ -122,6 +140,40 @@ const getTrackBounds = (track: DynamicMoveTrack) => {
 const getMoveDuration = (speed: number) => {
   const ratio = clamp(speed, 0, 100) / 100
   return 14 - ratio * 11.5
+}
+
+const getPositiveDimension = (value?: number) => (
+  Number.isFinite(value) && value && value > 0 ? value : undefined
+)
+
+const getDynamicItemPreviewSize = (
+  item: DynamicItem,
+  cachedSize: MediaSize | undefined,
+  stageSize: { width: number; height: number }
+) => {
+  const naturalWidth = getPositiveDimension(item.media.width)
+    ?? cachedSize?.width
+    ?? DEFAULT_ITEM_NATURAL_WIDTH
+  const naturalHeight = getPositiveDimension(item.media.height)
+    ?? cachedSize?.height
+    ?? DEFAULT_ITEM_NATURAL_HEIGHT
+  const naturalMax = Math.max(naturalWidth, naturalHeight)
+  let runtimeRatio = RUNTIME_ITEM_MAX_SIZE / naturalMax
+
+  if (naturalMax < RUNTIME_ITEM_MIN_SIZE) {
+    runtimeRatio = RUNTIME_ITEM_MIN_SIZE / naturalMax
+  } else {
+    runtimeRatio = Math.min(runtimeRatio, 1)
+  }
+
+  const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
+  const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
+  const stageRatio = Math.min(stageWidth / RUNTIME_STAGE_WIDTH, stageHeight / RUNTIME_STAGE_HEIGHT)
+
+  return {
+    width: Math.max(1, naturalWidth * runtimeRatio * stageRatio),
+    height: Math.max(1, naturalHeight * runtimeRatio * stageRatio)
+  }
 }
 
 const getMotionPreviewStyle = (
@@ -227,6 +279,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const stageRef = useRef<HTMLDivElement>(null)
   const stageBackgroundVideoRef = useRef<HTMLVideoElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
+  const layerItemInputRef = useRef<HTMLInputElement>(null)
   const latestGroupRef = useRef(group)
   const pointersRef = useRef<Map<number, Point>>(new Map())
   const gestureModeRef = useRef<GestureMode>('none')
@@ -251,6 +304,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [copyFeedbackItemId, setCopyFeedbackItemId] = useState('')
   const [manipulatingItemId, setManipulatingItemId] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const [itemImageSizes, setItemImageSizes] = useState<Record<string, MediaSize>>({})
+  const [isAddingLayerItem, setIsAddingLayerItem] = useState(false)
+  const [receiverSyncStatus, setReceiverSyncStatus] = useState('')
+  const [receiverSyncError, setReceiverSyncError] = useState('')
   const [previewMode, setPreviewMode] = useState(false)
   const [previewReplayId, setPreviewReplayId] = useState(0)
 
@@ -363,11 +420,56 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [group.items, selectedItemId])
 
   useEffect(() => {
+    let cancelled = false
+    let clearTimer: number | undefined
+
+    setReceiverSyncError('')
+    void syncDynamicGroupToReceiver({
+      group,
+      ip: wsIp,
+      port: dynamicPort,
+      onStatus: (status) => {
+        if (!cancelled) setReceiverSyncStatus(status.label)
+      }
+    })
+      .then((synced) => {
+        if (cancelled || !synced) return
+        setReceiverSyncStatus('作品檔案已同步')
+        clearTimer = window.setTimeout(() => {
+          setReceiverSyncStatus('')
+        }, 1600)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setReceiverSyncStatus('')
+        setReceiverSyncError('作品檔案同步失敗，請確認藝術畫廊已開啟。')
+        clearTimer = window.setTimeout(() => {
+          setReceiverSyncError('')
+        }, 2600)
+      })
+
+    return () => {
+      cancelled = true
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer)
+    }
+  }, [dynamicPort, group, wsIp])
+
+  useEffect(() => {
     setSelectedBackgroundIds((currentIds) => {
       const validIds = new Set(getBackgrounds(group).map((background) => background.id))
       return currentIds.filter((id) => validIds.has(id))
     })
   }, [group])
+
+  useEffect(() => {
+    const validMediaIds = new Set(group.items.map((item) => item.media.id))
+    setItemImageSizes((currentSizes) => {
+      const nextSizes = Object.fromEntries(
+        Object.entries(currentSizes).filter(([mediaId]) => validMediaIds.has(mediaId))
+      )
+      return Object.keys(nextSizes).length === Object.keys(currentSizes).length ? currentSizes : nextSizes
+    })
+  }, [group.items])
 
   useEffect(() => {
     const currentBackgrounds = getBackgrounds(group)
@@ -742,6 +844,80 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     event.target.value = ''
   }
 
+  const handleLayerItemChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || isAddingLayerItem) return
+
+    const currentGroup = latestGroupRef.current
+    if (currentGroup.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
+      window.alert('每個作品檔案最多可建立 30 張圖片。')
+      return
+    }
+
+    setIsAddingLayerItem(true)
+    try {
+      flushPendingTransformPersist()
+      const nextGroup = await addDynamicItem(currentGroup.id, file, file.name)
+      if (!nextGroup) return
+
+      const previousItemIds = new Set(currentGroup.items.map((item) => item.id))
+      const createdItem = nextGroup.items.find((item) => !previousItemIds.has(item.id))
+        ?? nextGroup.items[nextGroup.items.length - 1]
+      if (!createdItem) return
+
+      uploadUnityAsset({
+        ip: wsIp,
+        port: dynamicPort,
+        file,
+        fields: {
+          role: 'item',
+          groupId: nextGroup.id,
+          itemId: createdItem.id,
+          assetId: createdItem.media.id,
+          mediaType: createdItem.media.type,
+          mimeType: createdItem.media.mimeType
+        }
+      })
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemCreate', {
+        groupId: nextGroup.id,
+        itemId: createdItem.id,
+        assetId: createdItem.media.id,
+        name: createdItem.name,
+        order: createdItem.order,
+        gridIndex: createdItem.gridIndex
+      })
+
+      latestGroupRef.current = nextGroup
+      onGroupChange(nextGroup)
+      setSelectedItemId(createdItem.id)
+      setToolOpen(false)
+      setBackgroundPanelOpen(false)
+      setDrawerOpen(true)
+    } finally {
+      setIsAddingLayerItem(false)
+    }
+  }
+
+  const handleItemImageLoad = (
+    mediaId: string,
+    event: React.SyntheticEvent<HTMLImageElement>
+  ) => {
+    const image = event.currentTarget
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+    if (width <= 0 || height <= 0) return
+
+    setItemImageSizes((currentSizes) => {
+      const currentSize = currentSizes[mediaId]
+      if (currentSize?.width === width && currentSize.height === height) return currentSizes
+      return {
+        ...currentSizes,
+        [mediaId]: { width, height }
+      }
+    })
+  }
+
   const handleBackgroundSelect = async (backgroundId: string) => {
     const nextGroup = await setActiveDynamicBackground(group.id, backgroundId)
     if (!nextGroup) return
@@ -1084,6 +1260,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             className="hidden"
             onChange={handleBackgroundChange}
           />
+          <input
+            ref={layerItemInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleLayerItemChange}
+          />
           <button
             type="button"
             className={`ipad-button ${previewMode ? 'secondary-button' : 'primary-button success-button'}`}
@@ -1120,6 +1303,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           </button>
         </div>
       </header>
+
+      {(receiverSyncStatus || receiverSyncError) && (
+        <div className={`status-toast ${receiverSyncError ? 'error' : 'success'}`}>
+          {receiverSyncError || receiverSyncStatus}
+        </div>
+      )}
 
       <section className="dynamic-control-workspace">
         <div className="dynamic-stage-shell">
@@ -1166,6 +1355,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const shouldPlayMotion = previewMode && !isManipulating && !isAmplitudeStatic
               const motionMode = shouldPlayMotion ? item.moveMode : 'none'
               const appearDelayMs = previewMode && group.appearMode === 'sequence' ? index * appearIntervalMs : 0
+              const itemPreviewSize = getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], stageSize)
               return (
                 <div
                   key={`${item.id}-${previewMode ? previewReplayId : 'edit'}`}
@@ -1173,6 +1363,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   className={`dynamic-stage-item-motion move-${motionMode} ${isManipulating ? 'is-manipulating' : ''}`}
                   style={{
                     ...getMotionPreviewStyle(item, !shouldPlayMotion, stageSize),
+                    width: `${itemPreviewSize.width}px`,
+                    height: `${itemPreviewSize.height}px`,
                     '--motion-delay': `${appearDelayMs}ms`
                   } as React.CSSProperties}
                 >
@@ -1185,6 +1377,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         src={item.media.url}
                         alt={item.name}
                         draggable={false}
+                        onLoad={(event) => handleItemImageLoad(item.media.id, event)}
                         className={`dynamic-stage-item-visual ${!previewMode && selectedItem?.id === item.id ? 'active' : ''} ${copyFeedbackItemId === item.id ? 'copy-pulse' : ''}`}
                         style={{
                           transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
@@ -1270,8 +1463,21 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             <div className="drawer-heading">
               <div>
                 <p className="eyebrow">圖層</p>
-                <h2>{group.items.length}/30</h2>
+                <h2>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</h2>
               </div>
+              <button
+                type="button"
+                className="drawer-add-item-button"
+                disabled={isAddingLayerItem || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP}
+                onClick={() => {
+                  setToolOpen(false)
+                  setBackgroundPanelOpen(false)
+                  layerItemInputRef.current?.click()
+                }}
+                aria-label="新增圖片"
+              >
+                +
+              </button>
             </div>
             <div className="dynamic-layer-list">
               {sortedItems.map((item) => (
@@ -1392,20 +1598,23 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             {activeTab === 'animation' && (
               <div className="dynamic-tool-body compact">
                 <div className="animation-grid dynamic-animation-grid">
-                  {Array.from({ length: 10 }, (_, index) => (
+                  {DYNAMIC_ANIMATION_PREVIEWS.map((animation) => (
                     <button
-                      key={index}
+                      key={animation.id}
                       type="button"
-                      className={`animation-tile ${selectedItem.animationId === index ? 'active' : ''}`}
-                      onClick={() => handleAnimationSelect(index)}
+                      className={`animation-tile ${selectedItem.animationId === animation.id ? 'active' : ''}`}
+                      onClick={() => handleAnimationSelect(animation.id)}
                     >
-                      {index}
+                      <span className={`animation-tile-icon animation-tile-icon-${animation.className}`} aria-hidden="true">
+                        <span />
+                      </span>
+                      <span>{animation.shortLabel}</span>
                     </button>
                   ))}
                 </div>
                 <div className="dynamic-animation-preview">
-                  <img src={`/animations/${selectedItem.animationId}.gif`} alt={`動畫 ${selectedItem.animationId}`} />
-                  <strong>動畫 {selectedItem.animationId}</strong>
+                  <DynamicAnimationPreview animationId={selectedItem.animationId} />
+                  <strong>{getDynamicAnimationPreview(selectedItem.animationId).label}</strong>
                 </div>
               </div>
             )}

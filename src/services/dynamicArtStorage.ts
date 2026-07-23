@@ -25,6 +25,8 @@ interface DynamicMedia {
   type: DynamicMediaType
   mimeType: string
   url: string
+  width?: number
+  height?: number
   filePath?: string
   storageKey?: string
   updatedAt: number
@@ -76,6 +78,8 @@ interface DynamicMediaRecord {
   type: DynamicMediaType
   mimeType: string
   blob: Blob
+  width?: number
+  height?: number
   updatedAt: number
 }
 
@@ -147,6 +151,42 @@ const blobToBase64 = (blob: Blob) => {
 const toDataUrl = (data: string, mimeType: string) => {
   if (data.startsWith('data:')) return data
   return `data:${mimeType};base64,${data}`
+}
+
+const base64ToBlob = (data: string, mimeType: string) => {
+  const base64 = data.includes(',') ? data.split(',')[1] : data
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return new Blob([bytes], { type: mimeType })
+}
+
+const readImageDimensions = (file: File) => {
+  if (!file.type.startsWith('image/')) {
+    return Promise.resolve<{ width?: number; height?: number }>({})
+  }
+
+  return new Promise<{ width?: number; height?: number }>((resolve) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    const cleanup = () => URL.revokeObjectURL(objectUrl)
+
+    image.onload = () => {
+      const width = image.naturalWidth || image.width
+      const height = image.naturalHeight || image.height
+      cleanup()
+      resolve(width > 0 && height > 0 ? { width, height } : {})
+    }
+    image.onerror = () => {
+      cleanup()
+      resolve({})
+    }
+    image.src = objectUrl
+  })
 }
 
 const openDynamicDb = () => {
@@ -407,6 +447,7 @@ const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMe
   const mediaId = generateId('media')
   const type = getMediaType(file)
   const mimeType = file.type || (type === 'video' ? 'video/mp4' : 'image/png')
+  const dimensions = await readImageDimensions(file)
   let filePath: string | undefined
   let storageKey: string | undefined
 
@@ -427,6 +468,7 @@ const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMe
         type,
         mimeType,
         blob: file,
+        ...dimensions,
         updatedAt: Date.now()
       })
     } catch (error) {
@@ -441,10 +483,58 @@ const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMe
     type,
     mimeType,
     url: URL.createObjectURL(file),
+    ...dimensions,
     filePath,
     storageKey,
     updatedAt: Date.now()
   }
+}
+
+const getDynamicMediaFile = async (media: DynamicMedia): Promise<File | undefined> => {
+  let blob: Blob | undefined
+
+  if (media.filePath && isNativeStorage()) {
+    try {
+      const result = await Filesystem.readFile({
+        path: media.filePath,
+        directory: DYNAMIC_DIRECTORY
+      })
+
+      blob = result.data instanceof Blob
+        ? result.data
+        : base64ToBlob(result.data, media.mimeType)
+    } catch (error) {
+      console.error('Failed to read dynamic media file for sync:', error)
+    }
+  }
+
+  if (!blob && media.storageKey) {
+    try {
+      const record = await getDynamicBlob(media.storageKey)
+      blob = record?.blob
+    } catch (error) {
+      console.error('Failed to read dynamic media blob for sync:', error)
+    }
+  }
+
+  if (!blob && media.url) {
+    try {
+      const response = await fetch(media.url)
+      if (response.ok) {
+        blob = await response.blob()
+      }
+    } catch (error) {
+      console.error('Failed to fetch dynamic media url for sync:', error)
+    }
+  }
+
+  if (!blob) return undefined
+
+  const mimeType = media.mimeType || blob.type || 'application/octet-stream'
+  return new File([blob], media.name || `${media.id}.bin`, {
+    type: mimeType,
+    lastModified: media.updatedAt || Date.now()
+  })
 }
 
 const deleteDynamicMedia = async (media?: DynamicMedia) => {
@@ -849,6 +939,7 @@ export {
   deleteDynamicItem,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
+  getDynamicMediaFile,
   loadDynamicGroups,
   persistDynamicMedia,
   saveDynamicGroups,

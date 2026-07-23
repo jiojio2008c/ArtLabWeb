@@ -16,9 +16,9 @@ import {
 import { DIRECT_UPLOAD_THEMES, getDirectMasksForTheme, type DirectUploadTheme } from './services/directUploadThemes.ts'
 import {
   loadDynamicGroups,
-  type DynamicBackground,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
+import { markDynamicReceiverNeedsResync } from './services/dynamicArtReceiverSync.ts'
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 
 interface ImageData {
@@ -36,12 +36,11 @@ type Page =
   | 'directUpload'
   | 'directComplete'
 type TransitionDirection = 'forward' | 'backward' | 'neutral'
-type DynamicGroupsBackTarget = 'entry' | 'dynamicBackground'
 
 const pageOrder: Record<Page, number> = {
   entry: 0,
-  dynamicBackground: 1,
-  dynamicGroups: 2,
+  dynamicGroups: 1,
+  dynamicBackground: 2,
   dynamicItems: 3,
   dynamicControl: 4,
   directSelect: 1,
@@ -58,12 +57,13 @@ function App() {
   const [selectedDirectTheme, setSelectedDirectTheme] = useState<DirectUploadTheme>(() => DIRECT_UPLOAD_THEMES[0])
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
-  const [draftBackground, setDraftBackground] = useState<DynamicBackground | undefined>()
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
-  const [dynamicGroupsBackTarget, setDynamicGroupsBackTarget] = useState<DynamicGroupsBackTarget>('entry')
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
+  const hasDynamicBackground = (group: DynamicGroup) => Boolean(
+    group.background ?? group.backgrounds?.find((background) => background.id === group.activeBackgroundId) ?? group.backgrounds?.[0]
+  )
 
   const navigateTo = (nextPage: Page) => {
     const nextDirection =
@@ -89,6 +89,11 @@ function App() {
     setNetworkSettings(nextSettings)
   }
 
+  const handleSettingsSave = (nextSettings: NetworkSettings) => {
+    updateNetworkSettings(nextSettings)
+    markDynamicReceiverNeedsResync(nextSettings.wsIp, nextSettings.dynamicPort)
+  }
+
   const updateWsIp = (wsIp: string) => {
     updateNetworkSettings({
       ...networkSettings,
@@ -109,14 +114,11 @@ function App() {
   }
 
   const openDynamicArtWithGroups = (groups: DynamicGroup[]) => {
-    if (groups.length > 0) {
-      setDynamicGroupsBackTarget('entry')
-      navigateTo('dynamicGroups')
-      return
+    if (groups.length === 0) {
+      setSelectedDynamicGroupId('')
+      setSelectedDynamicItemId('')
     }
-
-    setDynamicGroupsBackTarget('dynamicBackground')
-    navigateTo('dynamicBackground')
+    navigateTo('dynamicGroups')
   }
 
   const handleOpenDynamicArt = () => {
@@ -156,7 +158,8 @@ function App() {
 
   const handleCreateDynamicGroup = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
-    setDynamicGroupsBackTarget('entry')
+    setSelectedDynamicItemId('')
+    navigateTo(hasDynamicBackground(group) ? 'dynamicItems' : 'dynamicBackground')
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
@@ -166,6 +169,12 @@ function App() {
   }
 
   const handleSelectDynamicGroup = (group: DynamicGroup) => {
+    updateDynamicGroupState(group)
+    setSelectedDynamicItemId('')
+    navigateTo(hasDynamicBackground(group) ? 'dynamicItems' : 'dynamicBackground')
+  }
+
+  const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
     navigateTo('dynamicItems')
@@ -196,25 +205,21 @@ function App() {
             onOpenInteractiveArt={handleOpenInteractiveArt}
             onOpenSettings={() => setSettingsOpen(true)}
           />
-        ) : currentPage === 'dynamicBackground' ? (
+        ) : currentPage === 'dynamicBackground' && selectedDynamicGroup ? (
           <DynamicBackgroundPage
             wsIp={networkSettings.wsIp}
             dynamicPort={networkSettings.dynamicPort}
-            draftBackground={draftBackground}
-            onBackToEntry={() => navigateTo('entry')}
-            onBackgroundReady={setDraftBackground}
-            onContinue={() => {
-              setDynamicGroupsBackTarget('dynamicBackground')
-              navigateTo('dynamicGroups')
-            }}
+            group={selectedDynamicGroup}
+            onBack={() => navigateTo('dynamicGroups')}
+            onGroupChange={updateDynamicGroupState}
+            onContinue={handleDynamicBackgroundComplete}
           />
         ) : currentPage === 'dynamicGroups' ? (
           <DynamicGroupsPage
             groups={dynamicGroups}
-            draftBackground={draftBackground}
             wsIp={networkSettings.wsIp}
             dynamicPort={networkSettings.dynamicPort}
-            onBack={() => navigateTo(dynamicGroupsBackTarget)}
+            onBack={() => navigateTo('entry')}
             onCreateGroup={handleCreateDynamicGroup}
             onUpdateGroup={updateDynamicGroupState}
             onDeleteGroup={handleDeleteDynamicGroup}
@@ -241,8 +246,6 @@ function App() {
         ) : currentPage === 'directSelect' ? (
           <DirectUploadSelectPage
             selectedThemeId={selectedDirectTheme.id}
-            wsIp={networkSettings.wsIp}
-            uploadPort={networkSettings.interactivePort}
             onBackToEntry={() => navigateTo('entry')}
             onSelectTheme={handleSelectDirectTheme}
           />
@@ -264,8 +267,6 @@ function App() {
         ) : currentPage === 'directComplete' ? (
           <DirectUploadCompletePage
             result={directUploadResult}
-            wsIp={networkSettings.wsIp}
-            uploadPort={networkSettings.interactivePort}
             onBackToEntry={() => navigateTo('entry')}
             onReupload={handleResetDirectUpload}
           />
@@ -285,7 +286,7 @@ function App() {
         <SettingsPanel
           settings={networkSettings}
           onClose={() => setSettingsOpen(false)}
-          onSave={updateNetworkSettings}
+          onSave={handleSettingsSave}
         />
       )}
     </div>

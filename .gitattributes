@@ -1,0 +1,2 @@
+ffmpegbin/*.dll filter=lfs diff=lfs merge=lfs -text
+ffmpegbin/*.exe filter=lfs diff=lfs merge=lfs -text

@@ -1,26 +1,74 @@
-import { useRef, useState } from 'react'
-import { persistDynamicMedia, type DynamicBackground } from '../services/dynamicArtStorage.ts'
-import { uploadUnityAsset } from '../services/unityBridge.ts'
+import { useEffect, useRef, useState } from 'react'
+import { setDynamicBackground, type DynamicBackground, type DynamicGroup } from '../services/dynamicArtStorage.ts'
+import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
 
 interface DynamicBackgroundPageProps {
   wsIp: string
   dynamicPort: number
-  draftBackground?: DynamicBackground
-  onBackToEntry: () => void
-  onBackgroundReady: (background: DynamicBackground) => void
-  onContinue: () => void
+  group: DynamicGroup
+  onBack: () => void
+  onGroupChange: (group: DynamicGroup) => void
+  onContinue: (group: DynamicGroup) => void
 }
 
 const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
   wsIp,
   dynamicPort,
-  draftBackground,
-  onBackToEntry,
-  onBackgroundReady,
+  group,
+  onBack,
+  onGroupChange,
   onContinue
 }) => {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadedGroup, setUploadedGroup] = useState<DynamicGroup | undefined>()
+
+  const currentGroup = uploadedGroup?.id === group.id ? uploadedGroup : group
+  const currentBackground = getActiveBackground(currentGroup)
+
+  useEffect(() => {
+    setUploadedGroup(undefined)
+  }, [group.id])
+
+  const buildGroupSyncPayload = (nextGroup: DynamicGroup) => {
+    const backgrounds = getBackgrounds(nextGroup)
+    const activeBackground = getActiveBackground(nextGroup)
+
+    return {
+      groupId: nextGroup.id,
+      name: nextGroup.name,
+      appearMode: nextGroup.appearMode,
+      appearIntervalMs: nextGroup.appearIntervalMs,
+      activeBackgroundId: nextGroup.activeBackgroundId ?? activeBackground?.id,
+      background: toBackgroundPayload(activeBackground),
+      backgrounds: backgrounds.map((background) => toBackgroundPayload(background)),
+      items: nextGroup.items.map((item) => ({
+        itemId: item.id,
+        assetId: item.media.id,
+        gridIndex: item.gridIndex,
+        position: item.position,
+        scale: item.scale,
+        rotation: item.rotation,
+        flipX: item.flipX ?? false,
+        flipY: item.flipY ?? false,
+        animationId: item.animationId,
+        moveMode: item.moveMode,
+        movePercent: item.movePercent,
+        moveSpeed: item.moveSpeed,
+        moveTrack: item.moveTrack,
+        order: item.order
+      }))
+    }
+  }
+
+  const syncGroupToPc = (nextGroup: DynamicGroup, eventName: 'GroupStateSync' | 'GroupSelectAndSync' = 'GroupStateSync') => {
+    sendDynamicEvent(wsIp, dynamicPort, eventName, buildGroupSyncPayload(nextGroup))
+  }
+
+  const handleContinue = () => {
+    syncGroupToPc(currentGroup, 'GroupSelectAndSync')
+    onContinue(currentGroup)
+  }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -28,20 +76,34 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
 
     setIsUploading(true)
     try {
-      const media = await persistDynamicMedia(file, 'draft-background') as DynamicBackground
+      const nextGroup = await setDynamicBackground(group.id, file)
+      const background = nextGroup ? getActiveBackground(nextGroup) : undefined
+      if (!nextGroup || !background) return
+
       uploadUnityAsset({
         ip: wsIp,
         port: dynamicPort,
         file,
         fields: {
           role: 'background',
-          groupId: 'draft',
-          assetId: media.id,
-          mediaType: media.type,
-          mimeType: media.mimeType
+          groupId: group.id,
+          assetId: background.id,
+          mediaType: background.type,
+          mimeType: background.mimeType
         }
       })
-      onBackgroundReady(media)
+
+      sendDynamicEvent(wsIp, dynamicPort, 'BackgroundSet', {
+        groupId: group.id,
+        assetId: background.id,
+        activeBackgroundId: background.id,
+        name: background.name,
+        mediaType: background.type,
+        mimeType: background.mimeType
+      })
+
+      setUploadedGroup(nextGroup)
+      onGroupChange(nextGroup)
     } finally {
       setIsUploading(false)
       event.target.value = ''
@@ -52,11 +114,11 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
     <main className="ipad-screen dynamic-screen apple-container">
       <header className="ipad-topbar">
         <div className="topbar-title-row">
-          <button type="button" className="ipad-button ghost-button" onClick={onBackToEntry}>
-            返回首頁
+          <button type="button" className="ipad-button ghost-button" onClick={onBack}>
+            返回作品檔案
           </button>
           <div className="min-w-0">
-            <p className="eyebrow">動態藝術</p>
+            <p className="eyebrow">動態藝術 · {currentGroup.name}</p>
             <h1 className="screen-title">背景上載</h1>
           </div>
         </div>
@@ -64,11 +126,11 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
 
       <section className="dynamic-background-workspace">
         <div className="dynamic-background-stage">
-          {draftBackground ? (
-            draftBackground.type === 'video' ? (
-              <video src={draftBackground.url} controls playsInline className="dynamic-background-media" />
+          {currentBackground ? (
+            currentBackground.type === 'video' ? (
+              <video src={currentBackground.url} controls playsInline className="dynamic-background-media" />
             ) : (
-              <img src={draftBackground.url} alt={draftBackground.name} className="dynamic-background-media" />
+              <img src={currentBackground.url} alt={currentBackground.name} className="dynamic-background-media" />
             )
           ) : (
             <div className="dynamic-empty-stage">
@@ -94,16 +156,16 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
           <button
             type="button"
             className="ipad-button secondary-button"
-            disabled={!draftBackground}
-            onClick={onContinue}
+            disabled={!currentBackground}
+            onClick={handleContinue}
           >
             下一步
           </button>
-          {draftBackground && (
+          {currentBackground && (
             <div className="dynamic-meta-card">
               <span>目前背景</span>
-              <strong>{draftBackground.name}</strong>
-              <small>{draftBackground.type === 'video' ? '影片背景' : '圖片背景'}</small>
+              <strong>{currentBackground.name}</strong>
+              <small>{currentBackground.type === 'video' ? '影片背景' : '圖片背景'}</small>
             </div>
           )}
         </aside>
@@ -111,5 +173,27 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
     </main>
   )
 }
+
+const getActiveBackground = (group: DynamicGroup): DynamicBackground | undefined => {
+  return group.background
+    ?? group.backgrounds?.find((background) => background.id === group.activeBackgroundId)
+    ?? group.backgrounds?.[0]
+}
+
+const getBackgrounds = (group: DynamicGroup) => {
+  if (group.backgrounds?.length) return group.backgrounds
+  return group.background ? [group.background] : []
+}
+
+const toBackgroundPayload = (background?: DynamicBackground) => (
+  background
+    ? {
+        assetId: background.id,
+        name: background.name,
+        mediaType: background.type,
+        mimeType: background.mimeType
+      }
+    : null
+)
 
 export default DynamicBackgroundPage

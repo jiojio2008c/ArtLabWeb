@@ -2,16 +2,12 @@ import { DIRECT_UPLOAD_THEMES, type DirectUploadTheme } from '../services/direct
 
 interface DirectUploadSelectPageProps {
   selectedThemeId: string
-  wsIp: string
-  uploadPort: number
   onBackToEntry: () => void
   onSelectTheme: (theme: DirectUploadTheme) => void
 }
 
 const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
   selectedThemeId,
-  wsIp,
-  uploadPort,
   onBackToEntry,
   onSelectTheme
 }) => {
@@ -29,7 +25,6 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
         </div>
 
         <div className="topbar-controls">
-          <span className="status-pill">{wsIp}:{uploadPort}</span>
           <span className="status-pill">藝術畫廊</span>
         </div>
       </header>

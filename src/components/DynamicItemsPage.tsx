@@ -8,6 +8,7 @@ import {
   type DynamicItem
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+import { syncDynamicGroupToReceiver } from '../services/dynamicArtReceiverSync.ts'
 
 interface DynamicItemsPageProps {
   group: DynamicGroup
@@ -55,6 +56,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   const [editPreview, setEditPreview] = useState<string | undefined>()
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [deletingItemId, setDeletingItemId] = useState('')
+  const [receiverSyncStatus, setReceiverSyncStatus] = useState('')
+  const [receiverSyncError, setReceiverSyncError] = useState('')
 
   const activeMenuItem = group.items.find((item) => item.id === menuItemId)
 
@@ -66,6 +69,41 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   }
 
   useEffect(() => () => clearLongPressTimer(), [])
+
+  useEffect(() => {
+    let cancelled = false
+    let clearTimer: number | undefined
+
+    setReceiverSyncError('')
+    void syncDynamicGroupToReceiver({
+      group,
+      ip: wsIp,
+      port: dynamicPort,
+      onStatus: (status) => {
+        if (!cancelled) setReceiverSyncStatus(status.label)
+      }
+    })
+      .then((synced) => {
+        if (cancelled || !synced) return
+        setReceiverSyncStatus('作品檔案已同步')
+        clearTimer = window.setTimeout(() => {
+          setReceiverSyncStatus('')
+        }, 1600)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setReceiverSyncStatus('')
+        setReceiverSyncError('作品檔案同步失敗，請確認藝術畫廊已開啟。')
+        clearTimer = window.setTimeout(() => {
+          setReceiverSyncError('')
+        }, 2600)
+      })
+
+    return () => {
+      cancelled = true
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer)
+    }
+  }, [dynamicPort, group, wsIp])
 
   const getMenuPosition = (clientX: number, clientY: number): MenuPosition => {
     const menuWidth = 232
@@ -311,6 +349,12 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
           </div>
         </div>
       </header>
+
+      {(receiverSyncStatus || receiverSyncError) && (
+        <div className={`status-toast ${receiverSyncError ? 'error' : 'success'}`}>
+          {receiverSyncError || receiverSyncStatus}
+        </div>
+      )}
 
       <section className="dynamic-items-workspace" aria-label="作品圖片列表">
         <button

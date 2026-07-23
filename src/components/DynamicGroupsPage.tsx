@@ -3,14 +3,12 @@ import {
   createDynamicGroup,
   deleteDynamicGroup,
   updateDynamicGroupMeta,
-  type DynamicBackground,
   type DynamicGroup
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent } from '../services/unityBridge.ts'
 
 interface DynamicGroupsPageProps {
   groups: DynamicGroup[]
-  draftBackground?: DynamicBackground
   wsIp: string
   dynamicPort: number
   onBack: () => void
@@ -30,7 +28,6 @@ const LONG_PRESS_MOVE_TOLERANCE = 12
 
 const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   groups,
-  draftBackground,
   wsIp,
   dynamicPort,
   onBack,
@@ -189,21 +186,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
     setIsCreating(true)
     try {
-      const group = await createDynamicGroup(name, thumbnailFile, draftBackground)
+      const group = await createDynamicGroup(name, thumbnailFile)
       sendDynamicEvent(wsIp, dynamicPort, 'GroupCreate', {
         groupId: group.id,
         name: group.name
       })
-
-      if (group.background) {
-        sendDynamicEvent(wsIp, dynamicPort, 'BackgroundSet', {
-          groupId: group.id,
-          assetId: group.background.id,
-          name: group.background.name,
-          mediaType: group.background.type,
-          mimeType: group.background.mimeType
-        })
-      }
 
       onCreateGroup(group)
       resetCreator()

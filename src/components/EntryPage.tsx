@@ -202,7 +202,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
             handleEnter(onOpenInteractiveArt)
           }}
         >
-          <img src="/MainIcon/畫境成真.png" alt="" className="entry-choice-icon" draggable={false} />
+          <img src="/MainIcon/Magic_floor_UI_art.png" alt="" className="entry-choice-icon" draggable={false} />
           <span>互動藝術</span>
         </button>
       </section>

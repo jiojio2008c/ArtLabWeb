@@ -118,6 +118,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [showCamera, setShowCamera] = useState(false)
+  const [showImportMenu, setShowImportMenu] = useState(false)
+  const [cameraMaskDrawerOpen, setCameraMaskDrawerOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [showMaskPanel, setShowMaskPanel] = useState(false)
   const [selectedMask, setSelectedMask] = useState(defaultMaskId)
@@ -142,6 +144,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const gestureModeRef = useRef<ImageGestureMode>('none')
   const dragStartRef = useRef<{ pointerId: number; point: Point; position: Point } | null>(null)
   const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraMaskDragRef = useRef<{ startY: number; open: boolean } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
@@ -247,12 +251,29 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
   useEffect(() => {
     return () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+      cameraStreamRef.current = null
+
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop()
         mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!showCamera || !videoRef.current || !cameraStreamRef.current) return
+
+    const video = videoRef.current
+    video.srcObject = cameraStreamRef.current
+    video.muted = true
+    video.playsInline = true
+
+    void video.play().catch((error) => {
+      console.error('Camera preview play failed:', error)
+      setUploadError('相機預覽啟動失敗，請檢查相機權限')
+    })
+  }, [showCamera])
 
   const startAudioRecording = async () => {
     try {
@@ -296,6 +317,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setShowImportMenu(false)
     if (event.target.files?.[0]) {
       handleFile(event.target.files[0])
     }
@@ -316,6 +338,32 @@ const UploadPage: React.FC<UploadPageProps> = ({
     if (event.dataTransfer.files?.[0]) {
       handleFile(event.dataTransfer.files[0])
     }
+  }
+
+  const openFilePicker = () => {
+    setShowImportMenu(false)
+    fileInputRef.current?.click()
+  }
+
+  const requestCameraStream = async () => {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' }
+        }
+      })
+    } catch {
+      return await navigator.mediaDevices.getUserMedia({ video: true })
+    }
+  }
+
+  const handleImportClick = () => {
+    if (isDirectMode) {
+      setShowImportMenu(true)
+      return
+    }
+
+    openFilePicker()
   }
 
   const removeBackground = (image: HTMLImageElement): Promise<Blob> => {
@@ -434,13 +482,14 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const handleOpenCamera = async () => {
+    setShowImportMenu(false)
+    setCameraMaskDrawerOpen(false)
+    setUploadError(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-        setShowCamera(true)
-      }
+      const stream = await requestCameraStream()
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+      cameraStreamRef.current = stream
+      setShowCamera(true)
     } catch (error) {
       console.error('Camera open failed:', error)
       setUploadError('打開相機失敗，請檢查相機權限')
@@ -448,12 +497,55 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const handleCloseCamera = () => {
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream
-      stream.getTracks().forEach((track) => track.stop())
+    const stream = (videoRef.current?.srcObject as MediaStream | null) ?? cameraStreamRef.current
+    stream?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current = null
+
+    if (videoRef.current) {
       videoRef.current.srcObject = null
     }
     setShowCamera(false)
+    setCameraMaskDrawerOpen(false)
+  }
+
+  const handleCameraMaskDrawerPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    cameraMaskDragRef.current = {
+      startY: event.clientY,
+      open: cameraMaskDrawerOpen
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handleCameraMaskDrawerPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = cameraMaskDragRef.current
+    if (!drag) return
+
+    const deltaY = event.clientY - drag.startY
+    if (deltaY < -24) {
+      setCameraMaskDrawerOpen(true)
+    } else if (deltaY > 24) {
+      setCameraMaskDrawerOpen(false)
+    }
+  }
+
+  const handleCameraMaskDrawerPointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = cameraMaskDragRef.current
+    cameraMaskDragRef.current = null
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture can already be released by the WebView.
+    }
+
+    if (!drag) return
+
+    const deltaY = event.clientY - drag.startY
+    if (Math.abs(deltaY) < 10) {
+      setCameraMaskDrawerOpen((currentValue) => !currentValue)
+    } else {
+      setCameraMaskDrawerOpen(deltaY < 0 || (drag.open && deltaY < 28))
+    }
   }
 
   const handleTakePhoto = () => {
@@ -477,6 +569,18 @@ const UploadPage: React.FC<UploadPageProps> = ({
     canvas.width = width
     canvas.height = height
     context.drawImage(video, 0, 0, width, height)
+
+    if (isDirectMode) {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
+          handleCloseCamera()
+        } else {
+          setUploadError('拍照處理失敗，請重試')
+        }
+      }, 'image/jpeg', 0.92)
+      return
+    }
 
     const img = new Image()
     img.onload = async () => {
@@ -698,7 +802,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
         scaledDrawHeight
       )
 
-      if (selectedMaskOption?.src) {
+      const shouldApplyMaskToExport = Boolean(selectedMaskOption?.src)
+      if (shouldApplyMaskToExport) {
         const maskImg = new Image()
         maskImg.crossOrigin = 'anonymous'
         await new Promise<void>((resolve, reject) => {
@@ -811,7 +916,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   return (
-    <main className="ipad-screen upload-screen apple-container">
+    <main className={`ipad-screen upload-screen apple-container ${showCamera && isDirectMode ? 'direct-camera-screen' : ''}`}>
       <header className="ipad-topbar">
         <div className="topbar-title-row">
           <button type="button" onClick={onBackToHome} className="ipad-button ghost-button">
@@ -824,18 +929,20 @@ const UploadPage: React.FC<UploadPageProps> = ({
         </div>
 
         <div className="topbar-controls">
-          <div className="ip-control">
-            <span className="control-label">HTTP</span>
-            <input
-              type="text"
-              value={wsIp}
-              onChange={(event) => onWsIpChange(event.target.value)}
-              className="ipad-input ip-input"
-              placeholder="藝術畫廊 IP"
-            />
-            <span className="port-chip">:{uploadPort}</span>
-          </div>
-          <span className="status-pill">{uploadModeLabel}</span>
+          {!isDirectMode && (
+            <div className="ip-control">
+              <span className="control-label">HTTP</span>
+              <input
+                type="text"
+                value={wsIp}
+                onChange={(event) => onWsIpChange(event.target.value)}
+                className="ipad-input ip-input"
+                placeholder="藝術畫廊 IP"
+              />
+              <span className="port-chip">:{uploadPort}</span>
+            </div>
+          )}
+          <span className="status-pill">{isDirectMode ? '藝術畫廊' : uploadModeLabel}</span>
         </div>
       </header>
 
@@ -853,20 +960,119 @@ const UploadPage: React.FC<UploadPageProps> = ({
         className="hidden"
       />
 
+      {showImportMenu && isDirectMode && (
+        <div className="upload-action-overlay" role="dialog" aria-modal="true" aria-label="選擇上載方式">
+          <button
+            type="button"
+            className="upload-action-scrim"
+            onClick={() => setShowImportMenu(false)}
+            aria-label="關閉上載方式"
+          />
+          <div className="upload-action-sheet">
+            <button type="button" onClick={openFilePicker} className="upload-action-item">
+              相簿
+            </button>
+            <button type="button" onClick={handleOpenCamera} className="upload-action-item">
+              拍照
+            </button>
+            <button type="button" onClick={openFilePicker} className="upload-action-item">
+              選擇檔案
+            </button>
+          </div>
+        </div>
+      )}
+
       {showCamera ? (
-        <section className="camera-workspace">
+        <section className={`camera-workspace ${isDirectMode ? 'direct-camera-workspace' : ''}`}>
           <div className="camera-preview">
-            <video ref={videoRef} className="camera-video"></video>
+            <video ref={videoRef} className="camera-video" autoPlay muted playsInline></video>
+            {isDirectMode && selectedMaskOption?.src && (
+              <img
+                src={selectedMaskOption.src}
+                alt={`遮罩 ${selectedMaskOption.label}`}
+                className="camera-mask-overlay"
+              />
+            )}
             <canvas ref={canvasRef} className="hidden"></canvas>
+            {isDirectMode && activeMaskOptions.length > 0 && (
+              <>
+                {!cameraMaskDrawerOpen && (
+                  <button
+                    type="button"
+                    className="camera-mask-peek"
+                    aria-label="上滑選擇遮罩"
+                    onPointerDown={handleCameraMaskDrawerPointerDown}
+                    onPointerMove={handleCameraMaskDrawerPointerMove}
+                    onPointerUp={handleCameraMaskDrawerPointerEnd}
+                    onPointerCancel={handleCameraMaskDrawerPointerEnd}
+                  >
+                    <span />
+                  </button>
+                )}
+                <div className={`camera-mask-drawer ${cameraMaskDrawerOpen ? 'open' : ''}`}>
+                  <button
+                    type="button"
+                    className="camera-mask-drawer-handle"
+                    onPointerDown={handleCameraMaskDrawerPointerDown}
+                    onPointerMove={handleCameraMaskDrawerPointerMove}
+                    onPointerUp={handleCameraMaskDrawerPointerEnd}
+                    onPointerCancel={handleCameraMaskDrawerPointerEnd}
+                  >
+                    <span className="camera-mask-grip" />
+                    <strong>{selectedMaskOption?.label ?? '遮罩'}</strong>
+                    <span>下滑收起</span>
+                  </button>
+                  <div className="camera-mask-strip" aria-label="拍照定位遮罩">
+                    {activeMaskOptions.map((maskOption) => (
+                      <button
+                        key={maskOption.id}
+                        type="button"
+                        onClick={() => setSelectedMask(maskOption.id)}
+                        className={`camera-mask-option ${selectedMask === maskOption.id ? 'active' : ''}`}
+                      >
+                        {maskOption.src ? (
+                          <img src={maskOption.src} alt={`遮罩 ${maskOption.label}`} />
+                        ) : (
+                          <span className="mask-option-empty">無</span>
+                        )}
+                        <span>{maskOption.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            {isDirectMode && (
+              <div className="direct-camera-controls">
+                <button
+                  type="button"
+                  onClick={handleCloseCamera}
+                  className="direct-camera-close"
+                  aria-label="關閉相機"
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTakePhoto}
+                  className="direct-camera-shutter"
+                  aria-label="拍照"
+                >
+                  <span aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
-          <div className="camera-actions">
-            <button type="button" onClick={handleCloseCamera} className="ipad-button secondary-button">
-              關閉
-            </button>
-            <button type="button" onClick={handleTakePhoto} className="ipad-button primary-button">
-              拍攝
-            </button>
-          </div>
+          {!isDirectMode && (
+            <div className="camera-actions">
+              <button type="button" onClick={handleCloseCamera} className="ipad-button secondary-button">
+                關閉
+              </button>
+              <button type="button" onClick={handleTakePhoto} className="ipad-button primary-button">
+                拍攝
+              </button>
+            </div>
+          )}
         </section>
       ) : showMaskPanel && previewUrl ? (
         <section className="upload-workspace mask-workspace">
@@ -1005,16 +1211,16 @@ const UploadPage: React.FC<UploadPageProps> = ({
             >
               {isUploading ? '發送中' : submitLabel}
             </button>
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="ipad-button secondary-button">
+            <button type="button" onClick={handleImportClick} className="ipad-button secondary-button">
               重新選擇
             </button>
           </aside>
         </section>
       ) : (
-        <section className="upload-workspace import-workspace">
+        <section className={`upload-workspace import-workspace ${isDirectMode ? 'direct-import-workspace' : ''}`}>
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={handleImportClick}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -1025,16 +1231,18 @@ const UploadPage: React.FC<UploadPageProps> = ({
             <span>JPEG / PNG / GIF / WebP</span>
           </button>
 
-          <div className="capture-panel">
-            <video src="people.mp4" autoPlay loop muted playsInline className="capture-video" />
-            <div className="capture-content">
-              <p className="eyebrow light">相機</p>
-              <h2>{isDirectMode ? '快速拍照上載' : '拍攝作品'}</h2>
-              <button type="button" onClick={handleOpenCamera} className="hidden">
-                打開相機
-              </button>
+          {!isDirectMode && (
+            <div className="capture-panel">
+              <video src="people.mp4" autoPlay loop muted playsInline className="capture-video" />
+              <div className="capture-content">
+                <p className="eyebrow light">相機</p>
+                <h2>拍攝作品</h2>
+                <button type="button" onClick={handleOpenCamera} className="hidden">
+                  打開相機
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </section>
       )}
     </main>

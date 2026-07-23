@@ -3,16 +3,12 @@ interface DirectUploadCompletePageProps {
     name: string
     url: string
   } | null
-  wsIp: string
-  uploadPort: number
   onBackToEntry: () => void
   onReupload: () => void
 }
 
 const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
   result,
-  wsIp,
-  uploadPort,
   onBackToEntry,
   onReupload
 }) => {
@@ -24,7 +20,6 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
           <h1 className="screen-title">上載完成</h1>
         </div>
         <div className="topbar-controls">
-          <span className="status-pill">{wsIp}:{uploadPort}</span>
           <span className="status-pill">已發送</span>
         </div>
       </header>
@@ -49,7 +44,7 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
           </div>
           <div className="complete-meta">
             <span>目標</span>
-            <strong>{wsIp}:{uploadPort}</strong>
+            <strong>藝術畫廊</strong>
           </div>
         </aside>
       </section>

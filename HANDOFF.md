@@ -1,9 +1,94 @@
 # MagicFloor 当前交接文档
 
-更新时间：2026-07-15
+更新时间：2026-07-23
 当前状态：已开始新版 UI / 功能大改。首页已改为 `動態藝術` / `互動藝術` 双入口；端口和 IP 改为设置页管理；`互動藝術` 继续沿用 11701 快速上載流程；`動態藝術` 已新增背景上載、作品檔案、档案内图片、16:9 多图片控制页、背景素材库、右侧图层抽屉、左侧图片工具栏、移动方式、复用参数和独立存储层。大改前可用功能基线仍保留在下方，作为回退和协议对照。
 
 ## 近期修改记录
+
+### 2026-07-23 動態藝術動畫預覽改為即時小人預覽
+
+本輪針對 `動態藝術` 控制頁的動畫工具做 UI 預覽升級：
+
+- 新增 `src/components/DynamicAnimationPreview.tsx`，用 `user_landscape.png` 小人素材按 `animationId 0-9` 即時播放 CSS 預覽。
+- `user_landscape.png` 已複製到 `public/AnimationPreview/user_landscape.png`，確保 Vite 與 Capacitor iOS 打包時可直接讀取。
+- 控制頁動畫工具不再使用 `/animations/{id}.gif` 作為主預覽，改為 `DynamicAnimationPreview` 即時渲染。
+- 動畫按鈕由純數字升級為繁體短標籤與輕量識別 icon：`無`、`呼吸`、`搖擺`、`閃爍`、`旋轉`、`彈跳`、`波動`、`翻轉`、`脈衝`、`組合`。
+- 本輪只改 iPad 控制頁動畫預覽 UI，不改 `animationId`、`ItemAnimation` 發送格式、PC 端 `desktop-runtime` 動畫算法或上傳流程。
+
+### 2026-07-22 動態藝術新接收端重同步
+
+本輪針對「iPad 已有作品檔案和圖片，但切換到新 PC / 新 IP 後 PC 只顯示物件占位框」做接收端重同步：
+
+- 新增 `src/services/dynamicArtReceiverSync.ts`，按 `IP:端口 + 作品檔案` 記錄同步狀態。
+- 設定頁點擊 `保存` 時，會把目前 `動態藝術` 接收端標記為需要重同步；普通 `互動藝術` 上載頁臨時改 IP 不會觸發該標記。
+- 進入 `動態藝術` 作品圖片頁或控制頁時，若當前接收端從未同步該作品檔案，或剛在設定頁保存過，會自動同步當前作品檔案。
+- 同步流程為：先從 iPad 本地快取還原背景 / 物件素材文件，再按既有 multipart 方式重新上傳背景和圖片，最後發送完整 `GroupSelectAndSync`。
+- 新增 `getDynamicMediaFile()`，可從 Capacitor Filesystem、IndexedDB 或目前媒體 URL 還原 `File`，用於換 PC 後重新上傳舊素材。
+- 新增 `uploadUnityAssetAsync()`、`sendDynamicEventAsync()`，重同步時會等待素材上傳完成後再發完整組狀態，降低新 PC 收到參數但缺素材的占位問題。
+- 重同步不因日常新增 / 替換圖片後的素材簽名變化自動全量重傳，避免每次編輯都重傳背景視頻；日常新增 / 替換仍走原本單素材上傳流程。
+- 作品圖片頁和控制頁會顯示輕量狀態提示，例如 `正在同步圖片 2/6`、`作品檔案已同步` 或同步失敗提示。
+- 本輪不改 PC 端 `desktop-runtime` 接收邏輯，不新增協議字段，只復用既有 multipart 素材上傳和 `GroupSelectAndSync`。
+- 本輪已執行並通過：`npm run build`、`npm run sync:ios`。
+
+### 2026-07-21 動態藝術控制頁物件尺寸對齊 / 圖層快速新增
+
+本輪針對 `動態藝術` 控制頁修復 iPad 預覽與 PC 播放端物件大小不一致的問題，並補充圖層抽屜快速新增圖片入口：
+
+- `DynamicMedia` 新增可選 `width` / `height` 元數據；新上傳圖片會讀取原始寬高並保存，舊快取圖片仍可繼續使用。
+- 控制頁圖片載入後會以 `naturalWidth` / `naturalHeight` 補齊舊圖片尺寸，不需要清空 IndexedDB 或重新建立作品檔案。
+- 控制頁物件基準尺寸改為對齊 PC 端 `desktop-runtime/renderer/player.js` 的規則：在 `1920x1080` 舞台中最長邊最大 `380`、最小 `120`，再依照 iPad 端當前 16:9 舞台比例換算。
+- `item.scale` 仍只作為使用者雙指縮放倍率，不把尺寸修正寫入 `scale`，避免污染 PC 端已有控制參數。
+- 控制頁右側圖層抽屜 `圖層` 標題行右上角新增 `+` 按鈕，可直接向當前作品檔案新增圖片；新增後沿用既有 `ItemCreate` 和 multipart 素材上傳流程。
+- 本輪只改 `動態藝術` 控制頁預覽尺寸和圖層新增入口，不改 `互動藝術`、背景上載、PC 播放端尺寸算法或既有 Unity / PC 協議字段。
+- 本輪已執行並通過：`npm run build`、`npm run sync:ios`。
+
+### 2026-07-21 互動藝術相機 UI 實機修正
+
+本輪根據 iPad 實機截圖修正 `互動藝術` 自定義相機頁視覺：
+
+- 相機遮罩覆蓋層由 `object-fit: contain` 改為 `object-fit: cover`，確保遮罩圖鋪滿整個取景畫面。
+- 遮罩導航欄收起時，抽屜主體完全移到屏幕外；屏幕內只保留底部中央一個小型拖拽把手。
+- 遮罩導航欄仍支持點擊把手或上滑展開、下滑收起；展開後仍是橫向遮罩縮略圖選擇。
+- `互動藝術` 相機頁不再使用底部兩個矩形按鈕；改為右上角圓形關閉按鈕和右側垂直中心的圓形快門按鈕。
+- 快門按鈕只保留拍照視覺，不顯示 `PHOTO`、`1x` 或前後鏡頭切換。
+- 本輪只改相機 UI，不改 11701 上傳端口、拍照 canvas 捕獲、遮罩定位或導出規則。
+- 本輪已執行並通過：`npm run build`、`npm run sync:ios`。
+
+### 2026-07-20 首頁 icon / 互動藝術上載頁 / 動態藝術建組背景流程
+
+本輪根據實機反饋和 PC 端 `desktop-runtime` 接收邏輯調整三處：
+
+- 首頁 `互動藝術` 入口 icon 改為 `public/MainIcon/Magic_floor_UI_art.png`，入口標題仍保留 `互動藝術`。
+- 根目錄臨時加入的 `Magic_floor_UI_art.png` 已移入 `public/MainIcon/`，確保 Vite 和 Capacitor iOS 打包時能正確帶入資源。
+- `互動藝術` 上載頁移除右側 `快速拍照上載` 視覺容器；左側 `+` 上載容器改為單列占滿所在行。
+- `互動藝術` 拍照功能未刪除，仍從點擊 `+` 後的上載方式選單進入自定義相機遮罩定位流程。
+- `動態藝術` 入口流程調整為先進 `作品檔案` 頁；即使當前沒有任何作品檔案，也不再先進 `draft` 背景上載頁。
+- 新建作品檔案後，如果該作品檔案沒有背景，會先進 `背景上載` 頁；背景上載完成後才進入該作品檔案的圖片上載頁。
+- 選擇既有作品檔案時，如果該作品檔案沒有背景，也會先進 `背景上載` 頁；已有背景的作品檔案仍直接進圖片上載頁。
+- 已移除 iPad 端 `draftBackground` 建組鏈路，不再用 `groupId: "draft"` 上傳背景給 PC。
+- `DynamicBackgroundPage` 現在必須綁定真實作品檔案 `group.id`。背景上載時本地使用 `setDynamicBackground(group.id, file)` 寫入，PC 端 multipart 欄位也使用同一個真實 `groupId`。
+- 背景上載後會發送 `MF|DynamicArt|BackgroundSet|{"groupId","assetId","activeBackgroundId","name","mediaType","mimeType"}`，其中 `groupId` 為真實作品檔案 ID，對齊 `desktop-runtime/main.js` 的 `BackgroundSet` 和 multipart `role=background` 接收方式。
+- 背景上載頁點擊 `下一步` 時，會發送 `MF|DynamicArt|GroupSelectAndSync|...`，payload 帶 `groupId`、作品檔案名稱、出現方式、目前背景、背景列表和物件列表；PC 端 `desktop-runtime/main.js` 會把該作品檔案設為 `activeGroupId`，避免新建作品檔案上載背景後 PC 端沒有直接切入該組。
+- `互動藝術` 點擊 `+` 後的三項選單中，`相簿` / `拍照` / `選擇檔案` 使用同一個中性按鈕樣式，不再給中間 `拍照` 單獨做強調色。
+- `互動藝術` 自定義相機頁已改為全屏取景：隱藏頂部欄，取景視頻 full-bleed 鋪滿畫面，底部只保留懸浮操作和遮罩抽屜。
+- 相機遮罩選擇改為底部抽屜形態：默認只露出把手，上滑或點擊把手展開遮罩縮略圖，下滑收起；遮罩仍只用於拍照定位，不會寫入相機原圖。
+- 本輪已執行並通過：`npm run build`、`npm run sync:ios`。
+
+### 2026-07-16 Git 備份與互動藝術拍照遮罩定位
+
+本輪先處理 GitHub 推送失敗問題，再修改 `互動藝術` 快速上載的拍照流程。
+
+- 已將推送失敗的原因定位為 `desktop-runtime/node_modules` 和 `desktop-runtime/release` 內含 100MB 以上 exe / Electron 產物。這些目錄已從 Git 索引移除，本地檔案保留不刪除。
+- 新增 `.gitignore` 忽略 `desktop-runtime/node_modules/` 和 `desktop-runtime/release/`。
+- 已 amend 並成功推送備份到 GitHub：`main` 最新提交為 `07f6e71b 7.16动态艺术完善`。
+- `UploadPage.tsx` 的 `互動藝術` 上載入口改為應用內三項選單：`相簿`、`拍照`、`選擇檔案`。
+- `拍照` 不再走 iOS 原生 file input 的相機入口，而是走專案內 `getUserMedia` 自定義相機預覽，因為原生相機畫面無法被 WebView 疊加遮罩。
+- `互動藝術` 拍照預覽頁新增遮罩覆蓋層與橫向遮罩縮略圖選擇；遮罩只用於定位，不會寫入相機畫面，也不會進入 canvas 捕獲。
+- 拍照完成後仍進入既有遮罩對齊頁，可繼續縮放 / 拖曳圖片做位置調整。
+- 導出規則已更新：`互動藝術` 的 `相簿` / `拍照` / `選擇檔案` 最終上傳 PNG 都會合成當前選中遮罩；拍照遮罩仍只用於取景定位，不寫入相機捕獲原圖。
+- `互動藝術` 相關頁面已移除右上角 `wsIp:11701` 顯示，不再在頁面上暴露 IP；IP 和 11701 端口繼續由 `設定` 頁統一管理。
+- `拍照` 按鈕原本無反應的原因是相機流在條件渲染前就被讀取；目前改為先進入相機頁，再由 `useEffect` 把 `getUserMedia` 取得的 stream 綁到 `<video>`，並使用 `playsInline / muted / autoPlay` 提高 iPad WebView 相容性。相機請求會優先使用後置鏡頭，失敗時回退到普通 `video: true`。
+- 本輪已執行並通過：`npm run build`、`npm run sync:ios`。
 
 ### 2026-07-15 動態藝術控制頁參數持久化與復用媒體修復
 
@@ -889,6 +974,7 @@ public/
   people.mp4
   MainIcon/
     8080.png
+    Magic_floor_UI_art.png
     畫境成真.png
     美麗海洋.jpg
     魔幻森林1.jpg
