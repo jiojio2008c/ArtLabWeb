@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   addDynamicItem,
@@ -21,6 +22,7 @@ import {
   setDynamicBackground,
   updateDynamicBackgroundPlayback,
   updateDynamicGroupAppearMode,
+  updateDynamicItemMeta,
   upsertDynamicGroup,
   type DynamicAppearMode,
   type DynamicBackground,
@@ -109,6 +111,20 @@ interface BackgroundDropHint {
   placement: 'before' | 'after'
 }
 
+interface ImagePreviewTransform {
+  scale: number
+  x: number
+  y: number
+}
+
+interface ImagePreviewGesture {
+  mode: 'pan' | 'pinch'
+  startTransform: ImagePreviewTransform
+  startPoint?: Point
+  startCenter?: Point
+  startDistance?: number
+}
+
 interface DynamicControlPageProps {
   group: DynamicGroup
   wsIp: string
@@ -135,6 +151,7 @@ const LAYER_MOUSE_DRAG_THRESHOLD = 6
 const LAYER_TOUCH_SCROLL_THRESHOLD = 18
 const LAYER_AUTO_SCROLL_EDGE = 52
 const LAYER_AUTO_SCROLL_MAX_SPEED = 14
+const MAX_IMAGE_PREVIEW_SCALE = 5
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -392,6 +409,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const previewReplayIdRef = useRef(0)
   const transformPersistTimerRef = useRef<number | null>(null)
+  const propertyNameInputRef = useRef<HTMLInputElement>(null)
+  const propertyThumbnailButtonRef = useRef<HTMLButtonElement>(null)
+  const imagePreviewCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const imagePreviewViewportRef = useRef<HTMLDivElement>(null)
+  const imagePreviewPointersRef = useRef<Map<number, Point>>(new Map())
+  const imagePreviewGestureRef = useRef<ImagePreviewGesture | null>(null)
+  const imagePreviewTransformRef = useRef<ImagePreviewTransform>({ scale: 1, x: 0, y: 0 })
+  const copyConfirmCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const copyReturnFocusRef = useRef<HTMLButtonElement | null>(null)
 
   const [selectedItemId, setSelectedItemId] = useState(() => getInitialItemId(group.items, initialItemId))
   const [toolOpen, setToolOpen] = useState(false)
@@ -420,7 +446,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [copiedSourceItemId, setCopiedSourceItemId] = useState('')
   const [selectedCopyFields, setSelectedCopyFields] = useState<DynamicCopyField[]>(ALL_COPY_FIELDS)
   const [copyConfirmOpen, setCopyConfirmOpen] = useState(false)
+  const [isCopying, setIsCopying] = useState(false)
+  const [copyError, setCopyError] = useState('')
   const [copyFeedbackItemId, setCopyFeedbackItemId] = useState('')
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false)
+  const [imagePreviewTransform, setImagePreviewTransform] = useState<ImagePreviewTransform>({ scale: 1, x: 0, y: 0 })
+  const [isEditingItemName, setIsEditingItemName] = useState(false)
+  const [itemNameDraft, setItemNameDraft] = useState('')
+  const [itemNameError, setItemNameError] = useState('')
+  const [isSavingItemName, setIsSavingItemName] = useState(false)
   const [draggedLayerItemId, setDraggedLayerItemId] = useState('')
   const [pressedLayerItemId, setPressedLayerItemId] = useState('')
   const [layerDragPreview, setLayerDragPreview] = useState<LayerDragPreview | null>(null)
@@ -555,7 +589,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setRightPanelCollapsed(false)
     setAppearPanelOpen(false)
     setCopyConfirmOpen(false)
+    setIsCopying(false)
+    setCopyError('')
     setCopiedSourceItemId('')
+    setSelectedCopyFields([...ALL_COPY_FIELDS])
+    setIsImagePreviewOpen(false)
+    setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
+    setIsEditingItemName(false)
+    setItemNameDraft('')
+    setItemNameError('')
+    setIsSavingItemName(false)
     setSelectedLayerItemIds([])
     setSelectedBackgroundIds([])
     setPreviewBackgroundId(group.background?.id ?? '')
@@ -563,10 +606,60 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   useEffect(() => {
     setCopyConfirmOpen(false)
-    if (copiedSourceItemId === selectedItemId) {
-      setCopiedSourceItemId('')
+    setCopyError('')
+    setCopiedSourceItemId((currentId) => currentId === selectedItemId ? '' : currentId)
+    setIsImagePreviewOpen(false)
+    setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
+    imagePreviewPointersRef.current.clear()
+    imagePreviewGestureRef.current = null
+    setIsEditingItemName(false)
+    setItemNameError('')
+    setItemNameDraft(latestGroupRef.current.items.find((item) => item.id === selectedItemId)?.name ?? '')
+  }, [selectedItemId])
+
+  useEffect(() => {
+    if (!isEditingItemName) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      propertyNameInputRef.current?.focus({ preventScroll: true })
+      propertyNameInputRef.current?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [isEditingItemName])
+
+  useEffect(() => {
+    if (!isImagePreviewOpen) return undefined
+    const frame = window.requestAnimationFrame(() => imagePreviewCloseButtonRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [isImagePreviewOpen])
+
+  useEffect(() => {
+    imagePreviewTransformRef.current = imagePreviewTransform
+  }, [imagePreviewTransform])
+
+  useEffect(() => {
+    if (!copyConfirmOpen) return undefined
+    const frame = window.requestAnimationFrame(() => copyConfirmCloseButtonRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [copyConfirmOpen])
+
+  useEffect(() => {
+    if (!isImagePreviewOpen && !copyConfirmOpen) return undefined
+    const handleModalKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (isImagePreviewOpen) {
+        setIsImagePreviewOpen(false)
+        setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
+        window.requestAnimationFrame(() => propertyThumbnailButtonRef.current?.focus({ preventScroll: true }))
+        return
+      }
+      if (isCopying) return
+      setCopyConfirmOpen(false)
+      setCopyError('')
+      window.requestAnimationFrame(() => copyReturnFocusRef.current?.focus({ preventScroll: true }))
     }
-  }, [selectedItemId, copiedSourceItemId])
+    window.addEventListener('keydown', handleModalKeyDown)
+    return () => window.removeEventListener('keydown', handleModalKeyDown)
+  }, [copyConfirmOpen, isCopying, isImagePreviewOpen])
 
   useEffect(() => {
     const video = stageBackgroundVideoRef.current
@@ -1478,6 +1571,182 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
+  const setConstrainedImagePreviewTransform = (nextTransform: ImagePreviewTransform) => {
+    const viewport = imagePreviewViewportRef.current
+    const scale = clamp(nextTransform.scale, 1, MAX_IMAGE_PREVIEW_SCALE)
+    const maxX = viewport ? viewport.clientWidth * (scale - 1) / 2 : 0
+    const maxY = viewport ? viewport.clientHeight * (scale - 1) / 2 : 0
+    const constrained = {
+      scale,
+      x: scale === 1 ? 0 : clamp(nextTransform.x, -maxX, maxX),
+      y: scale === 1 ? 0 : clamp(nextTransform.y, -maxY, maxY)
+    }
+    imagePreviewTransformRef.current = constrained
+    setImagePreviewTransform(constrained)
+  }
+
+  const resetImagePreview = () => {
+    imagePreviewPointersRef.current.clear()
+    imagePreviewGestureRef.current = null
+    setConstrainedImagePreviewTransform({ scale: 1, x: 0, y: 0 })
+  }
+
+  const openImagePreview = () => {
+    if (!selectedItem) return
+    resetImagePreview()
+    setIsImagePreviewOpen(true)
+  }
+
+  const closeImagePreview = () => {
+    setIsImagePreviewOpen(false)
+    resetImagePreview()
+    window.requestAnimationFrame(() => propertyThumbnailButtonRef.current?.focus({ preventScroll: true }))
+  }
+
+  const handleImagePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    imagePreviewPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    const points = [...imagePreviewPointersRef.current.values()]
+    const currentTransform = imagePreviewTransformRef.current
+    if (points.length >= 2) {
+      imagePreviewGestureRef.current = {
+        mode: 'pinch',
+        startTransform: currentTransform,
+        startCenter: {
+          x: (points[0].x + points[1].x) / 2,
+          y: (points[0].y + points[1].y) / 2
+        },
+        startDistance: Math.max(1, getDistance(points[0], points[1]))
+      }
+      return
+    }
+
+    imagePreviewGestureRef.current = {
+      mode: 'pan',
+      startTransform: currentTransform,
+      startPoint: points[0]
+    }
+  }
+
+  const handleImagePreviewPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!imagePreviewPointersRef.current.has(event.pointerId)) return
+    imagePreviewPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    const gesture = imagePreviewGestureRef.current
+    const points = [...imagePreviewPointersRef.current.values()]
+    if (!gesture || points.length === 0) return
+
+    if (gesture.mode === 'pinch' && points.length >= 2 && gesture.startCenter && gesture.startDistance) {
+      const center = {
+        x: (points[0].x + points[1].x) / 2,
+        y: (points[0].y + points[1].y) / 2
+      }
+      const scale = gesture.startTransform.scale * getDistance(points[0], points[1]) / gesture.startDistance
+      setConstrainedImagePreviewTransform({
+        scale,
+        x: gesture.startTransform.x + center.x - gesture.startCenter.x,
+        y: gesture.startTransform.y + center.y - gesture.startCenter.y
+      })
+      return
+    }
+
+    if (gesture.mode === 'pan' && points.length === 1 && gesture.startPoint) {
+      setConstrainedImagePreviewTransform({
+        scale: gesture.startTransform.scale,
+        x: gesture.startTransform.x + points[0].x - gesture.startPoint.x,
+        y: gesture.startTransform.y + points[0].y - gesture.startPoint.y
+      })
+    }
+  }
+
+  const handleImagePreviewPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    imagePreviewPointersRef.current.delete(event.pointerId)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    const points = [...imagePreviewPointersRef.current.values()]
+    if (points.length === 1) {
+      imagePreviewGestureRef.current = {
+        mode: 'pan',
+        startTransform: imagePreviewTransformRef.current,
+        startPoint: points[0]
+      }
+    } else {
+      imagePreviewGestureRef.current = null
+    }
+  }
+
+  const handleImagePreviewWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const current = imagePreviewTransformRef.current
+    setConstrainedImagePreviewTransform({
+      ...current,
+      scale: current.scale + (event.deltaY < 0 ? 0.25 : -0.25)
+    })
+  }
+
+  const startItemNameEdit = () => {
+    if (!selectedItem || isSavingItemName) return
+    setItemNameDraft(selectedItem.name)
+    setItemNameError('')
+    setIsEditingItemName(true)
+  }
+
+  const cancelItemNameEdit = () => {
+    setItemNameDraft(selectedItem?.name ?? '')
+    setItemNameError('')
+    setIsEditingItemName(false)
+  }
+
+  const saveItemName = async () => {
+    if (!selectedItem || isSavingItemName) return
+    const nextName = itemNameDraft.trim()
+    if (!nextName) {
+      setItemNameError('名稱不能留空')
+      propertyNameInputRef.current?.focus({ preventScroll: true })
+      return
+    }
+    if (nextName === selectedItem.name) {
+      cancelItemNameEdit()
+      return
+    }
+
+    setIsSavingItemName(true)
+    setItemNameError('')
+    try {
+      clearPendingTransformPersist()
+      upsertDynamicGroup(latestGroupRef.current)
+      const nextGroup = await updateDynamicItemMeta(group.id, selectedItem.id, { name: nextName })
+      const updatedItem = nextGroup?.items.find((item) => item.id === selectedItem.id)
+      if (!nextGroup || !updatedItem) {
+        setItemNameError('無法儲存名稱，請重試')
+        return
+      }
+
+      latestGroupRef.current = nextGroup
+      onGroupChange(nextGroup)
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemUpdate', {
+        groupId: group.id,
+        itemId: updatedItem.id,
+        assetId: updatedItem.media.id,
+        name: updatedItem.name,
+        mediaType: updatedItem.media.type,
+        mimeType: updatedItem.media.mimeType,
+        replacedAsset: false
+      })
+      setItemNameDraft(updatedItem.name)
+      setIsEditingItemName(false)
+      playUiSound('success')
+    } catch {
+      setItemNameError('無法儲存名稱，請重試')
+    } finally {
+      setIsSavingItemName(false)
+    }
+  }
+
   const toggleCopyField = (field: DynamicCopyField) => {
     setSelectedCopyFields((currentFields) => (
       currentFields.includes(field)
@@ -1486,84 +1755,106 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     ))
   }
 
-  const handleCopyRequest = () => {
-    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0) return
+  const openCopyConfirm = (sourceItemId: string, trigger: HTMLButtonElement) => {
+    if (!selectedItem || sourceItemId === selectedItem.id) return
+    copyReturnFocusRef.current = trigger
+    setCopiedSourceItemId(sourceItemId)
+    setSelectedCopyFields([...ALL_COPY_FIELDS])
+    setCopyError('')
     setCopyConfirmOpen(true)
   }
 
+  const closeCopyConfirm = () => {
+    if (isCopying) return
+    setCopyConfirmOpen(false)
+    setCopyError('')
+    window.requestAnimationFrame(() => copyReturnFocusRef.current?.focus({ preventScroll: true }))
+  }
+
   const handleCopyConfirm = async () => {
-    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0) return
+    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0 || isCopying) return
 
     const targetItemId = selectedItem.id
     const sourceItemId = copySourceItem.id
     const copyFields = [...selectedCopyFields]
-    const nextGroup = await copyDynamicItemSettings(
-      group.id,
-      targetItemId,
-      sourceItemId,
-      copyFields,
-      latestGroupRef.current
-    )
-    if (!nextGroup) return
+    setIsCopying(true)
+    setCopyError('')
+    try {
+      const nextGroup = await copyDynamicItemSettings(
+        group.id,
+        targetItemId,
+        sourceItemId,
+        copyFields,
+        latestGroupRef.current
+      )
+      if (!nextGroup) {
+        setCopyError('無法複製屬性，請確認來源物件仍然存在。')
+        return
+      }
 
-    latestGroupRef.current = nextGroup
-    onGroupChange(nextGroup)
-    const protocolFields = copyFields.flatMap((field) => {
-      if (field === 'motion') return ['moveMode', 'movePercent', 'moveSpeed', 'moveTrack']
-      if (field === 'animation') return ['animationId']
-      if (field === 'size') return ['scale', 'rotation']
-      return ['flipX', 'flipY']
-    })
-    sendDynamicEvent(wsIp, dynamicPort, 'ItemSettingsCopy', {
-      groupId: group.id,
-      targetItemId,
-      sourceItemId,
-      copyFields,
-      fields: protocolFields
-    })
-    const copiedItem = nextGroup.items.find((item) => item.id === targetItemId)
-    if (copiedItem) {
-      if (copyFields.includes('motion') || copyFields.includes('size')) {
-        emitTransform(copiedItem, true)
+      latestGroupRef.current = nextGroup
+      onGroupChange(nextGroup)
+      const protocolFields = copyFields.flatMap((field) => {
+        if (field === 'motion') return ['moveMode', 'movePercent', 'moveSpeed', 'moveTrack']
+        if (field === 'animation') return ['animationId']
+        if (field === 'size') return ['scale', 'rotation']
+        return ['flipX', 'flipY']
+      })
+      sendDynamicEvent(wsIp, dynamicPort, 'ItemSettingsCopy', {
+        groupId: group.id,
+        targetItemId,
+        sourceItemId,
+        copyFields,
+        fields: protocolFields
+      })
+      const copiedItem = nextGroup.items.find((item) => item.id === targetItemId)
+      if (copiedItem) {
+        if (copyFields.includes('motion') || copyFields.includes('size')) {
+          emitTransform(copiedItem, true)
+        }
+        if (copyFields.includes('deform')) {
+          sendDynamicEvent(wsIp, dynamicPort, 'ItemDeform', {
+            groupId: group.id,
+            itemId: copiedItem.id,
+            flipX: getItemFlipX(copiedItem),
+            flipY: getItemFlipY(copiedItem)
+          })
+        }
+        if (copyFields.includes('motion')) {
+          sendDynamicEvent(wsIp, dynamicPort, 'ItemMotion', {
+            groupId: group.id,
+            itemId: copiedItem.id,
+            mode: copiedItem.moveMode,
+            percent: copiedItem.movePercent,
+            speed: getItemMoveSpeed(copiedItem),
+            track: getItemTrack(copiedItem)
+          })
+        }
+        if (copyFields.includes('animation')) {
+          sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
+            groupId: group.id,
+            itemId: copiedItem.id,
+            animationId: copiedItem.animationId
+          })
+        }
       }
-      if (copyFields.includes('deform')) {
-        sendDynamicEvent(wsIp, dynamicPort, 'ItemDeform', {
-          groupId: group.id,
-          itemId: copiedItem.id,
-          flipX: getItemFlipX(copiedItem),
-          flipY: getItemFlipY(copiedItem)
-        })
+
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current)
       }
-      if (copyFields.includes('motion')) {
-        sendDynamicEvent(wsIp, dynamicPort, 'ItemMotion', {
-          groupId: group.id,
-          itemId: copiedItem.id,
-          mode: copiedItem.moveMode,
-          percent: copiedItem.movePercent,
-          speed: getItemMoveSpeed(copiedItem),
-          track: getItemTrack(copiedItem)
-        })
-      }
-      if (copyFields.includes('animation')) {
-        sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
-          groupId: group.id,
-          itemId: copiedItem.id,
-          animationId: copiedItem.animationId
-        })
-      }
+      setCopyConfirmOpen(false)
+      setCopyFeedbackItemId(targetItemId)
+      playUiSound('success')
+
+      copyFeedbackTimerRef.current = window.setTimeout(() => {
+        setCopyFeedbackItemId('')
+        copyFeedbackTimerRef.current = null
+      }, 1400)
+    } catch {
+      setCopyError('無法複製屬性，請重試。')
+    } finally {
+      setIsCopying(false)
     }
-
-    if (copyFeedbackTimerRef.current !== null) {
-      window.clearTimeout(copyFeedbackTimerRef.current)
-    }
-    setCopyConfirmOpen(false)
-    setCopyFeedbackItemId(targetItemId)
-    playUiSound('success')
-
-    copyFeedbackTimerRef.current = window.setTimeout(() => {
-      setCopyFeedbackItemId('')
-      copyFeedbackTimerRef.current = null
-    }, 1400)
   }
 
   const handleScaleNudge = (delta: number) => {
@@ -2561,12 +2852,87 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             aria-label="物件屬性"
             style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
-            <div className="dynamic-tool-header">
+            <div className={`dynamic-tool-header ${isEditingItemName ? 'is-renaming' : ''}`}>
               <div className="dynamic-tool-title">
-                <img src={selectedItem.media.url} alt={selectedItem.name} />
-                <div>
+                <button
+                  ref={propertyThumbnailButtonRef}
+                  type="button"
+                  className="dynamic-property-thumbnail-button"
+                  onClick={openImagePreview}
+                  aria-label={`預覽 ${selectedItem.name}`}
+                  title="預覽圖片"
+                >
+                  <img src={selectedItem.media.url} alt="" draggable={false} />
+                  <span className="dynamic-property-thumbnail-icon" aria-hidden="true">
+                    <Maximize2 size={14} strokeWidth={2.4} />
+                  </span>
+                </button>
+                <div className="dynamic-property-title-copy">
                   <p className="eyebrow">物件屬性</p>
-                  <h2>{selectedItem.name}</h2>
+                  {isEditingItemName ? (
+                    <div className="dynamic-property-name-editor">
+                      <input
+                        ref={propertyNameInputRef}
+                        type="text"
+                        value={itemNameDraft}
+                        maxLength={80}
+                        disabled={isSavingItemName}
+                        onChange={(event) => {
+                          setItemNameDraft(event.target.value)
+                          if (itemNameError) setItemNameError('')
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            void saveItemName()
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            cancelItemNameEdit()
+                          }
+                        }}
+                        aria-label="物件名稱"
+                        aria-invalid={Boolean(itemNameError)}
+                        aria-describedby={itemNameError ? 'dynamic-item-name-error' : undefined}
+                      />
+                      <button
+                        type="button"
+                        className="dynamic-property-name-action cancel"
+                        onClick={cancelItemNameEdit}
+                        disabled={isSavingItemName}
+                        aria-label="取消修改名稱"
+                        title="取消"
+                      >
+                        <X size={15} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        className="dynamic-property-name-action confirm"
+                        onClick={() => void saveItemName()}
+                        disabled={isSavingItemName || !itemNameDraft.trim()}
+                        aria-label="儲存物件名稱"
+                        title="儲存"
+                      >
+                        <Check size={15} strokeWidth={2.7} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="dynamic-property-name-button"
+                      onClick={startItemNameEdit}
+                      aria-label={`修改物件名稱：${selectedItem.name}`}
+                      title="修改名稱"
+                    >
+                      <span>{selectedItem.name}</span>
+                      <Pencil size={13} strokeWidth={2.4} aria-hidden="true" />
+                    </button>
+                  )}
+                  {itemNameError && (
+                    <span id="dynamic-item-name-error" className="dynamic-property-name-error" role="alert">
+                      {itemNameError}
+                    </span>
+                  )}
                 </div>
               </div>
               <button
@@ -2576,6 +2942,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   setToolOpen(false)
                   setBackgroundPanelOpen(false)
                   setRightPanelCollapsed(false)
+                  setIsEditingItemName(false)
+                  setItemNameError('')
                 }}
                 aria-label="返回圖層"
                 title="返回圖層"
@@ -2730,7 +3098,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <div className="dynamic-tool-body compact">
                 <div className="dynamic-copy-section-heading">
                   <span>來源物件</span>
-                  <small>選擇要複製屬性的物件</small>
+                  <small>{Math.max(0, sortedItems.length - 1)} 個可選</small>
                 </div>
                 <div className="copy-source-list">
                   {sortedItems.filter((item) => item.id !== selectedItem.id).map((item) => (
@@ -2738,15 +3106,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       key={item.id}
                       type="button"
                       className={`copy-source-button ${copiedSourceItemId === item.id ? 'selected' : ''}`}
-                      onClick={() => {
-                        setCopiedSourceItemId(item.id)
-                        setCopyConfirmOpen(false)
-                      }}
+                      onClick={(event) => openCopyConfirm(item.id, event.currentTarget)}
+                      aria-haspopup="dialog"
                     >
                       <img src={item.media.url} alt={item.name} />
                       <span>{item.name}</span>
-                      <span className="copy-source-check" aria-hidden="true">
-                        {copiedSourceItemId === item.id ? '✓' : ''}
+                      <span className="copy-source-action" aria-hidden="true">
+                        <span>→</span>
                       </span>
                     </button>
                   ))}
@@ -2754,44 +3120,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <span className="copy-empty">暫無其他物件可複製。</span>
                   )}
                 </div>
-
-                {sortedItems.length > 1 && (
-                  <>
-                    <div className="dynamic-copy-section-heading copy-options-heading">
-                      <span>複製內容</span>
-                      <button
-                        type="button"
-                        className="dynamic-copy-select-all"
-                        onClick={() => setSelectedCopyFields(
-                          selectedCopyFields.length === ALL_COPY_FIELDS.length ? [] : [...ALL_COPY_FIELDS]
-                        )}
-                      >
-                        {selectedCopyFields.length === ALL_COPY_FIELDS.length ? '全部取消' : '全選'}
-                      </button>
-                    </div>
-                    <div className="dynamic-copy-options">
-                      {copyFieldOptions.map((option) => (
-                        <label key={option.id} className="dynamic-copy-option">
-                          <input
-                            type="checkbox"
-                            checked={selectedCopyFields.includes(option.id)}
-                            onChange={() => toggleCopyField(option.id)}
-                          />
-                          <span className="dynamic-copy-checkbox" aria-hidden="true" />
-                          <strong>{option.label}</strong>
-                        </label>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="ipad-button primary-button dynamic-copy-submit"
-                      disabled={!copySourceItem || selectedCopyFields.length === 0}
-                      onClick={handleCopyRequest}
-                    >
-                      複製屬性
-                    </button>
-                  </>
-                )}
                 {copyFeedbackItemId === selectedItem.id && (
                   <div className="dynamic-copy-feedback">屬性已複製</div>
                 )}
@@ -3066,12 +3394,74 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         </div>
       )}
 
+      {isImagePreviewOpen && selectedItem && (
+        <div className="dynamic-modal-overlay dynamic-image-preview-overlay" role="presentation">
+          <div className="settings-scrim" aria-hidden="true" />
+          <section
+            className="dynamic-image-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dynamic-image-preview-title"
+          >
+            <div className="dynamic-image-preview-heading">
+              <div>
+                <p className="eyebrow">物件預覽</p>
+                <h2 id="dynamic-image-preview-title">{selectedItem.name}</h2>
+              </div>
+              <div className="dynamic-image-preview-tools">
+                <span aria-live="polite">{Math.round(imagePreviewTransform.scale * 100)}%</span>
+                <button
+                  type="button"
+                  className="dynamic-image-preview-tool"
+                  onClick={resetImagePreview}
+                  disabled={imagePreviewTransform.scale === 1 && imagePreviewTransform.x === 0 && imagePreviewTransform.y === 0}
+                  aria-label="重設圖片預覽"
+                  title="重設預覽"
+                >
+                  <RotateCcw size={18} strokeWidth={2.2} />
+                </button>
+                <button
+                  ref={imagePreviewCloseButtonRef}
+                  type="button"
+                  className="dynamic-panel-close"
+                  onClick={closeImagePreview}
+                  aria-label="關閉圖片預覽"
+                  title="關閉"
+                >
+                  <X size={19} strokeWidth={2.3} />
+                </button>
+              </div>
+            </div>
+            <div
+              ref={imagePreviewViewportRef}
+              className={`dynamic-image-preview-viewport ${imagePreviewTransform.scale > 1 ? 'is-zoomed' : ''}`}
+              onPointerDown={handleImagePreviewPointerDown}
+              onPointerMove={handleImagePreviewPointerMove}
+              onPointerUp={handleImagePreviewPointerEnd}
+              onPointerCancel={handleImagePreviewPointerEnd}
+              onWheel={handleImagePreviewWheel}
+              onDoubleClick={resetImagePreview}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <img
+                src={selectedItem.media.url}
+                alt={selectedItem.name}
+                draggable={false}
+                style={{
+                  transform: `translate3d(${imagePreviewTransform.x}px, ${imagePreviewTransform.y}px, 0) scale(${imagePreviewTransform.scale})`
+                }}
+              />
+            </div>
+          </section>
+        </div>
+      )}
+
       {copyConfirmOpen && selectedItem && copySourceItem && (
         <div className="dynamic-modal-overlay dynamic-copy-modal-overlay" role="presentation">
           <button
             type="button"
             className="settings-scrim"
-            onClick={() => setCopyConfirmOpen(false)}
+            onClick={closeCopyConfirm}
             aria-label="取消複製"
           />
           <section className="dynamic-copy-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="copy-confirm-title">
@@ -3081,12 +3471,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 <h2 id="copy-confirm-title">確認複製屬性</h2>
               </div>
               <button
+                ref={copyConfirmCloseButtonRef}
                 type="button"
                 className="dynamic-panel-close"
-                onClick={() => setCopyConfirmOpen(false)}
+                onClick={closeCopyConfirm}
+                disabled={isCopying}
                 aria-label="關閉"
               >
-                ×
+                <X size={18} strokeWidth={2.4} />
               </button>
             </div>
 
@@ -3104,19 +3496,54 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </div>
             </div>
 
-            <div className="dynamic-copy-confirm-fields" aria-label="複製內容">
-              {copyFieldOptions
-                .filter((option) => selectedCopyFields.includes(option.id))
-                .map((option) => <span key={option.id}>{option.label}</span>)}
+            <div className="dynamic-copy-confirm-selection">
+              <div className="dynamic-copy-section-heading copy-options-heading">
+                <span>複製內容</span>
+                <button
+                  type="button"
+                  className="dynamic-copy-select-all"
+                  onClick={() => setSelectedCopyFields(
+                    selectedCopyFields.length === ALL_COPY_FIELDS.length ? [] : [...ALL_COPY_FIELDS]
+                  )}
+                  disabled={isCopying}
+                >
+                  {selectedCopyFields.length === ALL_COPY_FIELDS.length ? '全部取消' : '全選'}
+                </button>
+              </div>
+              <div className="dynamic-copy-options dynamic-copy-modal-options" aria-label="複製內容">
+                {copyFieldOptions.map((option) => (
+                  <label key={option.id} className="dynamic-copy-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedCopyFields.includes(option.id)}
+                      onChange={() => toggleCopyField(option.id)}
+                      disabled={isCopying}
+                    />
+                    <span className="dynamic-copy-checkbox" aria-hidden="true" />
+                    <strong>{option.label}</strong>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <p className="dynamic-copy-confirm-note">目標物件所選的屬性將被取代，其他屬性維持不變。</p>
+            {copyError && <p className="dynamic-copy-error" role="alert">{copyError}</p>}
             <div className="dynamic-copy-confirm-actions">
-              <button type="button" className="ipad-button secondary-button" onClick={() => setCopyConfirmOpen(false)}>
+              <button
+                type="button"
+                className="ipad-button secondary-button"
+                onClick={closeCopyConfirm}
+                disabled={isCopying}
+              >
                 取消
               </button>
-              <button type="button" className="ipad-button primary-button" onClick={handleCopyConfirm}>
-                確認複製
+              <button
+                type="button"
+                className="ipad-button primary-button"
+                onClick={() => void handleCopyConfirm()}
+                disabled={selectedCopyFields.length === 0 || isCopying}
+              >
+                {isCopying ? '正在複製...' : '確認複製'}
               </button>
             </div>
           </section>

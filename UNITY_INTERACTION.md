@@ -290,6 +290,8 @@ MF|DynamicArt|ItemUpdate|{"groupId":"group_a","itemId":"item_001","assetId":"med
 | `mimeType` | string | 图片 MIME 类型 |
 | `replacedAsset` | boolean | 是否替换了图片文件；只改名时为 `false` |
 
+控制页物件属性允许直接修改名称。只改名时不会重新上传媒体，也不会生成新的 `itemId` 或 `assetId`；接收端只需根据 `itemId` 更新显示名称，并保持现有对象和参数不变。
+
 #### ItemDelete
 
 ```text
@@ -408,7 +410,7 @@ bottom
 MF|DynamicArt|ItemSettingsCopy|{"groupId":"group_a","targetItemId":"item_002","sourceItemId":"item_001","copyFields":["motion","animation"],"fields":["moveMode","movePercent","moveSpeed","moveTrack","animationId"]}
 ```
 
-前端会先显示确认弹窗，再在本地把用户勾选的目标属性改成来源物件参数，然后发送该事件。`copyFields` 是 UI 分类，`fields` 是接收端实际需要复制的展开字段：
+前端会先选择来源物件，再在确认弹窗内勾选需要复制的内容；只有用户按下确认后，前端才在本地把目标属性改成来源物件参数并发送该事件。关闭或取消弹窗不会写入数据、发送事件或修改目标物件。`copyFields` 是 UI 分类，`fields` 是接收端实际需要复制的展开字段：
 
 | `copyFields` | UI 名称 | `fields` |
 | --- | --- | --- |
