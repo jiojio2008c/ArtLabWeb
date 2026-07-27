@@ -260,6 +260,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     window.requestAnimationFrame(() => creatorReturnFocusRef.current?.focus({ preventScroll: true }))
   }
 
+  const blockCreatorBackdropInteraction = (event: React.SyntheticEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
   const openCreator = (type: CreatorType) => {
     creatorReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     clearCreator()
@@ -746,7 +751,14 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
       {creatorType && (
         <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
-          <div className="settings-scrim" aria-hidden="true" />
+          <div
+            className="settings-scrim"
+            aria-hidden="true"
+            onPointerDown={blockCreatorBackdropInteraction}
+            onPointerUp={blockCreatorBackdropInteraction}
+            onClick={blockCreatorBackdropInteraction}
+            onContextMenu={blockCreatorBackdropInteraction}
+          />
           <section ref={creatorDialogRef} className="dynamic-library-form-modal" role="dialog" aria-modal="true" aria-labelledby="library-create-title" tabIndex={-1}>
             <div className="dynamic-library-modal-heading">
               <div>

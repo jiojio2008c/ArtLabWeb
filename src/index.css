@@ -5920,7 +5920,7 @@ code {
     transform: translate(-50%, -50%) translate3d(0, 0, 0);
   }
   100% {
-    transform: translate(-50%, -50%) translate3d(-118vw, 0, 0);
+    transform: translate(-50%, -50%) translate3d(var(--move-horizontal-travel-negative), 0, 0);
   }
 }
 
@@ -5929,7 +5929,7 @@ code {
     transform: translate(-50%, -50%) translate3d(0, 0, 0);
   }
   100% {
-    transform: translate(-50%, -50%) translate3d(118vw, 0, 0);
+    transform: translate(-50%, -50%) translate3d(var(--move-horizontal-travel), 0, 0);
   }
 }
 
@@ -9558,4 +9558,128 @@ button.ui-pressed {
   height: min(700px, 100%);
   align-self: center;
   justify-self: center;
+}
+
+/* Final branded surfaces and complete-media thumbnail presentation. */
+.entry-screen {
+  background-color: #69bbd6;
+  background-image:
+    linear-gradient(180deg, rgba(12, 34, 38, 0.08) 0%, rgba(255, 255, 255, 0.06) 42%, rgba(15, 39, 31, 0.18) 100%),
+    url("./assets/magic-floor-background.webp");
+  background-position: center, center bottom;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.entry-screen::before {
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 28%, transparent 72%, rgba(255, 255, 255, 0.08)),
+    linear-gradient(180deg, rgba(9, 31, 36, 0.08), transparent 34%, rgba(12, 30, 24, 0.12));
+  background-size: auto;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+.entry-topbar {
+  min-height: 82px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px 8px 18px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.entry-brand-logo {
+  display: block;
+  width: auto;
+  height: 64px;
+  max-width: min(210px, 42vw);
+  object-fit: contain;
+  object-position: left center;
+  filter:
+    drop-shadow(0 2px 2px rgba(0, 0, 0, 0.32))
+    drop-shadow(0 5px 12px rgba(0, 0, 0, 0.16));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.entry-topbar .settings-icon-button {
+  color: #172522;
+  border-color: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 18px rgba(9, 31, 27, 0.18);
+}
+
+.entry-topbar .settings-icon-button:hover,
+.entry-topbar .settings-icon-button:focus-visible {
+  border-color: rgba(255, 255, 255, 0.92);
+  background: #fff;
+  outline: none;
+}
+
+.dynamic-library-screen {
+  background-color: #dbecef;
+  background-image:
+    linear-gradient(180deg, rgba(246, 249, 247, 0.48), rgba(238, 244, 241, 0.68)),
+    url("./assets/magic-floor-background.webp");
+  background-position: center, center bottom;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.dynamic-library-screen > .dynamic-library-topbar {
+  background: rgba(248, 250, 248, 0.9);
+}
+
+.dynamic-library-screen .dynamic-library-breadcrumbs {
+  border: 1px solid rgba(23, 23, 23, 0.08);
+  border-radius: 8px;
+  padding: 0 5px;
+  background: rgba(248, 250, 248, 0.78);
+  box-shadow: 0 6px 18px rgba(30, 45, 52, 0.06);
+  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+}
+
+:is(
+  .entry-group-thumb,
+  .entry-item-bubble,
+  .dynamic-library-icon-preview,
+  .dynamic-library-detail-thumbnail,
+  .dynamic-library-thumbnail-picker,
+  .dynamic-item-card,
+  .dynamic-layer-main,
+  .dynamic-layer-drag-preview,
+  .dynamic-property-thumbnail-button,
+  .dynamic-tool-title,
+  .copy-source-button,
+  .dynamic-copy-route-item,
+  .background-preview-button,
+  .dynamic-background-drag-preview
+) :is(img, video) {
+  object-fit: contain;
+  object-position: center;
+  background-color: #f2f5f5;
+}
+
+.dynamic-background-drag-preview {
+  z-index: 520;
+}
+
+.dynamic-stage-item-motion.move-left .dynamic-stage-item-wave {
+  animation-direction: reverse;
+}
+
+@media (max-height: 760px) {
+  .entry-topbar {
+    min-height: 72px;
+  }
+
+  .entry-brand-logo {
+    height: 54px;
+  }
 }

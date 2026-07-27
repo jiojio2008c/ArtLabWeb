@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
@@ -145,7 +146,8 @@ const DEFAULT_ITEM_NATURAL_WIDTH = 360
 const DEFAULT_ITEM_NATURAL_HEIGHT = 260
 const DEFAULT_STAGE_PREVIEW_WIDTH = 960
 const DEFAULT_STAGE_PREVIEW_HEIGHT = 540
-const HORIZONTAL_WAVE_CYCLES = 8
+const HORIZONTAL_WAVE_CYCLES = 7
+const HORIZONTAL_STAGE_MARGIN = 260
 const LAYER_TOUCH_HOLD_MS = 180
 const LAYER_MOUSE_DRAG_THRESHOLD = 6
 const LAYER_TOUCH_SCROLL_THRESHOLD = 18
@@ -235,9 +237,9 @@ const getTrackBounds = (track: DynamicMoveTrack) => {
   return { start: 1 / 3, end: 2 / 3 }
 }
 
-const getMoveDuration = (speed: number) => {
-  const ratio = clamp(speed, 0, 100) / 100
-  return 14 - ratio * 11.5
+const getMoveDuration = (speed: number, baseSeconds = 5.5) => {
+  const ratio = clamp(speed, 1, 100) / 100
+  return lerp(baseSeconds * 1.55, baseSeconds * 0.46, ratio)
 }
 
 const getPositiveDimension = (value?: number) => (
@@ -302,6 +304,8 @@ const getMotionPreviewStyle = (
   const horizontalWaveSoft = Math.round(horizontalWaveAmplitude * 0.707)
   const horizontalWaveUp = -horizontalWaveAmplitude
   const horizontalWaveDown = horizontalWaveAmplitude
+  const horizontalMarginRatio = HORIZONTAL_STAGE_MARGIN / RUNTIME_STAGE_WIDTH
+  const horizontalTravel = Math.round(stageWidth * (1 + horizontalMarginRatio * 2))
   const localOrbitY = Math.max(Math.min(localUpLimit, localDownLimit) * localRatio, 0)
   const localOrbitX = Math.min(stageWidth * 0.28, Math.max(stageWidth * 0.08 * localRatio, localOrbitY * 2.2))
   const fullOrbitY = Math.max(item.position.y, 1 - item.position.y) * stageHeight
@@ -317,12 +321,14 @@ const getMotionPreviewStyle = (
   const orbitY38 = Math.round(orbitY * 0.383)
   const orbitFrontScale = 1 + amplitudeRatio * 0.24
   const orbitBackScale = Math.max(0.76, 1 - amplitudeRatio * 0.22)
-  const moveDuration = getMoveDuration(getItemMoveSpeed(item))
+  const moveDuration = getMoveDuration(getItemMoveSpeed(item), isLoopMove ? 8.5 : 5.5)
 
   return {
-    left: isLoopMove ? (item.moveMode === 'left' ? '109%' : '-9%') : `${item.position.x * 100}%`,
+    left: isLoopMove
+      ? `${(item.moveMode === 'left' ? 1 + horizontalMarginRatio : -horizontalMarginRatio) * 100}%`
+      : `${item.position.x * 100}%`,
     top: isLoopMove
-      ? `${(amplitudeRatio > 0 ? 0.5 : getDynamicMoveTrackCenter(moveTrack)) * 100}%`
+      ? `${clamp(item.position.y, -0.2, 1.2) * 100}%`
       : `${item.position.y * 100}%`,
     zIndex: 10 + item.order,
     '--move-duration': `${moveDuration}s`,
@@ -334,6 +340,8 @@ const getMotionPreviewStyle = (
     '--move-horizontal-wave-up': `${horizontalWaveUp}px`,
     '--move-horizontal-wave-down-soft': `${horizontalWaveSoft}px`,
     '--move-horizontal-wave-up-soft': `${-horizontalWaveSoft}px`,
+    '--move-horizontal-travel': `${horizontalTravel}px`,
+    '--move-horizontal-travel-negative': `${-horizontalTravel}px`,
     '--move-random-x': `${randomX}px`,
     '--move-random-x-small': `${Math.round(randomX * 0.34)}px`,
     '--move-random-x-negative': `${-randomX}px`,
@@ -3152,7 +3160,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           )
         })()}
 
-        {backgroundDragPreview && (() => {
+        {backgroundDragPreview && createPortal((() => {
           const draggedBackground = backgrounds.find((background) => background.id === backgroundDragPreview.backgroundId)
           if (!draggedBackground) return null
           const order = backgrounds.findIndex((background) => background.id === draggedBackground.id) + 1
@@ -3179,7 +3187,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </span>
             </div>
           )
-        })()}
+        })(), document.body)}
 
         {!previewMode && appearPanelOpen && (
           <aside className="dynamic-appear-popover" aria-label="出現設定">

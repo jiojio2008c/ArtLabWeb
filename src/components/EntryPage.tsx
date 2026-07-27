@@ -14,6 +14,7 @@ interface EntryPageProps {
 const LONG_PRESS_MS = 430
 const MAX_PREVIEW_GROUPS = 4
 const MAX_PREVIEW_ITEMS_PER_GROUP = 5
+const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 
 const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => (
   group.thumbnail ?? group.background ?? group.items[0]?.media
@@ -97,10 +98,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
   return (
     <main className="ipad-screen entry-screen apple-container">
       <header className="ipad-topbar entry-topbar">
-        <div className="min-w-0">
-          <p className="eyebrow">MagicFloor</p>
-          <h1 className="screen-title">MagicFloor</h1>
-        </div>
+        <img className="entry-brand-logo" src={RIGHT_LOGO_URL} alt="MagicFloor" draggable={false} />
 
         <button
           type="button"
