@@ -46,6 +46,8 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>UIStatusBarHidden</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>允許 MagicFloor 使用您的相機拍攝照片</string>
 	<key>NSPhotoLibraryUsageDescription</key>

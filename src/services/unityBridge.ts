@@ -5,6 +5,15 @@ interface UploadUnityAssetOptions {
   fields?: Record<string, string | number | boolean | undefined>
 }
 
+type AppLauncherId =
+  | 'dynamic-art'
+  | 'interactive-forest-1'
+  | 'interactive-forest-2'
+  | 'interactive-painting-real'
+  | 'interactive-ocean'
+
+const APP_LAUNCH_COMMAND_PREFIX = 'MF|AppLauncher|Launch|'
+
 const buildUnityUrl = (ip: string, port: number) => `http://${ip.trim()}:${port}`
 
 const sendUnityText = (ip: string, port: number, message: string) => {
@@ -15,6 +24,10 @@ const sendUnityText = (ip: string, port: number, message: string) => {
   xhr.open('POST', buildUnityUrl(trimmedIp, port), true)
   xhr.setRequestHeader('Content-Type', 'text/plain')
   xhr.send(message)
+}
+
+const sendAppLaunchCommand = (ip: string, port: number, appId: AppLauncherId) => {
+  sendUnityText(ip, port, `${APP_LAUNCH_COMMAND_PREFIX}${appId}`)
 }
 
 const sendUnityTextAsync = (ip: string, port: number, message: string) => {
@@ -110,8 +123,10 @@ const sendDynamicEventAsync = (
 }
 
 export {
+  APP_LAUNCH_COMMAND_PREFIX,
   buildUnityUrl,
   makeDynamicEventMessage,
+  sendAppLaunchCommand,
   sendDynamicEvent,
   sendDynamicEventAsync,
   sendUnityText,
@@ -119,3 +134,4 @@ export {
   uploadUnityAsset,
   uploadUnityAssetAsync
 }
+export type { AppLauncherId }

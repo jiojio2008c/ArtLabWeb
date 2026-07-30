@@ -1,6 +1,6 @@
 # MagicFloor Unity 交互文档
 
-更新时间：2026-07-23
+更新时间：2026-07-28
 
 本文档用于 Unity 端实现 MagicFloor 当前与下一版动态艺术功能的接收协议。前端仍以 HTTP 为主，Unity 端只需要监听对应端口，处理 `multipart/form-data` 文件上传和 `text/plain` 控制指令。
 
@@ -15,7 +15,46 @@
 
 端口可以在 iPad 设置页修改，所以 Unity 端部署时需要保证对应端口与前端设置一致。
 
-### 1.1 iPad 本地作品檔案資料夾
+### 1.1 11701 程式啟動指令
+
+程式啟動與互動藝術圖片共用互動藝術端口（預設 `11701`），接收端按 `Content-Type` 分流：
+
+```text
+text/plain          程式啟動指令
+multipart/form-data 互動藝術圖片
+```
+
+啟動指令格式：
+
+```text
+MF|AppLauncher|Launch|{appId}
+```
+
+有效指令：
+
+| iPad 操作 | 指令正文 |
+| --- | --- |
+| 動態藝術 | `MF|AppLauncher|Launch|dynamic-art` |
+| 魔幻森林1 | `MF|AppLauncher|Launch|interactive-forest-1` |
+| 魔幻森林2 | `MF|AppLauncher|Launch|interactive-forest-2` |
+| 畫境成真 | `MF|AppLauncher|Launch|interactive-painting-real` |
+| 美麗海洋 | `MF|AppLauncher|Launch|interactive-ocean` |
+
+iPad 使用 fire-and-forget：發送後立即執行原頁面流程，不讀取 HTTP 狀態、不等待接收端回覆，也不確認目標程式是否成功開啟。接收端仍應回覆並關閉連線；目前 `ImageFileSaveHttpServer.cs` 對合法命令回覆 `202 Accepted`。
+
+`ImageFileSaveHttpServer` 不直接執行 EXE。它會把合法命令排入執行緒安全佇列，再於 Unity 主執行緒觸發以下 Inspector 事件：
+
+```text
+onDynamicArtLaunch
+onMagicForest1Launch
+onMagicForest2Launch
+onPaintingRealLaunch
+onBeautifulOceanLaunch
+```
+
+Unity 專案可把既有無參數喚醒方法綁定到對應事件。腳本的程式碼預設端口是 `11701`，但已掛載組件的序列化 Inspector 值可能仍是舊端口，部署前必須人工核對。
+
+### 1.2 iPad 本地作品檔案資料夾
 
 作品檔案頁的 `資料夾 / 子資料夾` 是 iPad 本地素材整理功能，不是接收端的場景層級或協議實體：
 
@@ -364,6 +403,17 @@ MF|DynamicArt|ItemAnimation|{"groupId":"group_a","itemId":"item_001","animationI
 ```text
 0 - 9
 ```
+
+当前已经正式实现的第十个按钮映射：
+
+| 界面位置 | `animationId` | 动作 | Unity Clip |
+| --- | ---: | --- | --- |
+| 第 1 个按钮 | `0` | 无动画 | 无 |
+| 第 10 个按钮 | `9` | 行走 | `WalkAnimation` |
+
+`WalkAnimation` 时长为 `0.8166667s`、60 FPS、循环播放，主要使用 `Key 23` / `Key 24` 交叉变形。iPad 与 `desktop-runtime` 均继续发送和读取 `animationId:9`；不要把第十个按钮改成 `animationId:10`。完整作品档案同步和属性复制中的 `animationId=9` 也具有相同语义。
+
+当前仓库只有 Unity 曲线权重，没有原始 `photo_plane.fbx` / `photo_plane.glb` 中的 Morph Target 顶点 delta。因此现有 iPad / PC 播放器使用同曲线、同 7×9 网格拓扑的程序化行走回退；取得保留 24 个 Morph Targets 的模型后，可替换为真实 `Key 23/24` 顶点变形，而不修改本协议。
 
 ### 3.6 移动方式事件
 

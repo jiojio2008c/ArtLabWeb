@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { LogOut } from 'lucide-react'
 import type { NetworkSettings } from '../services/appSettings.ts'
+import type { UserAccount } from '../services/userProfileService.ts'
 
 interface SettingsPanelProps {
   settings: NetworkSettings
+  account: UserAccount | null
+  accountLoading: boolean
   onClose: () => void
   onSave: (settings: NetworkSettings) => void
+  onLogout: () => Promise<void>
 }
 
 const normalizePortInput = (value: string, fallback: number) => {
@@ -13,10 +18,32 @@ const normalizePortInput = (value: string, fallback: number) => {
   return Math.min(65535, Math.max(1, Math.round(parsedValue)))
 }
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onClose, onSave }) => {
+const getAccountInitials = (displayName: string) => {
+  const words = displayName.trim().split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    return `${Array.from(words[0])[0] ?? ''}${Array.from(words[1])[0] ?? ''}`.toUpperCase()
+  }
+  return Array.from(words[0] ?? '使').slice(0, 2).join('').toUpperCase()
+}
+
+const SettingsPanel: React.FC<SettingsPanelProps> = ({
+  settings,
+  account,
+  accountLoading,
+  onClose,
+  onSave,
+  onLogout
+}) => {
   const [wsIp, setWsIp] = useState(settings.wsIp)
   const [dynamicPort, setDynamicPort] = useState(String(settings.dynamicPort))
   const [interactivePort, setInteractivePort] = useState(String(settings.interactivePort))
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+  const [avatarFailed, setAvatarFailed] = useState(false)
+
+  useEffect(() => {
+    setAvatarFailed(false)
+  }, [account?.avatarUrl])
 
   const handleSave = () => {
     onSave({
@@ -25,6 +52,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onClose, onSave
       interactivePort: normalizePortInput(interactivePort, settings.interactivePort)
     })
     onClose()
+  }
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return
+
+    setIsLoggingOut(true)
+    setLogoutError('')
+    try {
+      await onLogout()
+    } catch {
+      setLogoutError('無法登出，請稍後再試。')
+      setIsLoggingOut(false)
+    }
   }
 
   return (
@@ -40,6 +80,38 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onClose, onSave
             關閉
           </button>
         </div>
+
+        <section
+          className={`settings-account-summary ${accountLoading ? 'is-loading' : ''}`}
+          aria-label={accountLoading ? '正在載入帳號資料' : `目前帳號：${account?.displayName ?? '使用者'}`}
+          aria-busy={accountLoading}
+        >
+          <div className="settings-account-avatar" aria-hidden="true">
+            {!accountLoading && account?.avatarUrl && !avatarFailed ? (
+              <img
+                src={account.avatarUrl}
+                alt=""
+                draggable={false}
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : !accountLoading ? (
+              <span>{getAccountInitials(account?.displayName ?? '使用者')}</span>
+            ) : null}
+          </div>
+          <div className="settings-account-copy" aria-hidden={accountLoading}>
+            {accountLoading ? (
+              <>
+                <span className="settings-account-skeleton name" />
+                <span className="settings-account-skeleton email" />
+              </>
+            ) : (
+              <>
+                <strong>{account?.displayName ?? '使用者'}</strong>
+                <span>{account?.email || '已登入'}</span>
+              </>
+            )}
+          </div>
+        </section>
 
         <label className="settings-field">
           <span>藝術畫廊 IP</span>
@@ -76,13 +148,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onClose, onSave
           />
         </label>
 
-        <div className="settings-actions">
-          <button type="button" className="ipad-button secondary-button" onClick={onClose}>
-            取消
+        <div className="settings-footer">
+          <div className="settings-actions">
+            <button type="button" className="ipad-button secondary-button" onClick={onClose} disabled={isLoggingOut}>
+              取消
+            </button>
+            <button type="button" className="ipad-button primary-button" onClick={handleSave} disabled={isLoggingOut}>
+              保存
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="ipad-button danger-button settings-logout-button"
+            onClick={() => void handleLogout()}
+            disabled={isLoggingOut}
+          >
+            <LogOut aria-hidden="true" />
+            {isLoggingOut ? '登出中' : '登出'}
           </button>
-          <button type="button" className="ipad-button primary-button" onClick={handleSave}>
-            保存
-          </button>
+          <div className="settings-logout-error" role="status" aria-live="polite">
+            {logoutError}
+          </div>
         </div>
       </aside>
     </div>

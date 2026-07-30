@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
 import {
@@ -41,6 +41,8 @@ import DynamicAnimationPreview, {
   DYNAMIC_ANIMATION_PREVIEWS,
   getDynamicAnimationPreview
 } from './DynamicAnimationPreview.tsx'
+import DynamicStageItemAnimation from './DynamicStageItemAnimation.tsx'
+import WalkAnimationCanvas from './WalkAnimationCanvas.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
@@ -148,6 +150,7 @@ const DEFAULT_STAGE_PREVIEW_WIDTH = 960
 const DEFAULT_STAGE_PREVIEW_HEIGHT = 540
 const HORIZONTAL_WAVE_CYCLES = 7
 const HORIZONTAL_STAGE_MARGIN = 260
+const HORIZONTAL_KEYFRAMES_PER_WAVE = 20
 const LAYER_TOUCH_HOLD_MS = 180
 const LAYER_MOUSE_DRAG_THRESHOLD = 6
 const LAYER_TOUCH_SCROLL_THRESHOLD = 18
@@ -242,6 +245,120 @@ const getMoveDuration = (speed: number, baseSeconds = 5.5) => {
   return lerp(baseSeconds * 1.55, baseSeconds * 0.46, ratio)
 }
 
+const getHorizontalMotionPoint = (
+  moveMode: DynamicMoveMode,
+  timelineProgress: number,
+  movePercent: number,
+  stageSize: { width: number; height: number }
+) => {
+  const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
+  const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
+  const margin = stageWidth * HORIZONTAL_STAGE_MARGIN / RUNTIME_STAGE_WIDTH
+  const travel = stageWidth + margin * 2
+  const pathProgress = moveMode === 'left' ? 1 - timelineProgress : timelineProgress
+  const amplitude = clamp(movePercent, 0, 100) / 100 * stageHeight * 0.5
+
+  return {
+    x: -margin + travel * pathProgress,
+    y: Math.sin(pathProgress * Math.PI * 2 * HORIZONTAL_WAVE_CYCLES) * amplitude
+  }
+}
+
+const formatHorizontalMotionTransform = (point: Point) => (
+  `translate(-50%, -50%) translate3d(${point.x.toFixed(3)}px, ${point.y.toFixed(3)}px, 0)`
+)
+
+const buildHorizontalMotionKeyframes = (
+  item: DynamicItem,
+  stageSize: { width: number; height: number }
+): Keyframe[] => {
+  const frameCount = HORIZONTAL_WAVE_CYCLES * HORIZONTAL_KEYFRAMES_PER_WAVE
+  return Array.from({ length: frameCount + 1 }, (_, index) => {
+    const offset = index / frameCount
+    return {
+      offset,
+      transform: formatHorizontalMotionTransform(
+        getHorizontalMotionPoint(item.moveMode, offset, item.movePercent, stageSize)
+      )
+    }
+  })
+}
+
+interface DynamicStageMotionProps {
+  item: DynamicItem
+  motionMode: DynamicMoveMode
+  stageSize: { width: number; height: number }
+  appearDelayMs: number
+  replayId: number
+  style: React.CSSProperties
+  children: React.ReactNode
+}
+
+interface HorizontalAnimationState {
+  animation: Animation | null
+  currentTime: number | null
+}
+
+const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
+  item,
+  motionMode,
+  stageSize,
+  appearDelayMs,
+  replayId,
+  style,
+  children
+}) => {
+  const elementRef = useRef<HTMLDivElement>(null)
+  const animationStateRef = useRef<HorizontalAnimationState>({ animation: null, currentTime: null })
+  const isHorizontalMotion = motionMode === 'left' || motionMode === 'right'
+
+  useLayoutEffect(() => {
+    const element = elementRef.current
+    const previousState = animationStateRef.current
+    const retainedCurrentTime = previousState.currentTime
+    previousState.animation?.cancel()
+
+    if (!element || !isHorizontalMotion || stageSize.width <= 0 || stageSize.height <= 0) {
+      animationStateRef.current = { animation: null, currentTime: null }
+      return undefined
+    }
+
+    const duration = getMoveDuration(getItemMoveSpeed(item), 8.5) * 1000
+    const animation = element.animate(buildHorizontalMotionKeyframes(item, stageSize), {
+      duration,
+      delay: appearDelayMs,
+      iterations: Infinity,
+      easing: 'linear',
+      fill: 'both'
+    })
+
+    if (retainedCurrentTime !== null) {
+      animation.currentTime = retainedCurrentTime
+    }
+    animationStateRef.current = { animation, currentTime: null }
+
+    return () => {
+      const currentTime = animation.currentTime
+      animationStateRef.current = {
+        animation: null,
+        currentTime: typeof currentTime === 'number' ? currentTime : null
+      }
+      animation.cancel()
+    }
+  }, [appearDelayMs, isHorizontalMotion, item.id, item.moveMode, item.movePercent, item.moveSpeed, replayId, stageSize.height, stageSize.width])
+
+  return (
+    <div
+      ref={elementRef}
+      data-dynamic-item-id={item.id}
+      className={`dynamic-stage-item-motion move-${motionMode} ${isHorizontalMotion ? 'composed-horizontal-motion' : ''}`}
+      style={style}
+    >
+      {children}
+    </div>
+  )
+}
+
 const getPositiveDimension = (value?: number) => (
   Number.isFinite(value) && value && value > 0 ? value : undefined
 )
@@ -300,12 +417,9 @@ const getMotionPreviewStyle = (
   const waveDown = Math.round(lerp(localWaveDown, fullWaveDown, fullRatio))
   const randomX = Math.round(amplitudeRatio * stageWidth * 0.18)
   const randomY = Math.round(amplitudeRatio * stageHeight * 0.24)
-  const horizontalWaveAmplitude = Math.round(stageHeight * 0.5 * amplitudeRatio)
-  const horizontalWaveSoft = Math.round(horizontalWaveAmplitude * 0.707)
-  const horizontalWaveUp = -horizontalWaveAmplitude
-  const horizontalWaveDown = horizontalWaveAmplitude
-  const horizontalMarginRatio = HORIZONTAL_STAGE_MARGIN / RUNTIME_STAGE_WIDTH
-  const horizontalTravel = Math.round(stageWidth * (1 + horizontalMarginRatio * 2))
+  const horizontalStartPoint = isLoopMove
+    ? getHorizontalMotionPoint(item.moveMode, 0, item.movePercent, { width: stageWidth, height: stageHeight })
+    : null
   const localOrbitY = Math.max(Math.min(localUpLimit, localDownLimit) * localRatio, 0)
   const localOrbitX = Math.min(stageWidth * 0.28, Math.max(stageWidth * 0.08 * localRatio, localOrbitY * 2.2))
   const fullOrbitY = Math.max(item.position.y, 1 - item.position.y) * stageHeight
@@ -324,24 +438,16 @@ const getMotionPreviewStyle = (
   const moveDuration = getMoveDuration(getItemMoveSpeed(item), isLoopMove ? 8.5 : 5.5)
 
   return {
-    left: isLoopMove
-      ? `${(item.moveMode === 'left' ? 1 + horizontalMarginRatio : -horizontalMarginRatio) * 100}%`
-      : `${item.position.x * 100}%`,
+    left: isLoopMove ? '0px' : `${item.position.x * 100}%`,
     top: isLoopMove
       ? `${clamp(item.position.y, -0.2, 1.2) * 100}%`
       : `${item.position.y * 100}%`,
+    transform: horizontalStartPoint ? formatHorizontalMotionTransform(horizontalStartPoint) : undefined,
     zIndex: 10 + item.order,
     '--move-duration': `${moveDuration}s`,
-    '--move-horizontal-wave-duration': `${moveDuration / HORIZONTAL_WAVE_CYCLES}s`,
     '--move-ratio': String(amplitudeRatio),
     '--move-wave-down': `${waveDown}px`,
     '--move-wave-up': `${waveUp}px`,
-    '--move-horizontal-wave-down': `${horizontalWaveDown}px`,
-    '--move-horizontal-wave-up': `${horizontalWaveUp}px`,
-    '--move-horizontal-wave-down-soft': `${horizontalWaveSoft}px`,
-    '--move-horizontal-wave-up-soft': `${-horizontalWaveSoft}px`,
-    '--move-horizontal-travel': `${horizontalTravel}px`,
-    '--move-horizontal-travel-negative': `${-horizontalTravel}px`,
     '--move-random-x': `${randomX}px`,
     '--move-random-x-small': `${Math.round(randomX * 0.34)}px`,
     '--move-random-x-negative': `${-randomX}px`,
@@ -2654,11 +2760,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const motionMode = shouldPlayMotion ? item.moveMode : 'none'
               const appearDelayMs = previewMode && group.appearMode === 'sequence' ? index * appearIntervalMs : 0
               const itemPreviewSize = getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], stageSize)
+              const animationCoordinateScale = Math.min(
+                (stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH) / RUNTIME_STAGE_WIDTH,
+                (stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT) / RUNTIME_STAGE_HEIGHT
+              )
               return (
-                <div
+                <DynamicStageMotion
                   key={`${item.id}-${previewMode ? previewReplayId : 'edit'}`}
-                  data-dynamic-item-id={item.id}
-                  className={`dynamic-stage-item-motion move-${motionMode} ${isManipulating ? 'is-manipulating' : ''}`}
+                  item={item}
+                  motionMode={motionMode}
+                  stageSize={stageSize}
+                  appearDelayMs={appearDelayMs}
+                  replayId={previewReplayId}
                   style={{
                     ...getMotionPreviewStyle(item, !shouldPlayMotion, stageSize),
                     width: `${itemPreviewSize.width}px`,
@@ -2671,19 +2784,38 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       className={`dynamic-stage-item-appear ${previewMode ? 'previewing' : ''}`}
                       style={{ '--appear-delay': `${appearDelayMs}ms` } as React.CSSProperties}
                     >
-                      <img
-                        src={item.media.url}
-                        alt={item.name}
-                        draggable={false}
-                        onLoad={(event) => handleItemImageLoad(item.media.id, event)}
-                        className={`dynamic-stage-item-visual ${!previewMode && selectedItem?.id === item.id ? 'active' : ''} ${copyFeedbackItemId === item.id ? 'copy-pulse' : ''}`}
-                        style={{
-                          transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
-                        }}
-                      />
+                      <DynamicStageItemAnimation
+                        animationId={item.animationId}
+                        itemId={item.id}
+                        enabled={previewMode && item.animationId !== 9}
+                        coordinateScale={animationCoordinateScale}
+                      >
+                        {previewMode && item.animationId === 9 ? (
+                          <WalkAnimationCanvas
+                            src={item.media.url}
+                            ariaLabel={`${item.name}行走動畫`}
+                            replayKey={previewReplayId}
+                            className="dynamic-stage-item-visual dynamic-stage-item-walk"
+                            style={{
+                              transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
+                            }}
+                          />
+                        ) : (
+                          <img
+                            src={item.media.url}
+                            alt={item.name}
+                            draggable={false}
+                            onLoad={(event) => handleItemImageLoad(item.media.id, event)}
+                            className={`dynamic-stage-item-visual ${!previewMode && selectedItem?.id === item.id ? 'active' : ''} ${copyFeedbackItemId === item.id ? 'copy-pulse' : ''}`}
+                            style={{
+                              transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
+                            }}
+                          />
+                        )}
+                      </DynamicStageItemAnimation>
                     </div>
                   </div>
-                </div>
+                </DynamicStageMotion>
               )
             })}
             </div>

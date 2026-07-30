@@ -47,3 +47,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 }
+
+final class FullscreenBridgeViewController: CAPBridgeViewController {
+    override var prefersStatusBarHidden: Bool {
+        return true
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setNeedsStatusBarAppearanceUpdate()
+    }
+}

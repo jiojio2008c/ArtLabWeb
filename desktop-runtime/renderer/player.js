@@ -1,3 +1,9 @@
+import {
+  WALK_ANIMATION_ID,
+  drawWalkImage
+} from './walk-animation-core.js'
+import { sampleItemAnimation } from './item-animation-core.js'
+
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
 
@@ -370,103 +376,6 @@ const getMotionTransform = (item, now) => {
   }
 }
 
-const getAnimationTransform = (item, now) => {
-  const id = Number(item.animationId ?? 0)
-  const seed = (hashString(item.itemId) % 360) * Math.PI / 180
-  const t = now / 1000 + seed
-
-  const base = {
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    alpha: 1,
-    offsetX: 0,
-    offsetY: 0,
-    skewX: 0,
-    skewY: 0
-  }
-
-  switch (id) {
-    case 1: {
-      const pulse = Math.sin(t * 2.2)
-      return {
-        ...base,
-        scaleX: 1 + pulse * 0.08,
-        scaleY: 1 + pulse * 0.08
-      }
-    }
-
-    case 2:
-      return {
-        ...base,
-        rotation: Math.sin(t * 4.2) * 9,
-        offsetX: Math.sin(t * 3.8) * 8
-      }
-
-    case 3:
-      return {
-        ...base,
-        alpha: 0.38 + (Math.sin(t * 6.4) + 1) * 0.31
-      }
-
-    case 4:
-      return {
-        ...base,
-        rotation: Math.sin(t * 2.4) * 18
-      }
-
-    case 5: {
-      const bounce = Math.abs(Math.sin(t * 4.1))
-      return {
-        ...base,
-        offsetY: -bounce * 70,
-        scaleX: 1 + bounce * 0.05,
-        scaleY: 1 - bounce * 0.08
-      }
-    }
-
-    case 6:
-      return {
-        ...base,
-        skewX: Math.sin(t * 4.6) * 0.18,
-        scaleY: 1 + Math.sin(t * 5.2) * 0.06,
-        offsetY: Math.sin(t * 3.2) * 10
-      }
-
-    case 7: {
-      const flip = Math.cos(t * 5.6)
-      return {
-        ...base,
-        scaleX: flip,
-        skewY: Math.sin(t * 5.6) * 0.18,
-        rotation: Math.sin(t * 2.7) * 5
-      }
-    }
-
-    case 8:
-      return {
-        ...base,
-        alpha: 0.58 + (Math.sin(t * 3.3) + 1) * 0.21,
-        scaleX: 1 + Math.sin(t * 3.3) * 0.035,
-        scaleY: 1 + Math.sin(t * 3.3) * 0.035
-      }
-
-    case 9:
-      return {
-        ...base,
-        scaleX: 1 + Math.sin(t * 2.1) * 0.09,
-        scaleY: 1 + Math.sin(t * 2.1) * 0.09,
-        rotation: Math.sin(t * 3.1) * 8,
-        alpha: 0.78 + (Math.sin(t * 4.2) + 1) * 0.11,
-        offsetY: Math.sin(t * 2.7) * 26,
-        skewX: Math.sin(t * 3.6) * 0.08
-      }
-
-    default:
-      return base
-  }
-}
-
 const getBaseImageSize = (imageEntry) => {
   const naturalWidth = imageEntry?.width || 360
   const naturalHeight = imageEntry?.height || 260
@@ -512,7 +421,7 @@ const drawItem = (item, itemIndex, now) => {
   const baseX = clamp(item.position?.x ?? 0.5, -0.5, 1.5) * STAGE_WIDTH
   const baseY = clamp(item.position?.y ?? 0.5, -0.5, 1.5) * STAGE_HEIGHT
   const motion = getMotionTransform(item, now)
-  const animation = getAnimationTransform(item, now)
+  const animation = sampleItemAnimation(item.animationId, item.itemId, now / 1000)
   const appearAlpha = getPreviewAppearAlpha(item, itemIndex, now)
   const x = baseX + motion.x + animation.offsetX
   const y = baseY + motion.y + animation.offsetY
@@ -536,13 +445,25 @@ const drawItem = (item, itemIndex, now) => {
     flipX * baseScale * motion.scale * animation.scaleX,
     flipY * baseScale * motion.scale * animation.scaleY
   )
-  context.drawImage(
-    image.element,
-    -size.width / 2,
-    -size.height / 2,
-    size.width,
-    size.height
-  )
+  if (Number(item.animationId ?? 0) === WALK_ANIMATION_ID) {
+    drawWalkImage(
+      context,
+      image.element,
+      -size.width / 2,
+      -size.height / 2,
+      size.width,
+      size.height,
+      now / 1000
+    )
+  } else {
+    context.drawImage(
+      image.element,
+      -size.width / 2,
+      -size.height / 2,
+      size.width,
+      size.height
+    )
+  }
   context.restore()
 }
 

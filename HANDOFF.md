@@ -1,9 +1,104 @@
 # MagicFloor 当前交接文档
 
-更新时间：2026-07-27
-当前状态：新版双入口和动态艺术工作台已经完成。首页为 `動態藝術` / `互動藝術` 双入口；端口和 IP 由设置页管理；`互動藝術` 继续沿用 11701 快速上載流程；`動態藝術` 已具备背景上載、文件管理器式作品檔案素材库、16:9 多物件舞台、固定图层、物件属性、选择性属性复制、移动与动画预览，以及独立持久化和 PC 重同步能力。大改前可用功能基线仍保留在下方，作为回退和协议对照。
+更新时间：2026-07-29
+当前状态：应用已增加 Supabase 邮箱密码登录门禁；有效会话会自动验证并进入首页，未登录或会话失效时停留在登录页，首页设置抽屉会显示当前玩家名称、邮箱、远端头像，并可登出当前设备。新版双入口和动态艺术工作台已经完成：首页为 `動態藝術` / `互動藝術` 双入口；端口和 IP 由设置页管理；`互動藝術` 继续沿用 11701 快速上載流程；`動態藝術` 已具备背景上載、文件管理器式作品檔案素材库、16:9 多物件舞台、固定图层、物件属性、选择性属性复制、移动与动画预览，以及独立持久化和 PC 重同步能力。大改前可用功能基线仍保留在下方，作为回退和协议对照。
 
 ## 近期修改记录
+
+### 2026-07-29 動態藝術第十按鈕行走動畫（十八版）
+
+- 動態藝術控制頁仍維持十個按鈕：第一個 `animationId=0` 是 `無動畫`，後九個是實際動作；Unity 的第九個動作 `WalkAnimation` 現在固定對應畫面第十個按鈕與協議值 `animationId=9`，沒有新增 `animationId=10`，因此既有 8080 指令、作品檔案持久化、完整群組同步和選擇性屬性複製格式均不變。
+- 第十個按鈕已由舊 `組合效果` 改為繁體 `行走`，並換成足跡圖示；動畫詳情預覽使用 `public/AnimationPreview/user_landscape.png`，不再播放舊的整圖縮放、旋轉、透明度組合 CSS。
+- 新增 `desktop-runtime/renderer/walk-animation-core.js` 作為 iPad 與 PC 共用的瀏覽器動畫核心；直接使用 `ThreeJSPhotoAnimation/unity-animation-curves.json` 中 `WalkAnimation` 的 `0.8166667s`、60 FPS、循環語意，以及 `Key 23` / `Key 24` 原始關鍵幀值和 Unity 非加權 Cubic Hermite 切線規則。控制頁舞台只在 `預覽` 模式播放行走，編輯模式維持靜止，不干擾單指移動、雙指縮放旋轉或圖層操作；重新預覽會從行走起點重播。
+- iPad 與 PC 現階段都使用 7×9 頂點、96 三角形的 Canvas2D 網格變形回退；PC 的背景、圖層排序、物件坐標、移動方式、大小、角度和翻轉仍沿用原渲染順序，只將 `animationId=9` 的舊組合仿真替換為行走網格。PC `player.js` 已改為 ES module，以便直接匯入同一核心。
+- 倉庫目前沒有原始 `photo_plane.fbx` 或保留 24 個 Morph Targets 的 `photo_plane.glb`。曲線 JSON 只包含每個時間點的權重，不包含 `Key 23/24` 的頂點 delta；所以目前版本的時間、權重和網格拓撲與 Unity 對齊，但局部肢體形狀是程序化回退，不是 Unity 模型逐頂點 1:1。後續取得模型後只需替換核心的頂點資料 / 渲染器，`animationId=9`、UI、HTTP、快取與屬性複製均無須變動。
+- `WalkAnimationCanvas` 使用全頁共用的單一 `requestAnimationFrame` 調度，Canvas 像素比上限為 `1.5`，避免每個物件建立獨立計時器並控制 iPad WebView 負載；`prefers-reduced-motion` 下保持第一幀靜態姿態。
+- 已驗證 `npx tsc --noEmit`、ES module 語法、Unity 曲線關鍵點取樣、Canvas 實際非空輸出、Vite production build、diff whitespace 與 `npm run sync:ios`；`dist` 的 56 個檔案在 `ios/App/App/public` 中全部存在且 SHA-256 一致。`desktop-runtime` 的 `npm run pack:dir` / `npm run pack:portable` 同樣通過，新版 `release/win-unpacked/resources/app.asar` 已確認包含 `index.html`、`player.js` 與 `walk-animation-core.js`；可執行產物為 `release/win-unpacked/MagicFloor Dynamic Player.exe` 與 `release/MagicFloor Dynamic Player 0.1.0.exe`。
+
+### 2026-07-28 11701 程式啟動單向指令（十七版）
+
+- 首頁點擊 `動態藝術` 時，iPad 會先向目前設定的互動藝術端口（預設 `11701`）單向發送 `MF|AppLauncher|Launch|dynamic-art`，隨即照原流程載入作品檔案；不等待回覆、不判斷程式是否成功開啟，也不新增載入狀態、錯誤提示或 UI。
+- `互動藝術` 首頁入口仍只進入四項選擇頁；選擇 `魔幻森林1`、`魔幻森林2`、`畫境成真`、`美麗海洋` 時，分別單向發送 `interactive-forest-1`、`interactive-forest-2`、`interactive-painting-real`、`interactive-ocean`，之後立即進入既有上載頁。
+- 啟動指令統一為 `text/plain`，現有互動藝術圖片仍為 `multipart/form-data`；兩種請求共用 `11701`，遮罩合成、圖片上載字段、完成過場和頁面操作流程沒有修改。
+- 根目錄 `ImageFileSaveHttpServer.cs` 已在圖片解析前增加純文字指令分流；合法請求回覆 `202 Accepted` 並排入執行緒安全佇列，五個對應的空 `UnityEvent` 只在 Unity 主執行緒 `Update()` 中觸發，不直接負責啟動 EXE。
+- Unity Inspector 可把既有無參數喚醒方法分別綁定到 `onDynamicArtLaunch`、`onMagicForest1Launch`、`onMagicForest2Launch`、`onPaintingRealLaunch`、`onBeautifulOceanLaunch`。腳本預設端口已改為 `11701`；既有場景上的序列化組件仍需人工核對 Inspector 端口，避免保留舊值 `8081`。
+- `ImageFileSaveHttpServer` 必須是常駐且唯一佔用 `11701` 的接收端；若被喚醒的其他程式也嘗試監聽同一端口，Windows 會發生端口衝突。
+- TypeScript、production build、diff whitespace 與 `npm run sync:ios` 已通過；`dist` 的 56 個檔案在 iOS public 中全部存在且 SHA-256 一致，iOS 額外的 `cordova.js` / `cordova_plugins.js` 是 Capacitor 生成檔。專案目前沒有 ESLint 設定檔，因此既有 `npm run lint` 腳本無法啟動；根目錄 C# 腳本仍需放回 Unity 專案後由 Unity 編譯器完成最終驗證。
+
+### 2026-07-27 設定玩家帳號摘要（十六版）
+
+- 首頁齒輪設定抽屜在標題下方新增固定尺寸帳號摘要：`56px` 圓形頭像、玩家名稱與登入郵箱；IP、8080、11701、保存和登出位置維持既有資訊層級。
+- `players` 是一名登入使用者對多名玩家的資料表：Supabase Auth `user.id` 對應遠端 `players.user_id`，`players.id` 是獨立玩家 ID。MagicFloor 目前沒有「已選玩家 ID」狀態，因此設定摘要會排除 `avatar_url IS NULL`，依 `updated_at DESC` 取最近更新且有頭像的一名玩家；不依賴資料庫自然順序。
+- REST 回傳欄位限定為 `id,name,avatar_url`；名稱使用被選中記錄的 `players.name`，頭像只使用完整的 `players.avatar_url` 公開 HTTP(S) 連結，不讀取 `player_groups.icon_url` 或 `player_nfc_bindings.avatar_url`，也不需要 Storage SDK、簽名 URL 或圖片 Blob 快取。
+- 查詢沿用目前 Supabase 專案和既有 Session access token，並帶入公開 `anon` key；沒有使用或要求 `service_role`，也沒有把完整 `players` 表開放或下載到本地。
+- 本輪沒有移植 ContentForgeAI 的 `syncRemotePlayers()`、`remote-player-tree.ts`、`player_group_mapping` 或 `patapata_remote_players` IndexedDB；設定頁只需要目前玩家一筆摘要，避免把玩家樹同步生命週期耦合進 MagicFloor。
+- 遠端無記錄、RLS 拒絕、網路失敗時不阻止首頁：名稱依序回退 Auth Metadata 與郵箱前綴，郵箱維持 Auth `user.email`，頭像顯示名稱首字母。`avatar_url` 只接受 `http` / `https`，圖片載入失敗也會原位切換首字母，版面不跳動。
+- 認證成功後在背景載入一次帳號摘要，設定抽屜使用固定骨架狀態；登出或 Session 失效會立即清空目前帳號資料，重新登入其他帳號時不會殘留上一個玩家名稱或頭像。
+- 新增 `src/services/userProfileService.ts` 隔離 Auth Session、REST 查詢、字段轉換和回退規則；`SettingsPanel` 只接收整理後的 `UserAccount`，不直接操作 Supabase。未引入完整 `@supabase/supabase-js`，production 主 JS 只由約 `459.6KB` 增至約 `462.2KB`。
+- 隔離 Edge 驗證覆蓋 `1194×834` 與 `1024×768`：兩種尺寸帳號與底部登出均完整位於設定抽屜，無水平溢位；請求會使用目前 Auth UUID 篩選 `user_id`、排除空頭像、按 `updated_at DESC` 排序並限制一筆，選取字段、Bearer Token 和 apikey 均正確。遠端名稱 / 頭像可顯示，圖片錯誤會回退首字母，登出後 Session 清除並返回登入頁。TypeScript、production build、diff whitespace 與 `npm run sync:ios` 均通過；`dist` 的 56 個檔案與 iOS 對應資源 SHA-256 完全一致。
+
+### 2026-07-27 首頁設定登出（十五版）
+
+- 首頁右上角齒輪展開的既有設定抽屜底部新增 `登出`；入口不放在首頁主畫面或登入頁，避免干擾 `動態藝術` / `互動藝術` 兩個主要工作入口。
+- 登出操作與 IP、8080、11701 欄位以分隔線區分；`取消` / `保存` 仍維持原排列，登出使用獨立全寬警示色按鈕和登出圖示，符合 iPad 橫屏觸控尺寸。
+- 登出使用 Supabase `signOut({ scope: 'local' })`，只結束目前 iPad / 瀏覽器的本地會話，不會讓其他已登入設備一併登出。
+- 成功登出後會關閉設定抽屜、重設目前頁面至首頁入口狀態、清除本次頁面選取，並顯示登入頁；認證狀態監聽同時處理 Supabase `SIGNED_OUT`，避免畫面殘留在已受保護頁面。
+- 登出不會刪除藝術畫廊 IP、8080 / 11701 端口、作品檔案、背景、物件圖片、控制參數或 IndexedDB / Capacitor Filesystem 素材；重新登入後仍可沿用原有本機設定與作品資料。
+- 登出執行期間會停用 `取消`、`保存` 和登出按鈕，防止重複操作；若 Supabase 登出失敗，抽屜會保留並以 `aria-live="polite"` 顯示 `無法登出，請稍後再試。`。
+- 已在隔離 Edge `1194×834` iPad 橫屏環境完成互動驗證：登出按鈕位於設定面板內及所有網路欄位下方，沒有超出抽屜；點擊後本地 `magicfloor_supabase_auth_v1` 會話被清除、設定關閉、首頁隱藏並返回登入頁。TypeScript、production build、diff whitespace 與 `npm run sync:ios` 均通過；`dist` 的 56 個檔案與 `ios/App/App/public` 對應資源 SHA-256 完全一致。
+
+### 2026-07-27 Supabase 登入門禁（十四版）
+
+- 應用最外層新增獨立 Supabase 認證門禁；登入頁不加入原有 `Page` / `pageOrder` 路由，認證成功後才顯示既有首頁，因此 `動態藝術`、`互動藝術`、8080、11701、IP 設定、作品快取和 PC 同步流程均未改寫。
+- 新增純登入頁，只提供 `電子郵件`、`密碼`、密碼顯示切換與 `登入`；沒有註冊、忘記密碼、使用者資料、Supabase URL 或其他技術資訊。所有靜態文字和錯誤提示維持繁體中文。
+- 登入頁共用首頁 `magic-floor-background.webp` 與同一 MagicFloor Logo 位置；表單放在橫屏畫面左側天空留白，使用單層高可讀性毛玻璃面板、54px 輸入與按鈕觸控高度、明確 focus / error 狀態、安全區和鍵盤可捲動處理。
+- 登入成功後按鈕顯示確認狀態並播放既有成功音，表單約 `320ms` 淡出，再由原首頁進場；`prefers-reduced-motion` 只保留快速透明度切換。啟動檢查期間只顯示共用背景與 Logo，不會閃出登入表單或首頁。
+- 認證只引入官方 `@supabase/auth-js`，未打包 Database、Realtime、Storage 等無關模組；production 主 JS 約 `458.6KB`，低於完整 `supabase-js` 造成的約 `574.5KB`，且沒有 Vite 大包警告。
+- Supabase 配置集中於 `src/services/supabaseClient.ts`，支援 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 覆寫；內建配置只使用可公開的 `anon` 公鑰，絕不可替換為 `service_role`。
+- 會話使用 Supabase `persistSession` 與 `autoRefreshToken`；只保存 access / refresh token，不保存或輸出明文密碼。重新開啟時除讀取本地 Session 外，還會呼叫 Supabase `/user` 驗證使用者，失效或偽造 token 不會繞過登入頁。
+- 錯誤資訊不直接暴露 Supabase 英文回應：空欄位、錯誤憑證、離線和頻率限制分別轉換為簡短繁體提示；錯誤區使用 `aria-live="polite"`，輸入框具有 `aria-invalid` / `aria-describedby`，初始不自動聚焦以避免 iPad 鍵盤突然彈出。
+- Chromium 驗證覆蓋 `1024×768`、`1194×834`、`1366×1024`：三種尺寸均無水平或垂直溢位、沒有初始輸入焦點；空欄位會聚焦郵箱，真實 Supabase 錯誤憑證會顯示 `電子郵件或密碼不正確。`。模擬成功登入約 `340ms` 進入首頁，Session 不含測試密碼，重新載入經 `/user` 驗證後約 `129ms` 恢復首頁。
+
+### 2026-07-27 互動藝術作品送出與結果揭曉過場（十三版）
+
+- 本輪把 `互動藝術` 快速上載恢復為結果導向的「作品送出與結果揭曉」過場；不顯示百分比、進度條、旋轉等待、`正在上載`、`正在處理`、`正在確認`、HTTP、端口、IP、連線狀態或其他技術階段。
+- 點擊 `發送快速上載` 後立即鎖定頁面並保留明確按壓回饋；按鈕不播放一般點擊音，只播放獨立 `artwork-send` 柔和上升送出音。互動藝術上載頁右上角的狀態膠囊同步隱藏。
+- 過場先淡化並模糊原操作介面，只保留目前作品為視覺中心；作品約 `300ms` 輕微放大至 `1.03`。若本地圖片、遮罩或 Canvas 合成較慢，作品只維持克制的呼吸效果，不顯示 loading 或等待文案。
+- 合成完成並成功啟動 `xhr.send()` 後，作品在約 `700ms` 內完成一次邊框向內收束與單條左至右掃描線，隨後輕微縮小並銜接完成頁預覽位置；正常快速路徑總時間約 `1000ms`，已移除舊版雙層殘影、四角鎖定、逐邊畫框和第三個鎖定音。
+- 完成頁只保留綠色完成標記、`結果`、`圖片已發送`、檔案名稱、`返回首頁` 與 `重新上載`；勾號出現時播放獨立雙音 `artwork-arrived`，只有最終結果區使用 `aria-live="polite"`，過場本身不向輔助功能朗讀技術狀態。
+- 本地圖片讀取、遮罩讀取、Canvas 建立或 `xhr.send()` 同步失敗時，過場會反向回到原上載頁，完整保留圖片、遮罩、縮放與位置，只顯示 `無法完成，請重試。`，不進入結果頁也不播放完成音。
+- `prefers-reduced-motion` 會取消掃描、縮放和位置移動，只保留快速淡出與完成頁淡入。11701 仍維持既有 fire-and-forget：表單欄位為 `image`，不註冊 `xhr.upload` 進度事件、不等待 HTTP 狀態或接收端回覆。
+- 本輪未修改 `動態藝術`、8080、IP / 端口設定、遮罩合成內容、HTTP 表單格式、相機拍照流程或接收端程式。
+- 已以隔離 Edge 環境驗證 `1024×768`、`1194×834`、`1366×1024` 三種 iPad 橫屏尺寸：正常路徑約 `1.02–1.13 秒` 進入結果頁，每次只送出一個包含 `image` 欄位的 multipart `POST`，沒有 `OPTIONS` 或技術狀態文字。TypeScript、production build、diff whitespace 與 `npm run sync:ios` 均通過；最新資源已同步至 `ios/App/App/public`。專案現有 `npm run lint` 因倉庫未提供 ESLint 設定檔而無法執行，與本輪程式內容無關。
+
+### 2026-07-27 動態藝術左右移動單軌跡預覽（十二版）
+
+- 本輪只重做 iPad `動態藝術` 控制頁預覽模式中的 `左移` / `右移` 視覺動畫；物件參數、本地持久化、8080 HTTP 事件、PC 接收端公式和 `互動藝術` 11701 流程均未修改。
+- 舊版把外層水平位移和內層上下波浪拆成兩個 CSS 動畫，iPad WebView 可能因兩個時間軸的插值與相位差出現機械感；新版改用 Web Animations API 為每個物件生成一條完整二維軌跡，每個關鍵幀同時計算 X / Y，只保留一個合成動畫實例。
+- 軌跡繼續以 PC 端規則為標準：1920×1080 基準、260px 畫面外邊距、7 個正弦波週期、`movePercent × 舞台高度 × 0.5` 幅度、PC 速度換算和物件實際 `position.y` 中線；左移以反向進度生成同一條軌跡，不再反轉獨立波浪動畫。
+- 每個週期使用 140 段軌跡採樣，透過單一 `translate3d` 動畫交由瀏覽器合成執行；不會逐幀更新 React state。順序出現的淡入延遲保持獨立，停止預覽或離開頁面會取消動畫，舞台尺寸改變時會重建相同比例軌跡並保留播放時間。
+- 舊 `dynamic-preview-left`、`dynamic-preview-right`、`dynamic-preview-horizontal-wave` 關鍵幀、水平波浪 CSS 變數和左移 `animation-direction` 已移除；上下、360 回環、隨機、圖片動畫、縮放、旋轉與翻轉維持既有實作。
+- Chromium 自動化驗證覆蓋 `1024×768`、`1194×834`、`1366×1024`：三種尺寸的舞台均維持 16:9，每個左右移動物件只有一個外層動畫、波浪子層沒有獨立動畫；上 / 下軌道 50% 幅度採樣與公式誤差約 `0.8px`。`npx tsc --noEmit`、Vite production build、diff whitespace 與 `npm run sync:ios` 均通過，最新資源已同步至 `ios/App/App/public`。
+
+### 2026-07-27 互動藝術拍照與上載流程完善（十一版）
+
+本輪修改前已建立並推送完整回退節點：`cc7eb4cf05dc255256403e7aea56e257f30d6fac`（短提交 `cc7eb4cf`，提交訊息 `7.27动态艺术完整修改`，分支 `main`，遠端 `origin/main` 已核對一致）。該提交是本輪互動藝術改動前的穩定備份，不應改寫。
+
+- 本輪只優化 `互動藝術` 的相機拍照、上載等待與完成回饋；`動態藝術` 的作品檔案、背景、圖層、物件參數、PC 同步和 8080 流程均未修改。
+- 自定義相機右側新增閃光燈開關，使用後置鏡頭 `MediaStreamTrack` 的 `torch` capability / constraint；支援時可直接開關補光燈，不支援的鏡頭會停用按鈕但仍可正常拍照。
+- 相機開啟期間新增 `正在啟動相機` 狀態；只有影片 metadata 與有效畫面尺寸準備完成後才開放快門，並鎖定連續點擊，降低 iPad WebView 黑圖或重複拍攝風險。
+- 快門增加獨立的 Web Audio 拍照聲與短白色快門閃光；音效由程式生成，不增加外部音效授權或素材依賴。快門不再疊加一般按鈕點擊音。
+- 拍照來源在遮罩調整頁顯示 `重新拍攝`，相簿或檔案來源維持 `重新選擇`；關閉重新拍攝相機不會清除原圖片、遮罩、縮放或位置。
+- 上載過場改為結果導向的作品轉場：不顯示百分比、轉圈、`正在處理`、`正在發送` 或接收端確認文字；畫面只聚焦實際完成遮罩合成的 PNG，依序執行作品浮起、四邊畫框閉合、雙層殘影收束、表面掠光與空間前移，再自然銜接完成頁。
+- 點擊發送時播放一次短促的作品送出音，畫框閉合時播放輕量鎖定音，進入完成頁時再播放獨立完成音；三者皆由 Web Audio 即時生成，不增加外部素材依賴，也不使用循環等待音效。
+- 完整轉場約 `1.5 秒`，只使用 GPU 友好的 `transform` / `opacity` 為主動畫；`prefers-reduced-motion` 模式會停用裝飾動畫並縮短展示延遲，不改變 HTTP 發送時機與結果頁流程。
+- 11701 接收格式維持既有 `POST http://{ip}:{interactivePort}`，`multipart/form-data` 欄位仍為 `image`；圖片與目前遮罩的合成方式、IP / 端口來源及完成頁跳轉均未改寫。
+- 互動藝術保持舊版 fire-and-forget 語意：呼叫 `XMLHttpRequest.send(FormData)` 後只保留短暫視覺過場，不等待 HTTP 狀態、不讀取 Unity 回應，也不判斷 PC 是否完成保存或展示。
+- 不可在 11701 發送器掛載 `xhr.upload.onprogress` / `xhr.upload.onload`；跨來源 WebView 會因此先送出 CORS `OPTIONS` 預檢，而既有 Unity 接收器沒有處理 `OPTIONS` 或 CORS 標頭，會使真正的圖片 `POST` 被瀏覽器阻止。
+- 本地圖片或遮罩合成失敗時會保留目前圖片、遮罩、縮放和位置，使用者可直接重試，不需要重新拍攝或重新選擇。
+- 上載完成頁保留原版面與 `返回首頁` / `重新上載` 操作，新增綠色完成標記縮放、勾號描邊、預覽與資訊面板進場、狀態及底部按鈕出現動畫；同時支援 `prefers-reduced-motion` 和 `aria-live`。
+- 上載完成頁的結果摘要已精簡：隱藏 HTTP / 快速上載端口說明與 `目標` 資訊卡，只保留完成狀態和實際檔案名稱，避免向一般使用者暴露傳輸實作資訊。
+- Web 端已以 `1194×834` iPad 橫屏尺寸完成相機、閃光燈、拍照、遮罩調整、發送狀態及完成頁全流程檢查；另以不提供任何 CORS 標頭的臨時接收器驗證，瀏覽器只送出一次 `POST`，沒有 `OPTIONS`，並正常進入 `已發送` 頁面。TypeScript、Vite build 與 diff whitespace 驗證均通過，最新構建亦已經由 `npm run sync:ios` 同步至 `ios/App/App/public`。
 
 ### 2026-07-27 首頁 Logo 頂欄透明化（十版）
 
@@ -1169,3 +1264,110 @@ public/
 - 端口统一从 `src/services/networkConfig.ts` 读取。
 - 遮罩选项继续在 `UploadPage.tsx` 顶部按 `CONTROL_MASK_OPTIONS` 和 `DIRECT_MASK_OPTIONS` 分开维护。
 - 如果以后快速上传还要增加自己的参数，优先继续通过 `mode="direct"` 和独立 props 隔离，不要复用控制页状态。
+
+## 11. 2026-07-29 行走动画与作品档案视觉修复
+
+### 行走动画编号与实现
+
+- 控制页第 10 个动画按钮显示为「行走」，协议仍发送 `animationId: 9`。
+- iPad 预览和 Windows 播放端共用 `desktop-runtime/renderer/walk-animation-core.js`。
+- Unity 曲线时长、循环与 Hermite 插值已复现；当前网片是 `7 x 9` 的程序化后备网格。
+- 工程仍没有原 Unity `photo_plane.fbx` 或保留 Morph Target 的 GLB，因此当前变形轨迹不是原模型逐顶点数据的 1:1 复刻。
+
+### 本轮修复
+
+- 修复行走预览图上的横线、竖线和三角斜线：每个 Canvas 三角裁切区只向外扩约 `0.75 CSS px`，覆盖相邻网片抗锯齿产生的透明缝隙，不改变顶点、动画曲线、图片尺寸或协议。
+- 修复选中「行走」或其他动画后按钮看似空白：补齐最终 CSS 选中态的深绿色背景、白色图标与白色文字。
+- 「作品档案」页面移除背景图上的白色半透明渐层，直接显示原始 `magic-floor-background.webp`；卡片、顶部操作区、菜单和弹窗背景保持不变。
+
+### 同步与产物
+
+已执行：
+
+```bash
+npx tsc --noEmit
+node --check desktop-runtime/renderer/walk-animation-core.js
+npm run build
+npm run sync:ios
+cd desktop-runtime
+npm run pack:dir
+npm run pack:portable
+```
+
+结果：
+
+- TypeScript、Vite 构建与 JavaScript 语法检查通过。
+- iOS 同步完成；`dist` 共 56 个 Web 文件，与 `ios/App/App/public` 对应文件的 SHA-256 全部一致。iOS 目录额外生成 `cordova.js` 和 `cordova_plugins.js`，属于 Capacitor 正常产物。
+- Windows 目录版：`desktop-runtime/release/win-unpacked/MagicFloor Dynamic Player.exe`。
+- Windows 便携版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`。
+
+## 12. 2026-07-29 iPad 舞台动画补齐
+
+### 问题原因
+
+控制页的动画按钮、参数保存和 `ItemAnimation` 发送本来都是正常的，但舞台预览只有 `animationId: 9` 使用 `WalkAnimationCanvas`。`animationId: 1-8` 仍然只渲染普通 `<img>`，因此工具栏下方的小人示例会动，舞台中的实际图片不会动。
+
+### 当前实现
+
+- 新增 `desktop-runtime/renderer/item-animation-core.js`，集中保存 PC 原有 `animationId: 1-8` 的时间公式与输出参数。
+- PC `renderer/player.js` 改为调用该共用核心，避免 PC 与 iPad 维护两套动画公式。
+- 新增 `src/components/DynamicStageItemAnimation.tsx`，预览模式下通过单一 `requestAnimationFrame` 订阅直接更新舞台物件的 `transform` 与 `opacity`，不触发 React 每帧重渲染。
+- 动画层位于移动方式、出现淡入层与实际图片之间，用户设置的大小、旋转、水平翻转和垂直翻转仍在图片层生效。
+- `1-8` 的位移会按当前 iPad 舞台相对于 `1920 x 1080` 的比例缩放，与 PC 运行端的视觉幅度一致。
+- 编辑模式保持静止；预览模式播放 `1-8`；`animationId: 9` 继续使用行走 Canvas；`animationId: 0` 保持无动画。
+
+### 验证
+
+```bash
+npx tsc --noEmit
+node --check desktop-runtime/renderer/item-animation-core.js
+node --check desktop-runtime/renderer/player.js
+npm run sync:ios
+cd desktop-runtime
+npm run pack:dir
+npm run pack:portable
+```
+
+结果：
+
+- TypeScript、核心 JavaScript 语法检查和 Vite 构建通过。
+- `dist` 56 个 Web 文件与 iOS public 目录对应文件 SHA-256 全部一致。
+- PC ASAR 已包含 `renderer/item-animation-core.js`、`renderer/player.js`、`renderer/walk-animation-core.js`。
+- iOS 已同步，可在 Xcode 中重新运行或 Archive。
+
+## 13. 2026-07-29 互动藝術重新上載與 iPad 全螢幕
+
+### 互動藝術完成頁重新上載
+
+- `src/App.tsx` 新增 `directUploadOpenMaskSelector` 狀態。
+- 從互動藝術完成頁點擊「重新上載」時，會清除上一筆完成結果，回到 `directUpload`，並將遮罩工作區直接打開。
+- `src/components/UploadPage.tsx` 新增 `openMaskSelector` prop。
+- 重新上載初始沒有新圖片時，仍可先查看目前主題的遮罩預覽；舞台顯示「選擇圖片」，選取圖片後沿用原本的拖曳、雙指縮放、遮罩切換、合成與發送流程。
+- 遮罩仍由 `getDirectMasksForTheme(selectedDirectTheme)` 決定，只影響互動藝術快速上載，不影響動態藝術、原版控制上載或其他主題。
+- 從首頁重新選擇互動藝術主題時會重置這個狀態，避免把完成頁的重新上載入口帶入一般首次上載流程。
+
+### iPad 隱藏系統狀態列
+
+- `ios/App/App/AppDelegate.swift` 新增 `FullscreenBridgeViewController`，覆寫 `prefersStatusBarHidden`。
+- `ios/App/App/Base.lproj/Main.storyboard` 的根控制器改為 `FullscreenBridgeViewController`，module 為 `App`。
+- `ios/App/App/Info.plist` 保留 `UIViewControllerBasedStatusBarAppearance`，並加入 `UIStatusBarHidden = true`。
+- `capacitor.config.ts` 的 iOS `contentInset` 改為 `never`，讓 WebView 延伸至全螢幕；網頁本身的 `env(safe-area-inset-*)` 仍負責內容安全邊距。
+- iPad 橫屏限制維持不變。這會隱藏時間、Wi-Fi、電池等頂部狀態列資訊，但不會移除系統 Home Indicator 或控制中心等系統手勢；展覽機若需鎖定操作，仍應配合 iPad「引導使用」或單 App 模式。
+
+### 本輪驗證
+
+已執行：
+
+```bash
+npx tsc --noEmit
+npm run build
+npm run sync:ios
+git diff --check
+```
+
+結果：
+
+- TypeScript、Vite 生產構建與 iOS Capacitor 同步通過。
+- `ios/App/App/capacitor.config.json` 已確認為 `contentInset: "never"`。
+- storyboard 自訂控制器與 `Info.plist` 全螢幕設定已確認存在。
+- `npm run lint` 未能執行，原因是目前專案沒有 ESLint 設定檔，並非本輪程式碼 lint 錯誤。

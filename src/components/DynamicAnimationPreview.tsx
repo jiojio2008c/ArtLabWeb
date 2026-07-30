@@ -1,3 +1,5 @@
+import WalkAnimationCanvas from './WalkAnimationCanvas.tsx'
+
 interface DynamicAnimationPreviewMeta {
   id: number
   label: string
@@ -15,7 +17,7 @@ export const DYNAMIC_ANIMATION_PREVIEWS: DynamicAnimationPreviewMeta[] = [
   { id: 6, label: '波動', shortLabel: '波動', className: 'wave' },
   { id: 7, label: '快速翻轉', shortLabel: '翻轉', className: 'flip' },
   { id: 8, label: '透明脈衝', shortLabel: '脈衝', className: 'pulse' },
-  { id: 9, label: '組合效果', shortLabel: '組合', className: 'combo' }
+  { id: 9, label: '行走', shortLabel: '行走', className: 'walk' }
 ]
 
 export const getDynamicAnimationPreview = (animationId: number) => (
@@ -37,7 +39,16 @@ const DynamicAnimationPreview = ({ animationId }: DynamicAnimationPreviewProps) 
       <div className="dynamic-animation-preview-backdrop" />
       <div className="dynamic-animation-preview-floor" />
       <div key={preview.id} className={`dynamic-animation-preview-person dynamic-animation-preview-person-${preview.className}`}>
-        <img src="/AnimationPreview/user_landscape.png" alt="" draggable={false} />
+        {preview.id === 9 ? (
+          <WalkAnimationCanvas
+            src="/AnimationPreview/user_landscape.png"
+            className="dynamic-animation-preview-walk-canvas"
+            ariaLabel="行走動畫預覽"
+            replayKey={preview.id}
+          />
+        ) : (
+          <img src="/AnimationPreview/user_landscape.png" alt="" draggable={false} />
+        )}
       </div>
     </div>
   )

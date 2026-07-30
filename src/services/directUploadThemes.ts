@@ -1,3 +1,5 @@
+import type { AppLauncherId } from './unityBridge.ts'
+
 interface UploadMaskOption {
   id: string
   label: string
@@ -11,6 +13,7 @@ interface DirectUploadTheme {
   label: string
   cover: string
   maskPrefix: DirectMaskPrefix
+  launcherAppId: AppLauncherId
 }
 
 const MAIN_ICON_BASE = '/MainIcon'
@@ -21,25 +24,29 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
     id: 'forest-1',
     label: '魔幻森林1',
     cover: `${MAIN_ICON_BASE}/魔幻森林1.jpg`,
-    maskPrefix: 'A'
+    maskPrefix: 'A',
+    launcherAppId: 'interactive-forest-1'
   },
   {
     id: 'forest-2',
     label: '魔幻森林2',
     cover: `${MAIN_ICON_BASE}/魔幻森林2.jpg`,
-    maskPrefix: 'A'
+    maskPrefix: 'A',
+    launcherAppId: 'interactive-forest-2'
   },
   {
     id: 'painting-real',
     label: '畫境成真',
     cover: `${MAIN_ICON_BASE}/畫境成真.png`,
-    maskPrefix: 'B'
+    maskPrefix: 'B',
+    launcherAppId: 'interactive-painting-real'
   },
   {
     id: 'ocean',
     label: '美麗海洋',
     cover: `${MAIN_ICON_BASE}/美麗海洋.jpg`,
-    maskPrefix: 'C'
+    maskPrefix: 'C',
+    launcherAppId: 'interactive-ocean'
   }
 ]
 

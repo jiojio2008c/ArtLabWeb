@@ -1,16 +1,33 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import axios from 'axios'
+import { Image as ImageIcon, Zap, ZapOff } from 'lucide-react'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
 import type { UploadMaskOption } from '../services/directUploadThemes.ts'
+import { playUiSound } from '../services/uiFeedback.ts'
 
 type UploadMode = 'control' | 'direct'
 type ImageGestureMode = 'none' | 'drag' | 'pinch'
+type DirectMediaSource = 'camera' | 'file'
+type DirectUploadPhase = 'idle' | 'focusing' | 'departing' | 'returning'
+
+type TorchCapabilities = MediaTrackCapabilities & { torch?: boolean }
+type TorchConstraintSet = MediaTrackConstraintSet & { torch: boolean }
 
 interface Point {
   x: number
   y: number
+}
+
+interface DirectSendGeometry {
+  left: number
+  top: number
+  width: number
+  height: number
+  targetX: number
+  targetY: number
+  targetScale: number
 }
 
 const MIN_UPLOAD_SCALE = 0.4
@@ -45,6 +62,7 @@ interface UploadPageProps {
   shouldCacheArtwork?: boolean
   maskOptions?: UploadMaskOption[]
   directThemeName?: string
+  openMaskSelector?: boolean
 }
 
 const saveThumbnailForObject = async (ip: string, index: number, imageUrl: string, imageName = `slot-${index}.png`, artworkBlob?: Blob) => {
@@ -106,7 +124,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
   uploadPort = CONTROL_PORT,
   shouldCacheArtwork = true,
   maskOptions,
-  directThemeName
+  directThemeName,
+  openMaskSelector = false
 }) => {
   const isDirectMode = mode === 'direct'
   const activeMaskOptions = isDirectMode ? (maskOptions?.length ? maskOptions : DIRECT_FALLBACK_MASK_OPTIONS) : CONTROL_MASK_OPTIONS
@@ -121,7 +140,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [showImportMenu, setShowImportMenu] = useState(false)
   const [cameraMaskDrawerOpen, setCameraMaskDrawerOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
-  const [showMaskPanel, setShowMaskPanel] = useState(false)
+  const [showMaskPanel, setShowMaskPanel] = useState(() => isDirectMode && openMaskSelector)
   const [selectedMask, setSelectedMask] = useState(defaultMaskId)
   const [directMaskAspectRatio, setDirectMaskAspectRatio] = useState<number | null>(null)
   const [directStageSize, setDirectStageSize] = useState<{ width: number; height: number } | null>(null)
@@ -132,12 +151,22 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [audioRecorded, setAudioRecorded] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioStatus, setAudioStatus] = useState('')
+  const [cameraReady, setCameraReady] = useState(false)
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [torchEnabled, setTorchEnabled] = useState(false)
+  const [isTakingPhoto, setIsTakingPhoto] = useState(false)
+  const [cameraFlashVisible, setCameraFlashVisible] = useState(false)
+  const [directMediaSource, setDirectMediaSource] = useState<DirectMediaSource>('file')
+  const [directUploadPhase, setDirectUploadPhase] = useState<DirectUploadPhase>('idle')
+  const [directSendPreviewUrl, setDirectSendPreviewUrl] = useState<string | null>(null)
+  const [directSendGeometry, setDirectSendGeometry] = useState<DirectSendGeometry | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const stageShellRef = useRef<HTMLDivElement>(null)
   const alignmentContainerRef = useRef<HTMLDivElement>(null)
+  const directPreviewImageRef = useRef<HTMLImageElement>(null)
   const positionRef = useRef({ x: 0, y: 0 })
   const imageScaleRef = useRef(1)
   const pointersRef = useRef<Map<number, Point>>(new Map())
@@ -148,6 +177,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const cameraMaskDragRef = useRef<{ startY: number; open: boolean } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const cameraFlashTimerRef = useRef<number | null>(null)
+  const directTransitionTimerRef = useRef<number | null>(null)
+  const directTransitionStartedAtRef = useRef(0)
+  const directSendPreviewUrlRef = useRef<string | null>(null)
 
   const selectedMaskOption = activeMaskOptions.find((option) => option.id === selectedMask) ?? activeMaskOptions[0]
   const selectedFileName = selectedFile?.name ?? '未選擇檔案'
@@ -166,10 +199,112 @@ const UploadPage: React.FC<UploadPageProps> = ({
           : {})
       } as CSSProperties)
     : undefined
+  const directSendStyle = directSendGeometry
+    ? ({
+        '--send-source-left': `${directSendGeometry.left}px`,
+        '--send-source-top': `${directSendGeometry.top}px`,
+        '--send-source-width': `${directSendGeometry.width}px`,
+        '--send-source-height': `${directSendGeometry.height}px`,
+        '--send-target-x': `${directSendGeometry.targetX}px`,
+        '--send-target-y': `${directSendGeometry.targetY}px`,
+        '--send-target-scale': String(directSendGeometry.targetScale)
+      } as CSSProperties)
+    : undefined
 
   useEffect(() => {
     setSelectedMask(defaultMaskId)
   }, [defaultMaskId])
+
+  const replaceDirectSendPreview = (nextUrl: string | null) => {
+    const previousUrl = directSendPreviewUrlRef.current
+    if (previousUrl && previousUrl !== nextUrl) {
+      URL.revokeObjectURL(previousUrl)
+    }
+    directSendPreviewUrlRef.current = nextUrl
+    setDirectSendPreviewUrl(nextUrl)
+  }
+
+  const getDirectSendGeometry = (): DirectSendGeometry => {
+    const source = alignmentContainerRef.current ?? directPreviewImageRef.current
+    const sourceRect = source?.getBoundingClientRect()
+    const screen = source?.closest<HTMLElement>('.ipad-screen')
+    const topbar = screen?.querySelector<HTMLElement>('.ipad-topbar')
+    const screenStyle = screen ? window.getComputedStyle(screen) : null
+    const paddingLeft = Number.parseFloat(screenStyle?.paddingLeft ?? '') || 24
+    const paddingRight = Number.parseFloat(screenStyle?.paddingRight ?? '') || 24
+    const paddingBottom = Number.parseFloat(screenStyle?.paddingBottom ?? '') || 22
+    const fallbackWidth = Math.min(window.innerWidth * 0.58, 720)
+    const width = Math.max(1, sourceRect?.width ?? fallbackWidth)
+    const height = Math.max(1, sourceRect?.height ?? fallbackWidth / (directMaskAspectRatio ?? 1.414))
+    const left = sourceRect?.left ?? (window.innerWidth - width) / 2
+    const top = sourceRect?.top ?? (window.innerHeight - height) / 2
+
+    if (window.innerWidth <= 1080) {
+      return { left, top, width, height, targetX: 0, targetY: 0, targetScale: 0.96 }
+    }
+
+    const resultSummaryWidth = 340
+    const resultGap = 18
+    const resultPanelPadding = 18
+    const resultBottomReserve = 80
+    const resultTop = (topbar?.getBoundingClientRect().bottom ?? 92) + 16
+    const resultPanelWidth = Math.max(1, window.innerWidth - paddingLeft - paddingRight - resultSummaryWidth - resultGap)
+    const resultPanelHeight = Math.max(1, window.innerHeight - resultTop - paddingBottom - resultBottomReserve)
+    const resultInnerWidth = Math.max(1, resultPanelWidth - resultPanelPadding * 2)
+    const resultInnerHeight = Math.max(1, resultPanelHeight - resultPanelPadding * 2)
+    const targetScale = Math.min(resultInnerWidth / width, resultInnerHeight / height, 1)
+    const targetWidth = width * targetScale
+    const targetHeight = height * targetScale
+    const targetLeft = paddingLeft + resultPanelPadding + (resultInnerWidth - targetWidth) / 2
+    const targetTop = resultTop + resultPanelPadding + (resultInnerHeight - targetHeight) / 2
+
+    return {
+      left,
+      top,
+      width,
+      height,
+      targetX: targetLeft - left,
+      targetY: targetTop - top,
+      targetScale
+    }
+  }
+
+  const waitForDirectTransition = (milliseconds: number) => new Promise<void>((resolve) => {
+    if (directTransitionTimerRef.current !== null) {
+      window.clearTimeout(directTransitionTimerRef.current)
+    }
+    directTransitionTimerRef.current = window.setTimeout(() => {
+      directTransitionTimerRef.current = null
+      resolve()
+    }, Math.max(0, milliseconds))
+  })
+
+  const startDirectSendTransition = () => {
+    playUiSound('artwork-send')
+    replaceDirectSendPreview(null)
+    setDirectSendGeometry(getDirectSendGeometry())
+    directTransitionStartedAtRef.current = performance.now()
+    setDirectUploadPhase('focusing')
+  }
+
+  const finishDirectSendTransition = async () => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const minimumFocusTime = reducedMotion ? 80 : 300
+    const departureTime = reducedMotion ? 180 : 700
+    const elapsed = performance.now() - directTransitionStartedAtRef.current
+
+    if (elapsed < minimumFocusTime) {
+      await waitForDirectTransition(minimumFocusTime - elapsed)
+    }
+
+    setDirectUploadPhase('departing')
+    await waitForDirectTransition(departureTime)
+  }
+
+  const reverseDirectSendTransition = async () => {
+    setDirectUploadPhase('returning')
+    await waitForDirectTransition(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 100 : 240)
+  }
 
   useEffect(() => {
     imageScaleRef.current = imageScale
@@ -251,6 +386,12 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
   useEffect(() => {
     return () => {
+      if (cameraFlashTimerRef.current !== null) {
+        window.clearTimeout(cameraFlashTimerRef.current)
+      }
+      if (directTransitionTimerRef.current !== null) {
+        window.clearTimeout(directTransitionTimerRef.current)
+      }
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = null
 
@@ -269,10 +410,16 @@ const UploadPage: React.FC<UploadPageProps> = ({
     video.muted = true
     video.playsInline = true
 
-    void video.play().catch((error) => {
-      console.error('Camera preview play failed:', error)
-      setUploadError('相機預覽啟動失敗，請檢查相機權限')
-    })
+    void video.play()
+      .then(() => {
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+          setCameraReady(true)
+        }
+      })
+      .catch((error) => {
+        console.error('Camera preview play failed:', error)
+        setUploadError('相機預覽啟動失敗，請檢查相機權限')
+      })
   }, [showCamera])
 
   const startAudioRecording = async () => {
@@ -425,7 +572,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
     })
   }
 
-  const handleFile = (file: File) => {
+  const handleFile = (file: File, source: DirectMediaSource = 'file') => {
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
     if (!validTypes.includes(file.type)) {
       setUploadError('不支援的檔案類型，請選擇 JPEG / PNG / GIF / WebP')
@@ -438,6 +585,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
     setUploadError(null)
     setUploadSuccess(null)
+    if (isDirectMode) {
+      setDirectMediaSource(source)
+    }
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop()
@@ -485,10 +635,20 @@ const UploadPage: React.FC<UploadPageProps> = ({
     setShowImportMenu(false)
     setCameraMaskDrawerOpen(false)
     setUploadError(null)
+    setCameraReady(false)
+    setTorchSupported(false)
+    setTorchEnabled(false)
+    setIsTakingPhoto(false)
+    setCameraFlashVisible(false)
     try {
       const stream = await requestCameraStream()
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = stream
+      const videoTrack = stream.getVideoTracks()[0]
+      const capabilities = typeof videoTrack?.getCapabilities === 'function'
+        ? videoTrack.getCapabilities() as TorchCapabilities
+        : null
+      setTorchSupported(Boolean(capabilities?.torch))
       setShowCamera(true)
     } catch (error) {
       console.error('Camera open failed:', error)
@@ -501,11 +661,44 @@ const UploadPage: React.FC<UploadPageProps> = ({
     stream?.getTracks().forEach((track) => track.stop())
     cameraStreamRef.current = null
 
+    if (cameraFlashTimerRef.current !== null) {
+      window.clearTimeout(cameraFlashTimerRef.current)
+      cameraFlashTimerRef.current = null
+    }
+
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
     setShowCamera(false)
     setCameraMaskDrawerOpen(false)
+    setCameraReady(false)
+    setTorchSupported(false)
+    setTorchEnabled(false)
+    setIsTakingPhoto(false)
+    setCameraFlashVisible(false)
+  }
+
+  const handleCameraReady = () => {
+    const video = videoRef.current
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) return
+    setCameraReady(true)
+  }
+
+  const handleToggleTorch = async () => {
+    const videoTrack = cameraStreamRef.current?.getVideoTracks()[0]
+    if (!videoTrack || !torchSupported) return
+
+    const nextEnabled = !torchEnabled
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ torch: nextEnabled } as TorchConstraintSet]
+      })
+      setTorchEnabled(nextEnabled)
+    } catch (error) {
+      console.error('Camera torch toggle failed:', error)
+      setTorchEnabled(false)
+      setUploadError('此相機暫時無法切換閃光燈')
+    }
   }
 
   const handleCameraMaskDrawerPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -549,12 +742,23 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const handleTakePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return
+    if (!videoRef.current || !canvasRef.current || !cameraReady || isTakingPhoto) return
 
     const video = videoRef.current
     const canvas = canvasRef.current
     const context = canvas.getContext('2d')
     if (!context) return
+
+    setIsTakingPhoto(true)
+    setCameraFlashVisible(true)
+    playUiSound('shutter')
+    if (cameraFlashTimerRef.current !== null) {
+      window.clearTimeout(cameraFlashTimerRef.current)
+    }
+    cameraFlashTimerRef.current = window.setTimeout(() => {
+      setCameraFlashVisible(false)
+      cameraFlashTimerRef.current = null
+    }, 110)
 
     const maxWidth = 1920
     let width = video.videoWidth
@@ -573,9 +777,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
     if (isDirectMode) {
       canvas.toBlob((blob) => {
         if (blob) {
-          handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
+          handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }), 'camera')
           handleCloseCamera()
         } else {
+          setIsTakingPhoto(false)
           setUploadError('拍照處理失敗，請重試')
         }
       }, 'image/jpeg', 0.92)
@@ -586,15 +791,16 @@ const UploadPage: React.FC<UploadPageProps> = ({
     img.onload = async () => {
       try {
         const processedBlob = await removeBackground(img)
-        handleFile(new File([processedBlob], 'photo.png', { type: 'image/png' }))
+        handleFile(new File([processedBlob], 'photo.png', { type: 'image/png' }), 'camera')
         handleCloseCamera()
       } catch (error) {
         console.error('Photo processing failed:', error)
         canvas.toBlob((blob) => {
           if (blob) {
-            handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
+            handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }), 'camera')
             handleCloseCamera()
           } else {
+            setIsTakingPhoto(false)
             setUploadError('拍照處理失敗，請重試')
           }
         }, 'image/jpeg', 0.9)
@@ -603,9 +809,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
     img.onerror = () => {
       canvas.toBlob((blob) => {
         if (blob) {
-          handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
+          handleFile(new File([blob], 'photo.jpg', { type: 'image/jpeg' }), 'camera')
           handleCloseCamera()
         } else {
+          setIsTakingPhoto(false)
           setUploadError('拍照處理失敗，請重試')
         }
       }, 'image/jpeg', 0.9)
@@ -729,11 +936,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
     }
   }
 
-  const sendHttpImage = (file: File) => {
-    const ip = wsIp.trim()
-    if (!ip) return
-
-    saveLastWsIp(ip)
+  const createHttpImageFormData = (file: File) => {
     const formData = new FormData()
     formData.append('image', file)
 
@@ -741,9 +944,27 @@ const UploadPage: React.FC<UploadPageProps> = ({
       formData.append('audio', new File([audioBlob], 'recording.wav', { type: 'audio/wav' }))
     }
 
+    return formData
+  }
+
+  const sendHttpImage = (file: File) => {
+    const ip = wsIp.trim()
+    if (!ip) return
+
+    saveLastWsIp(ip)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `http://${ip}:${uploadPort}`, true)
-    xhr.send(formData)
+    xhr.send(createHttpImageFormData(file))
+  }
+
+  const sendDirectHttpImage = (file: File) => {
+    const ip = wsIp.trim()
+    if (!ip) throw new Error('Missing interactive art IP')
+
+    saveLastWsIp(ip)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `http://${ip}:${uploadPort}`, true)
+    xhr.send(createHttpImageFormData(file))
   }
 
   const cacheAndFinish = async (blob: Blob, name: string, url: string) => {
@@ -760,6 +981,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
     setIsUploading(true)
     setUploadError(null)
     setUploadSuccess(null)
+    if (isDirectMode) {
+      startDirectSendTransition()
+    }
 
     try {
       const container = alignmentContainerRef.current
@@ -833,6 +1057,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
       })
       if (!blob) throw new Error('截圖生成失敗')
 
+      const processedPreviewUrl = URL.createObjectURL(blob)
+      if (isDirectMode) {
+        replaceDirectSendPreview(processedPreviewUrl)
+      }
+
       const processedName = `${selectedFile?.name.replace(/\.[^/.]+$/, '') || 'processed_image'}.png`
       const processedFile = new File([blob], processedName, { type: 'image/png' })
 
@@ -857,18 +1086,38 @@ const UploadPage: React.FC<UploadPageProps> = ({
         onUploadSuccess({ name: processedName, url: response.data.media_url })
       }
 
-      sendHttpImage(processedFile)
+      if (isDirectMode) {
+        sendDirectHttpImage(processedFile)
+        await finishDirectSendTransition()
+      } else {
+        sendHttpImage(processedFile)
+      }
 
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已發送到藝術畫廊')
-        await cacheAndFinish(blob, processedName, URL.createObjectURL(blob))
+        if (!isDirectMode) {
+          setUploadSuccess('已發送到藝術畫廊')
+        }
+        await cacheAndFinish(blob, processedName, isDirectMode ? processedPreviewUrl : URL.createObjectURL(blob))
       }
     } catch (error) {
       console.error('Screenshot upload failed:', error)
-      setUploadError('上載失敗，請檢查圖片、遮罩或網路連線')
+      if (isDirectMode) {
+        await reverseDirectSendTransition()
+        setUploadError('無法完成，請重試。')
+      } else {
+        setUploadError('上載失敗，請檢查圖片、遮罩或網路連線')
+      }
     } finally {
+      if (directTransitionTimerRef.current !== null) {
+        window.clearTimeout(directTransitionTimerRef.current)
+        directTransitionTimerRef.current = null
+      }
       setIsUploading(false)
-      setShowMaskPanel(false)
+      setDirectUploadPhase('idle')
+      setDirectSendGeometry(null)
+      if (!isDirectMode) {
+        setShowMaskPanel(false)
+      }
     }
   }
 
@@ -878,8 +1127,13 @@ const UploadPage: React.FC<UploadPageProps> = ({
     setIsUploading(true)
     setUploadError(null)
     setUploadSuccess(null)
+    if (isDirectMode) {
+      startDirectSendTransition()
+    }
 
     try {
+      let directFilePreviewUrl: string | null = null
+
       if (enableSupabaseUpload) {
         const formData = new FormData()
         formData.append('file', selectedFile)
@@ -901,17 +1155,41 @@ const UploadPage: React.FC<UploadPageProps> = ({
         onUploadSuccess({ name: selectedFile.name, url: response.data.media_url })
       }
 
-      sendHttpImage(selectedFile)
+      if (isDirectMode) {
+        directFilePreviewUrl = URL.createObjectURL(selectedFile)
+        replaceDirectSendPreview(directFilePreviewUrl)
+        sendDirectHttpImage(selectedFile)
+        await finishDirectSendTransition()
+      } else {
+        sendHttpImage(selectedFile)
+      }
 
       if (!enableSupabaseUpload) {
-        setUploadSuccess('已發送到藝術畫廊')
-        await cacheAndFinish(selectedFile, selectedFile.name, URL.createObjectURL(selectedFile))
+        if (!isDirectMode) {
+          setUploadSuccess('已發送到藝術畫廊')
+        }
+        await cacheAndFinish(
+          selectedFile,
+          selectedFile.name,
+          directFilePreviewUrl ?? URL.createObjectURL(selectedFile)
+        )
       }
     } catch (error) {
       console.error('Upload failed:', error)
-      setUploadError('上載失敗，請檢查藝術畫廊 IP 或網路連線')
+      if (isDirectMode) {
+        await reverseDirectSendTransition()
+        setUploadError('無法完成，請重試。')
+      } else {
+        setUploadError('上載失敗，請檢查藝術畫廊 IP 或網路連線')
+      }
     } finally {
+      if (directTransitionTimerRef.current !== null) {
+        window.clearTimeout(directTransitionTimerRef.current)
+        directTransitionTimerRef.current = null
+      }
       setIsUploading(false)
+      setDirectUploadPhase('idle')
+      setDirectSendGeometry(null)
     }
   }
 
@@ -928,8 +1206,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
           </div>
         </div>
 
-        <div className="topbar-controls">
-          {!isDirectMode && (
+        {!isDirectMode && (
+          <div className="topbar-controls">
             <div className="ip-control">
               <span className="control-label">HTTP</span>
               <input
@@ -941,14 +1219,43 @@ const UploadPage: React.FC<UploadPageProps> = ({
               />
               <span className="port-chip">:{uploadPort}</span>
             </div>
-          )}
-          <span className="status-pill">{isDirectMode ? '藝術畫廊' : uploadModeLabel}</span>
-        </div>
+            <span className="status-pill">{uploadModeLabel}</span>
+          </div>
+        )}
       </header>
 
       {(uploadError || uploadSuccess) && (
         <div className={`status-toast ${uploadError ? 'error' : 'success'}`}>
           {uploadError || uploadSuccess}
+        </div>
+      )}
+
+      {isDirectMode && isUploading && (
+        <div
+          className={`direct-send-overlay is-${directUploadPhase}`}
+          aria-hidden="true"
+        >
+          <div className="direct-send-scrim" />
+          <div className="direct-send-artwork" style={directSendStyle}>
+            <div className="direct-send-artwork-frame">
+              <img
+                src={directSendPreviewUrl ?? previewUrl ?? ''}
+                className={`direct-send-artwork-image ${directSendPreviewUrl ? 'is-composited' : 'is-source'}`}
+                style={!directSendPreviewUrl
+                  ? { transform: `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})` }
+                  : undefined}
+                alt=""
+              />
+              {!directSendPreviewUrl && selectedMaskOption?.src && (
+                <img
+                  src={selectedMaskOption.src}
+                  className="direct-send-artwork-mask"
+                  alt=""
+                />
+              )}
+              <span className="direct-send-light-sweep" />
+            </div>
+          </div>
         </div>
       )}
 
@@ -985,7 +1292,22 @@ const UploadPage: React.FC<UploadPageProps> = ({
       {showCamera ? (
         <section className={`camera-workspace ${isDirectMode ? 'direct-camera-workspace' : ''}`}>
           <div className="camera-preview">
-            <video ref={videoRef} className="camera-video" autoPlay muted playsInline></video>
+            <video
+              ref={videoRef}
+              className="camera-video"
+              autoPlay
+              muted
+              playsInline
+              onLoadedMetadata={handleCameraReady}
+              onCanPlay={handleCameraReady}
+            />
+            {isDirectMode && !cameraReady && (
+              <div className="direct-camera-loading" role="status" aria-live="polite">
+                <span aria-hidden="true" />
+                <strong>正在啟動相機</strong>
+              </div>
+            )}
+            {isDirectMode && <div className={`direct-camera-capture-flash ${cameraFlashVisible ? 'visible' : ''}`} />}
             {isDirectMode && selectedMaskOption?.src && (
               <img
                 src={selectedMaskOption.src}
@@ -1054,9 +1376,24 @@ const UploadPage: React.FC<UploadPageProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => void handleToggleTorch()}
+                  className={`direct-camera-torch ${torchEnabled ? 'active' : ''}`}
+                  disabled={!cameraReady || !torchSupported}
+                  aria-label={torchSupported
+                    ? (torchEnabled ? '關閉閃光燈' : '開啟閃光燈')
+                    : '此相機不支援閃光燈'}
+                  aria-pressed={torchEnabled}
+                  title={torchSupported ? (torchEnabled ? '關閉閃光燈' : '開啟閃光燈') : '此相機不支援閃光燈'}
+                >
+                  {torchEnabled ? <Zap aria-hidden="true" /> : <ZapOff aria-hidden="true" />}
+                </button>
+                <button
+                  type="button"
                   onClick={handleTakePhoto}
-                  className="direct-camera-shutter"
+                  className={`direct-camera-shutter ${isTakingPhoto ? 'capturing' : ''}`}
+                  disabled={!cameraReady || isTakingPhoto}
                   aria-label="拍照"
+                  data-silent="true"
                 >
                   <span aria-hidden="true" />
                 </button>
@@ -1074,7 +1411,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
             </div>
           )}
         </section>
-      ) : showMaskPanel && previewUrl ? (
+      ) : showMaskPanel && (previewUrl || (isDirectMode && openMaskSelector)) ? (
         <section className="upload-workspace mask-workspace">
           <div className="mask-canvas-panel">
             <div className="panel-heading">
@@ -1099,15 +1436,26 @@ const UploadPage: React.FC<UploadPageProps> = ({
                 onPointerCancel={handleImagePointerEnd}
                 onLostPointerCapture={handleImagePointerEnd}
               >
-                <img
-                  src={previewUrl}
-                  alt="上載預覽"
-                  className="mask-source-image"
-                  style={{
-                    transform: `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})`,
-                    zIndex: 1
-                  }}
-                />
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="上載預覽"
+                    className="mask-source-image"
+                    style={{
+                      transform: `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})`,
+                      zIndex: 1
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="mask-source-placeholder"
+                    onClick={handleImportClick}
+                  >
+                    <ImageIcon aria-hidden="true" />
+                    <strong>選擇圖片</strong>
+                  </button>
+                )}
 
                 {selectedMaskOption?.src && (
                   <img
@@ -1183,20 +1531,42 @@ const UploadPage: React.FC<UploadPageProps> = ({
               </section>
             )}
 
-            <button
-              type="button"
-              onClick={handleScreenshotAndUpload}
-              disabled={isUploading}
-              className="ipad-button primary-button send-button"
-            >
-              {isUploading ? '發送中' : submitLabel}
-            </button>
+            {previewUrl ? (
+              <button
+                type="button"
+                onClick={handleScreenshotAndUpload}
+                disabled={isUploading}
+                className="ipad-button primary-button send-button"
+                data-silent={isDirectMode ? 'true' : undefined}
+              >
+                {submitLabel}
+              </button>
+            ) : isDirectMode ? (
+              <button
+                type="button"
+                onClick={handleImportClick}
+                disabled={isUploading}
+                className="ipad-button primary-button send-button"
+              >
+                選擇圖片
+              </button>
+            ) : null}
+            {isDirectMode && previewUrl && (
+              <button
+                type="button"
+                onClick={directMediaSource === 'camera' ? handleOpenCamera : handleImportClick}
+                disabled={isUploading}
+                className="ipad-button secondary-button"
+              >
+                {directMediaSource === 'camera' ? '重新拍攝' : '重新選擇'}
+              </button>
+            )}
           </aside>
         </section>
       ) : previewUrl ? (
         <section className="upload-workspace preview-workspace">
           <div className="preview-panel">
-            <img src={previewUrl} alt="預覽" className="preview-image" />
+              <img ref={directPreviewImageRef} src={previewUrl} alt="預覽" className="preview-image" />
           </div>
           <aside className="upload-rail">
             <section className="rail-section">
@@ -1208,8 +1578,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
               onClick={handleUpload}
               disabled={isUploading}
               className="ipad-button primary-button send-button"
+              data-silent={isDirectMode ? 'true' : undefined}
             >
-              {isUploading ? '發送中' : submitLabel}
+              {submitLabel}
             </button>
             <button type="button" onClick={handleImportClick} className="ipad-button secondary-button">
               重新選擇
