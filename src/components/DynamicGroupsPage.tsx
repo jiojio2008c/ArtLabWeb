@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { gsap } from 'gsap'
 import {
   ArrowLeft,
   ChevronRight,
@@ -34,6 +35,7 @@ import {
   type DynamicLibraryViewMode
 } from '../services/dynamicFolderStorage.ts'
 import { sendDynamicEvent } from '../services/unityBridge.ts'
+import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
 
 interface DynamicGroupsPageProps {
   groups: DynamicGroup[]
@@ -43,7 +45,8 @@ interface DynamicGroupsPageProps {
   onCreateGroup: (group: DynamicGroup) => void
   onUpdateGroup: (group: DynamicGroup) => void
   onDeleteGroup: (groupId: string) => void
-  onSelectGroup: (group: DynamicGroup) => void
+  onSelectGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
+  portalArrival?: boolean
 }
 
 interface MenuPosition {
@@ -56,6 +59,8 @@ type LibraryEntity =
   | { kind: 'material'; group: DynamicGroup }
 
 type CreatorType = 'folder' | 'material'
+
+type FolderTransitionDirection = 'forward' | 'backward'
 
 const LONG_PRESS_DELAY_MS = 420
 const LONG_PRESS_MOVE_TOLERANCE = 12
@@ -81,6 +86,28 @@ const formatLibraryDate = (timestamp: number) => new Intl.DateTimeFormat('zh-HK'
   hour12: false
 }).format(new Date(timestamp))
 
+const getFolderTone = (folderId: string) => {
+  const checksum = Array.from(folderId).reduce((total, character) => total + character.charCodeAt(0), 0)
+  return checksum % 2 === 0 ? 'sunny' : 'mint'
+}
+
+const DynamicFolderArtwork: React.FC<{ folderId: string; compact?: boolean }> = ({
+  folderId,
+  compact = false
+}) => (
+  <span
+    className={`dynamic-folder-artwork ${compact ? 'compact' : ''} ${getFolderTone(folderId)}`}
+    aria-hidden="true"
+  >
+    <span className="dynamic-folder-shape">
+      <span className="dynamic-folder-tab" />
+      <span className="dynamic-folder-body" />
+      <span className="dynamic-folder-lid" />
+    </span>
+    {!compact && <span className="dynamic-folder-scan" />}
+  </span>
+)
+
 const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   groups,
   wsIp,
@@ -89,7 +116,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onCreateGroup,
   onUpdateGroup,
   onDeleteGroup,
-  onSelectGroup
+  onSelectGroup,
+  portalArrival = false
 }) => {
   const initialPreferencesRef = useRef(loadDynamicLibraryPreferences())
   const thumbnailInputRef = useRef<HTMLInputElement>(null)
@@ -99,6 +127,10 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const longPressTimerRef = useRef<number | null>(null)
   const longPressPointRef = useRef<{ x: number; y: number } | null>(null)
   const suppressClickRef = useRef(false)
+  const folderTimelineRef = useRef<gsap.core.Timeline | null>(null)
+  const folderFrameRef = useRef<number | null>(null)
+  const currentLayerRef = useRef<HTMLDivElement>(null)
+  const incomingLayerRef = useRef<HTMLDivElement>(null)
 
   const [folders, setFolders] = useState<DynamicFolder[]>(() => loadDynamicFolders())
   const [currentFolderId, setCurrentFolderId] = useState(initialPreferencesRef.current.currentFolderId ?? '')
@@ -123,6 +155,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const [confirmRecursiveDelete, setConfirmRecursiveDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [failedPreviewIds, setFailedPreviewIds] = useState<string[]>([])
+  const [folderTransitioning, setFolderTransitioning] = useState(false)
+  const [incomingFolderId, setIncomingFolderId] = useState<string | null>(null)
 
   const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const currentFolder = currentFolderId ? folderById.get(currentFolderId) : undefined
@@ -148,7 +182,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     }
   }
 
-  useEffect(() => () => clearLongPressTimer(), [])
+  useEffect(() => () => {
+    clearLongPressTimer()
+    folderTimelineRef.current?.kill()
+    if (folderFrameRef.current !== null) window.cancelAnimationFrame(folderFrameRef.current)
+  }, [])
 
   useEffect(() => {
     if (!creatorType) return
@@ -204,20 +242,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     longPressPointRef.current = null
   }
 
-  const enterFolder = (folderId: string) => {
-    closeEntityMenu()
-    setCurrentFolderId(folderId)
-  }
-
-  const handleBack = () => {
-    if (currentFolder) {
-      setCurrentFolderId(currentFolder.parentId ?? '')
-      return
-    }
-    onBack()
-  }
-
-  const handleMaterialSelect = (group: DynamicGroup) => {
+  const handleMaterialSelect = (group: DynamicGroup, sourceElement?: HTMLElement) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
       return
@@ -232,18 +257,25 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       name: group.name,
       itemCount: group.items.length
     })
-    onSelectGroup(group)
+    const sourceCard = sourceElement?.closest<HTMLElement>('.dynamic-library-icon-card, .dynamic-library-detail-row')
+    const rect = sourceCard?.getBoundingClientRect()
+    onSelectGroup(group, rect ? {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    } : undefined)
   }
 
-  const handleEntityOpen = (entity: LibraryEntity) => {
+  const handleEntityOpen = (entity: LibraryEntity, sourceElement: HTMLElement) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
       return
     }
     if (entity.kind === 'folder') {
-      enterFolder(entity.folder.id)
+      transitionToFolder(entity.folder.id, sourceElement)
     } else {
-      handleMaterialSelect(entity.group)
+      handleMaterialSelect(entity.group, sourceElement)
     }
   }
 
@@ -476,21 +508,21 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     }
   }
 
-  const breadcrumbs = useMemo(() => {
+  const getBreadcrumbsForFolderId = (folderId: string) => {
     const result: DynamicFolder[] = []
     const visited = new Set<string>()
-    let folder = currentFolder
+    let folder = folderId ? folderById.get(folderId) : undefined
     while (folder && !visited.has(folder.id)) {
       visited.add(folder.id)
       result.unshift(folder)
       folder = folder.parentId ? folderById.get(folder.parentId) : undefined
     }
     return result
-  }, [currentFolder, folderById])
+  }
 
-  const entities = useMemo(() => {
+  const getEntitiesForFolderId = (folderId: string) => {
     const validFolderIds = new Set(folders.map((folder) => folder.id))
-    const currentId = currentFolderId || undefined
+    const currentId = folderId || undefined
     const nextEntities: LibraryEntity[] = [
       ...folders
         .filter((folder) => folder.parentId === currentId)
@@ -510,7 +542,164 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       if (sortMode === 'updated') return getEntityUpdatedAt(right) - getEntityUpdatedAt(left)
       return getEntityName(left).localeCompare(getEntityName(right), 'zh-Hant', { numeric: true })
     })
-  }, [currentFolderId, folders, groups, sortMode])
+  }
+
+  const breadcrumbs = useMemo(
+    () => getBreadcrumbsForFolderId(currentFolderId),
+    [currentFolderId, folderById]
+  )
+  const entities = useMemo(
+    () => getEntitiesForFolderId(currentFolderId),
+    [currentFolderId, folders, groups, sortMode]
+  )
+  const incomingFolder = incomingFolderId ? folderById.get(incomingFolderId) : undefined
+  const incomingBreadcrumbs = incomingFolderId === null ? [] : getBreadcrumbsForFolderId(incomingFolderId)
+  const incomingEntities = incomingFolderId === null ? [] : getEntitiesForFolderId(incomingFolderId)
+
+  const transitionToFolder = (
+    folderId: string,
+    sourceElement?: HTMLElement,
+    requestedDirection?: FolderTransitionDirection
+  ) => {
+    if (folderTransitioning || folderId === currentFolderId || (folderId && !folderById.has(folderId))) return
+
+    closeEntityMenu()
+    clearLongPressTimer()
+    setFolderTransitioning(true)
+    setIncomingFolderId(folderId)
+
+    const direction = requestedDirection ?? (sourceElement ? 'forward' : 'backward')
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const runFolderTransition = () => {
+      folderFrameRef.current = null
+      const currentLayer = currentLayerRef.current
+      const incomingLayer = incomingLayerRef.current
+      if (!currentLayer || !incomingLayer) {
+        setCurrentFolderId(folderId)
+        setIncomingFolderId(null)
+        setFolderTransitioning(false)
+        return
+      }
+
+      folderTimelineRef.current?.kill()
+      const currentCards = Array.from(currentLayer.querySelectorAll<HTMLElement>('.dynamic-library-entity-card'))
+      const incomingCards = Array.from(incomingLayer.querySelectorAll<HTMLElement>('.dynamic-library-entity-card'))
+      const incomingEmptyState = incomingLayer.querySelector<HTMLElement>('.dynamic-library-empty-state')
+      const currentBreadcrumb = currentLayer.querySelector<HTMLElement>('.dynamic-library-breadcrumbs')
+      const incomingBreadcrumb = incomingLayer.querySelector<HTMLElement>('.dynamic-library-breadcrumbs')
+      const incomingDetailHeader = incomingLayer.querySelector<HTMLElement>('.dynamic-library-detail-header')
+      const incomingContent = incomingCards.length > 0
+        ? incomingCards
+        : (incomingEmptyState ? [incomingEmptyState] : [])
+      const sourceCard = sourceElement?.closest<HTMLElement>('.dynamic-library-entity-card')
+      const otherCards = sourceCard ? currentCards.filter((card) => card !== sourceCard) : currentCards
+      const folderLid = sourceCard?.querySelector<HTMLElement>('.dynamic-folder-lid')
+
+      gsap.set(incomingLayer, { visibility: 'visible', pointerEvents: 'none' })
+
+      const completeTransition = () => {
+        setCurrentFolderId(folderId)
+        setIncomingFolderId(null)
+        setFolderTransitioning(false)
+      }
+
+      if (reducedMotion) {
+        gsap.set(incomingLayer, { opacity: 0 })
+        folderTimelineRef.current = gsap.timeline({ onComplete: completeTransition })
+          .to(currentLayer, { opacity: 0, duration: 0.12, ease: 'power1.out' }, 0)
+          .to(incomingLayer, { opacity: 1, duration: 0.12, ease: 'power1.out' }, 0)
+        return
+      }
+
+      if (direction === 'forward') {
+        gsap.set(incomingContent, { opacity: 0, y: 24, scale: 0.8 })
+        if (incomingBreadcrumb) gsap.set(incomingBreadcrumb, { opacity: 0, y: -12 })
+        if (incomingDetailHeader) gsap.set(incomingDetailHeader, { opacity: 0, y: 8 })
+
+        const timeline = gsap.timeline({ onComplete: completeTransition })
+        if (sourceCard) timeline.to(sourceCard, { scale: 0.96, duration: 0.11, ease: 'power2.out' }, 0)
+        if (folderLid) {
+          timeline.to(folderLid, {
+            rotationY: -15,
+            rotationX: -34,
+            y: -5,
+            duration: 0.18,
+            ease: 'power2.out'
+          }, 0.03)
+        }
+        if (otherCards.length > 0) {
+          timeline.to(otherCards, { opacity: 0, x: 50, duration: 0.18, ease: 'power2.in' }, 0.08)
+        }
+        if (sourceCard) timeline.to(sourceCard, { opacity: 0, y: -10, duration: 0.16, ease: 'power2.in' }, 0.14)
+        if (currentBreadcrumb) timeline.to(currentBreadcrumb, { opacity: 0, y: -8, duration: 0.14, ease: 'power2.in' }, 0.08)
+        if (incomingBreadcrumb) {
+          timeline.to(incomingBreadcrumb, { opacity: 1, y: 0, duration: 0.2, ease: 'power2.out' }, 0.15)
+        }
+        if (incomingDetailHeader) {
+          timeline.to(incomingDetailHeader, { opacity: 1, y: 0, duration: 0.2, ease: 'power2.out' }, 0.16)
+        }
+        if (incomingContent.length > 0) {
+          timeline.to(incomingContent, {
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            duration: 0.28,
+            stagger: 0.045,
+            ease: 'back.out(1.35)'
+          }, 0.18)
+        }
+        folderTimelineRef.current = timeline
+        return
+      }
+
+      gsap.set(incomingContent, { opacity: 0, y: 12, scale: 0.96 })
+      if (incomingBreadcrumb) gsap.set(incomingBreadcrumb, { opacity: 0, y: -12 })
+      if (incomingDetailHeader) gsap.set(incomingDetailHeader, { opacity: 0, y: 8 })
+
+      const timeline = gsap.timeline({ onComplete: completeTransition })
+      if (currentCards.length > 0) {
+        timeline.to(currentCards, {
+          opacity: 0,
+          scale: 0.82,
+          y: 20,
+          duration: 0.2,
+          ease: 'power2.in'
+        }, 0)
+      }
+      if (currentBreadcrumb) timeline.to(currentBreadcrumb, { opacity: 0, x: -12, duration: 0.18, ease: 'power2.in' }, 0)
+      if (incomingBreadcrumb) {
+        timeline.to(incomingBreadcrumb, { opacity: 1, y: 0, duration: 0.2, ease: 'power2.out' }, 0.13)
+      }
+      if (incomingDetailHeader) {
+        timeline.to(incomingDetailHeader, { opacity: 1, y: 0, duration: 0.2, ease: 'power2.out' }, 0.13)
+      }
+      if (incomingContent.length > 0) {
+        timeline.to(incomingContent, {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.28,
+          stagger: 0.045,
+          ease: 'power2.out'
+        }, 0.13)
+      }
+      folderTimelineRef.current = timeline
+    }
+
+    folderFrameRef.current = window.requestAnimationFrame(() => {
+      folderFrameRef.current = window.requestAnimationFrame(runFolderTransition)
+    })
+  }
+
+  const handleBack = () => {
+    if (folderTransitioning) return
+    if (currentFolder) {
+      transitionToFolder(currentFolder.parentId ?? '', undefined, 'backward')
+      return
+    }
+    onBack()
+  }
 
   const getFolderContent = (folder: DynamicFolder) => {
     const folderCount = folders.filter((item) => item.parentId === folder.id).length
@@ -550,16 +739,17 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     return <img src={preview.url} alt={compact ? '' : group.name} onError={() => markPreviewFailed(group.id)} />
   }
 
-  const renderMoreButton = (entity: LibraryEntity) => (
+  const renderMoreButton = (entity: LibraryEntity, interactive = true) => (
     <button
       type="button"
       className="dynamic-library-more-button"
-      onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
+      disabled={!interactive || folderTransitioning}
+      onPointerDown={interactive ? (event) => event.stopPropagation() : undefined}
+      onClick={interactive ? (event) => {
         event.stopPropagation()
         const rect = event.currentTarget.getBoundingClientRect()
         openEntityMenu(entity, rect.right, rect.bottom, false)
-      }}
+      } : undefined}
       aria-label={`開啟 ${getEntityName(entity)} 選單`}
       title="更多操作"
     >
@@ -567,51 +757,69 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     </button>
   )
 
-  const renderIconEntity = (entity: LibraryEntity) => (
+  const renderIconEntity = (entity: LibraryEntity, layerKey = 'current', interactive = true) => (
     <article
-      key={`${entity.kind}-${getEntityId(entity)}`}
-      className={`dynamic-library-icon-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
-      onPointerDown={(event) => handleEntityPointerDown(event, entity)}
-      onPointerMove={handleEntityPointerMove}
-      onPointerUp={handleEntityPointerEnd}
-      onPointerCancel={handleEntityPointerEnd}
-      onPointerLeave={handleEntityPointerEnd}
-      onContextMenu={(event) => {
+      key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
+      className={`dynamic-library-icon-card dynamic-library-entity-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
+      data-library-entity-id={getEntityId(entity)}
+      data-library-entity-kind={entity.kind}
+      onPointerDown={interactive ? (event) => handleEntityPointerDown(event, entity) : undefined}
+      onPointerMove={interactive ? handleEntityPointerMove : undefined}
+      onPointerUp={interactive ? handleEntityPointerEnd : undefined}
+      onPointerCancel={interactive ? handleEntityPointerEnd : undefined}
+      onPointerLeave={interactive ? handleEntityPointerEnd : undefined}
+      onContextMenu={interactive ? (event) => {
         event.preventDefault()
         openEntityMenu(entity, event.clientX, event.clientY)
-      }}
+      } : undefined}
     >
-      <button type="button" className="dynamic-library-icon-main" onClick={() => handleEntityOpen(entity)}>
+      <button
+        type="button"
+        className="dynamic-library-icon-main"
+        onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
+        disabled={!interactive || folderTransitioning}
+      >
         <span className="dynamic-library-icon-preview">
-          {entity.kind === 'folder' ? <Folder aria-hidden="true" /> : renderMaterialPreview(entity.group)}
+          {entity.kind === 'folder'
+            ? <DynamicFolderArtwork folderId={entity.folder.id} />
+            : renderMaterialPreview(entity.group)}
         </span>
         <span className="dynamic-library-icon-copy">
           <strong>{getEntityName(entity)}</strong>
           <small>{entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)}</small>
         </span>
       </button>
-      {renderMoreButton(entity)}
+      {renderMoreButton(entity, interactive)}
     </article>
   )
 
-  const renderDetailEntity = (entity: LibraryEntity) => (
+  const renderDetailEntity = (entity: LibraryEntity, layerKey = 'current', interactive = true) => (
     <article
-      key={`${entity.kind}-${getEntityId(entity)}`}
-      className={`dynamic-library-detail-row ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
-      onPointerDown={(event) => handleEntityPointerDown(event, entity)}
-      onPointerMove={handleEntityPointerMove}
-      onPointerUp={handleEntityPointerEnd}
-      onPointerCancel={handleEntityPointerEnd}
-      onPointerLeave={handleEntityPointerEnd}
-      onContextMenu={(event) => {
+      key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
+      className={`dynamic-library-detail-row dynamic-library-entity-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
+      data-library-entity-id={getEntityId(entity)}
+      data-library-entity-kind={entity.kind}
+      onPointerDown={interactive ? (event) => handleEntityPointerDown(event, entity) : undefined}
+      onPointerMove={interactive ? handleEntityPointerMove : undefined}
+      onPointerUp={interactive ? handleEntityPointerEnd : undefined}
+      onPointerCancel={interactive ? handleEntityPointerEnd : undefined}
+      onPointerLeave={interactive ? handleEntityPointerEnd : undefined}
+      onContextMenu={interactive ? (event) => {
         event.preventDefault()
         openEntityMenu(entity, event.clientX, event.clientY)
-      }}
+      } : undefined}
     >
-      <button type="button" className="dynamic-library-detail-main" onClick={() => handleEntityOpen(entity)}>
+      <button
+        type="button"
+        className="dynamic-library-detail-main"
+        onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
+        disabled={!interactive || folderTransitioning}
+      >
         <span className="dynamic-library-detail-name">
           <span className="dynamic-library-detail-thumbnail">
-            {entity.kind === 'folder' ? <Folder aria-hidden="true" /> : renderMaterialPreview(entity.group, true)}
+            {entity.kind === 'folder'
+              ? <DynamicFolderArtwork folderId={entity.folder.id} compact />
+              : renderMaterialPreview(entity.group, true)}
           </span>
           <strong>{getEntityName(entity)}</strong>
         </span>
@@ -619,8 +827,73 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         <span>{entity.kind === 'folder' ? '資料夾' : '素材'}</span>
         <span>{entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)}</span>
       </button>
-      {renderMoreButton(entity)}
+      {renderMoreButton(entity, interactive)}
     </article>
+  )
+
+  const renderBreadcrumbs = (
+    folder: DynamicFolder | undefined,
+    trail: DynamicFolder[],
+    interactive: boolean
+  ) => {
+    if (!folder) return null
+    return (
+      <nav className="dynamic-library-breadcrumbs" aria-label="目前路徑">
+        <button
+          type="button"
+          disabled={!interactive || folderTransitioning}
+          onClick={interactive ? () => transitionToFolder('', undefined, 'backward') : undefined}
+        >
+          作品檔案
+        </button>
+        {trail.map((trailFolder, index) => (
+          <span key={trailFolder.id}>
+            <ChevronRight aria-hidden="true" />
+            <button
+              type="button"
+              disabled={!interactive || folderTransitioning}
+              className={index === trail.length - 1 ? 'current' : ''}
+              onClick={interactive ? () => transitionToFolder(trailFolder.id, undefined, 'backward') : undefined}
+            >
+              {trailFolder.name}
+            </button>
+          </span>
+        ))}
+      </nav>
+    )
+  }
+
+  const renderLibraryBrowser = (list: LibraryEntity[], layerKey: string, interactive: boolean) => (
+    <section className={`dynamic-library-browser view-${viewMode}`} aria-label="作品素材庫">
+      {viewMode === 'details' && list.length > 0 && (
+        <div className="dynamic-library-detail-header" aria-hidden="true">
+          <span>名稱</span>
+          <span>修改日期</span>
+          <span>類型</span>
+          <span>內容</span>
+          <span />
+        </div>
+      )}
+      <div className={viewMode === 'icons' ? 'dynamic-library-icon-grid' : 'dynamic-library-detail-list'}>
+        {list.map((entity) => viewMode === 'icons'
+          ? renderIconEntity(entity, layerKey, interactive)
+          : renderDetailEntity(entity, layerKey, interactive))}
+        {list.length === 0 && (
+          <div className="dynamic-library-empty-state">
+            <span><Folder aria-hidden="true" /></span>
+            <strong>此資料夾尚未建立內容</strong>
+            <div>
+              <button type="button" disabled={!interactive} onClick={interactive ? () => openCreator('folder') : undefined}>
+                <FolderPlus aria-hidden="true" />資料夾
+              </button>
+              <button type="button" disabled={!interactive} onClick={interactive ? () => openCreator('material') : undefined}>
+                <FilePlus2 aria-hidden="true" />素材
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   )
 
   const deleteFolderDescendantIds = deleteTarget?.kind === 'folder'
@@ -633,7 +906,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const deleteFolderHasContents = deleteFolderMaterialCount > 0 || deleteFolderChildCount > 0
 
   return (
-    <main className="ipad-screen dynamic-screen dynamic-library-screen apple-container">
+    <main className={`ipad-screen dynamic-screen dynamic-library-screen apple-container ${portalArrival ? 'dynamic-portal-arriving' : ''} ${folderTransitioning ? 'folder-transitioning' : ''}`} aria-busy={folderTransitioning}>
       <header className="ipad-topbar dynamic-library-topbar">
         <div className="topbar-title-row">
           <button type="button" className="ipad-button ghost-button dynamic-library-back" onClick={handleBack}>
@@ -686,50 +959,28 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         </div>
       </header>
 
-      {currentFolder && (
-        <nav className="dynamic-library-breadcrumbs" aria-label="目前路徑">
-          <button type="button" onClick={() => setCurrentFolderId('')}>
-            作品檔案
-          </button>
-          {breadcrumbs.map((folder, index) => (
-            <span key={folder.id}>
-              <ChevronRight aria-hidden="true" />
-              <button
-                type="button"
-                className={index === breadcrumbs.length - 1 ? 'current' : ''}
-                onClick={() => setCurrentFolderId(folder.id)}
-              >
-                {folder.name}
-              </button>
-            </span>
-          ))}
-        </nav>
-      )}
+      <div className="dynamic-library-content-stage">
+        <div
+          key={`current-${currentFolderId || 'root'}`}
+          ref={currentLayerRef}
+          className={`dynamic-library-depth-layer current-layer ${currentFolder ? 'has-breadcrumb' : ''}`}
+        >
+          {renderBreadcrumbs(currentFolder, breadcrumbs, true)}
+          {renderLibraryBrowser(entities, `current-${currentFolderId || 'root'}`, true)}
+        </div>
 
-      <section className={`dynamic-library-browser view-${viewMode}`} aria-label="作品素材庫">
-        {viewMode === 'details' && entities.length > 0 && (
-          <div className="dynamic-library-detail-header" aria-hidden="true">
-            <span>名稱</span>
-            <span>修改日期</span>
-            <span>類型</span>
-            <span>內容</span>
-            <span />
+        {incomingFolderId !== null && (
+          <div
+            key={`incoming-${incomingFolderId || 'root'}`}
+            ref={incomingLayerRef}
+            className={`dynamic-library-depth-layer incoming-layer ${incomingFolder ? 'has-breadcrumb' : ''}`}
+            aria-hidden="true"
+          >
+            {renderBreadcrumbs(incomingFolder, incomingBreadcrumbs, false)}
+            {renderLibraryBrowser(incomingEntities, `incoming-${incomingFolderId || 'root'}`, false)}
           </div>
         )}
-        <div className={viewMode === 'icons' ? 'dynamic-library-icon-grid' : 'dynamic-library-detail-list'}>
-          {entities.map((entity) => viewMode === 'icons' ? renderIconEntity(entity) : renderDetailEntity(entity))}
-          {entities.length === 0 && (
-            <div className="dynamic-library-empty-state">
-              <span><Folder aria-hidden="true" /></span>
-              <strong>此資料夾尚未建立內容</strong>
-              <div>
-                <button type="button" onClick={() => openCreator('folder')}><FolderPlus aria-hidden="true" />資料夾</button>
-                <button type="button" onClick={() => openCreator('material')}><FilePlus2 aria-hidden="true" />素材</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+      </div>
 
       {menuTarget && (
         <>

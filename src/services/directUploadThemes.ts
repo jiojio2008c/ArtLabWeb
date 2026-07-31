@@ -21,6 +21,13 @@ const MASK_BASE = '/Mask'
 
 const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
   {
+    id: 'ocean',
+    label: '美麗海洋',
+    cover: `${MAIN_ICON_BASE}/美麗海洋.jpg`,
+    maskPrefix: 'C',
+    launcherAppId: 'interactive-ocean'
+  },
+  {
     id: 'forest-1',
     label: '魔幻森林1',
     cover: `${MAIN_ICON_BASE}/魔幻森林1.jpg`,
@@ -40,20 +47,15 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
     cover: `${MAIN_ICON_BASE}/畫境成真.png`,
     maskPrefix: 'B',
     launcherAppId: 'interactive-painting-real'
-  },
-  {
-    id: 'ocean',
-    label: '美麗海洋',
-    cover: `${MAIN_ICON_BASE}/美麗海洋.jpg`,
-    maskPrefix: 'C',
-    launcherAppId: 'interactive-ocean'
   }
 ]
 
 const DIRECT_MASKS_BY_PREFIX: Record<DirectMaskPrefix, UploadMaskOption[]> = {
   A: [
+    { id: 'A-01', label: 'A-01', src: `${MASK_BASE}/A-01.png` },
     { id: 'A-02', label: 'A-02', src: `${MASK_BASE}/A-02.png` },
     { id: 'A-03', label: 'A-03', src: `${MASK_BASE}/A-03.png` },
+    { id: 'A-04', label: 'A-04', src: `${MASK_BASE}/A-04.png` },
     { id: 'A-05', label: 'A-05', src: `${MASK_BASE}/A-05.png` },
     { id: 'A-06', label: 'A-06', src: `${MASK_BASE}/A-06.png` }
   ],

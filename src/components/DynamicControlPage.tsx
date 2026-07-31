@@ -835,25 +835,44 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     return () => window.clearInterval(timer)
   }, [backgroundIdsKey, backgroundIntervalMs, group.background?.id, group.backgroundPlayMode, previewMode, previewReplayId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const stage = stageRef.current
     if (!stage) return undefined
 
-    const updateStageSize = () => {
-      const rect = stage.getBoundingClientRect()
-      setStageSize({ width: rect.width, height: rect.height })
+    const updateStageSize = (contentRect?: DOMRectReadOnly) => {
+      const width = contentRect?.width ?? stage.clientWidth
+      const height = contentRect?.height ?? stage.clientHeight
+      if (width <= 0 || height <= 0) return
+
+      setStageSize((currentSize) => (
+        Math.abs(currentSize.width - width) < 0.5
+        && Math.abs(currentSize.height - height) < 0.5
+          ? currentSize
+          : { width, height }
+      ))
     }
 
     updateStageSize()
+    const frame = window.requestAnimationFrame(() => updateStageSize())
 
     if (!window.ResizeObserver) {
-      window.addEventListener('resize', updateStageSize)
-      return () => window.removeEventListener('resize', updateStageSize)
+      const handleWindowResize = () => updateStageSize()
+      window.addEventListener('resize', handleWindowResize)
+      return () => {
+        window.cancelAnimationFrame(frame)
+        window.removeEventListener('resize', handleWindowResize)
+      }
     }
 
-    const observer = new ResizeObserver(updateStageSize)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries.find((item) => item.target === stage)
+      updateStageSize(entry?.contentRect)
+    })
     observer.observe(stage)
-    return () => observer.disconnect()
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {

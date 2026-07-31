@@ -1,14 +1,22 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { Settings } from 'lucide-react'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import type { DynamicGroup, DynamicMedia } from '../services/dynamicArtStorage.ts'
+import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
+import { preloadInteractiveTransitionAssets } from './interactiveTransitions/preloadInteractiveAssets.ts'
 
 interface EntryPageProps {
   wsIp: string
   dynamicGroups: DynamicGroup[]
   onOpenDynamicArt: () => void
-  onOpenDynamicGroup: (group: DynamicGroup) => void
+  onOpenDynamicGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
   onOpenInteractiveArt: () => void
   onOpenSettings: () => void
+  rootRef?: RefObject<HTMLElement>
+  dynamicCardRef?: RefObject<HTMLButtonElement>
+  interactiveCardRef?: RefObject<HTMLButtonElement>
+  transitioning?: boolean
+  transitionType?: 'dynamic' | 'interactive'
 }
 
 const LONG_PRESS_MS = 430
@@ -26,12 +34,25 @@ const EntryPage: React.FC<EntryPageProps> = ({
   onOpenDynamicArt,
   onOpenDynamicGroup,
   onOpenInteractiveArt,
-  onOpenSettings
+  onOpenSettings,
+  rootRef,
+  dynamicCardRef,
+  interactiveCardRef,
+  transitioning = false,
+  transitionType
 }) => {
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
   const [dynamicPeekOpen, setDynamicPeekOpen] = useState(false)
   const previewGroups = dynamicGroups.slice(0, MAX_PREVIEW_GROUPS)
+
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void preloadInteractiveTransitionAssets()
+    }, 120)
+
+    return () => window.clearTimeout(preloadTimer)
+  }, [])
 
   const handleEnter = (next: () => void) => {
     const ip = wsIp.trim()
@@ -88,47 +109,58 @@ const EntryPage: React.FC<EntryPageProps> = ({
     resetLongPressFlagSoon()
   }
 
-  const handleGroupBubbleClick = (group: DynamicGroup) => {
+  const handleGroupBubbleClick = (group: DynamicGroup, target: HTMLElement) => {
     clearLongPressTimer()
     longPressTriggeredRef.current = false
     setDynamicPeekOpen(false)
-    handleEnter(() => onOpenDynamicGroup(group))
+    const rect = target.getBoundingClientRect()
+    handleEnter(() => onOpenDynamicGroup(group, {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    }))
   }
 
   return (
-    <main className="ipad-screen entry-screen apple-container">
-      <header className="ipad-topbar entry-topbar">
+    <main
+      ref={rootRef}
+      className={`ipad-screen entry-screen apple-container ${transitionType === 'dynamic' ? 'dynamic-home-transitioning' : ''} ${transitionType === 'interactive' ? 'interactive-home-transitioning' : ''}`}
+    >
+      <header className="ipad-topbar entry-topbar dynamic-home-fade">
         <img className="entry-brand-logo" src={RIGHT_LOGO_URL} alt="MagicFloor" draggable={false} />
 
         <button
           type="button"
           className="settings-icon-button"
           onClick={onOpenSettings}
+          disabled={transitioning}
           aria-label="設定"
         >
-          <span className="settings-gear-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.1-1.64-2-3.46-2.48 1a7.25 7.25 0 0 0-1.7-.98L15 3.28h-4l-.36 2.66c-.6.24-1.17.57-1.7.98l-2.48-1-2 3.46 2.1 1.64c-.04.32-.06.65-.06.98s.02.66.06.98l-2.1 1.64 2 3.46 2.48-1c.52.4 1.09.73 1.7.98L11 20.72h4l.35-2.66c.61-.25 1.18-.58 1.7-.98l2.48 1 2-3.46-2.1-1.64Z" />
-              <circle cx="12" cy="12" r="3.2" />
-            </svg>
-          </span>
+          <Settings aria-hidden="true" />
         </button>
       </header>
 
       <section className={`entry-choice-workspace ${dynamicPeekOpen ? 'dynamic-peek-open' : ''}`}>
         <div className="entry-choice-node dynamic-choice-node">
           <button
+            ref={dynamicCardRef}
             type="button"
-            className="entry-choice-card dynamic-choice-card"
+            className="entry-choice-card dynamic-choice-card dynamic-portal-card"
             onPointerDown={handleDynamicPointerDown}
             onPointerUp={handleDynamicPointerEnd}
             onPointerCancel={handleDynamicPointerEnd}
             onPointerLeave={handleDynamicPointerEnd}
             onContextMenu={handleDynamicContextMenu}
             onClick={handleDynamicClick}
+            disabled={transitioning}
           >
-            <img src="/MainIcon/8080.png" alt="" className="entry-choice-icon" draggable={false} />
+            <span className="entry-choice-image-shell">
+              <img src="/MainIcon/8080.png" alt="" className="entry-choice-icon" draggable={false} />
+            </span>
             <span>動態藝術</span>
+            <i className="dynamic-portal-card-grid" aria-hidden="true" />
+            <i className="dynamic-portal-card-corners" aria-hidden="true" />
           </button>
 
           {dynamicPeekOpen && (
@@ -143,7 +175,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
                       type="button"
                       className="entry-group-bubble"
                       style={{ '--bubble-index': groupIndex } as React.CSSProperties}
-                      onClick={() => handleGroupBubbleClick(group)}
+                      onClick={(event) => handleGroupBubbleClick(group, event.currentTarget)}
                       aria-label={`開啟 ${group.name}`}
                     >
                       <div className="entry-group-thumb">
@@ -193,15 +225,20 @@ const EntryPage: React.FC<EntryPageProps> = ({
         </div>
 
         <button
+          ref={interactiveCardRef}
           type="button"
-          className="entry-choice-card interactive-choice-card"
+          className="entry-choice-card interactive-choice-card dynamic-home-fade"
+          disabled={transitioning}
           onClick={() => {
             setDynamicPeekOpen(false)
             handleEnter(onOpenInteractiveArt)
           }}
         >
-          <img src="/MainIcon/Magic_floor_UI_art.png" alt="" className="entry-choice-icon" draggable={false} />
+          <span className="entry-choice-image-shell">
+            <img src="/MainIcon/Magic_floor_UI_art.png" alt="" className="entry-choice-icon" draggable={false} />
+          </span>
           <span>互動藝術</span>
+          <i className="interactive-magic-card-aura" aria-hidden="true" />
         </button>
       </section>
     </main>

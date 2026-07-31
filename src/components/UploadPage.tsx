@@ -633,7 +633,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
   const handleOpenCamera = async () => {
     setShowImportMenu(false)
-    setCameraMaskDrawerOpen(false)
+    setCameraMaskDrawerOpen(isDirectMode && activeMaskOptions.length > 0)
     setUploadError(null)
     setCameraReady(false)
     setTorchSupported(false)

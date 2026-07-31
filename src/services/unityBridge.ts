@@ -13,6 +13,7 @@ type AppLauncherId =
   | 'interactive-ocean'
 
 const APP_LAUNCH_COMMAND_PREFIX = 'MF|AppLauncher|Launch|'
+const QR_CODE_COMMAND = 'QrCode'
 
 const buildUnityUrl = (ip: string, port: number) => `http://${ip.trim()}:${port}`
 
@@ -28,6 +29,10 @@ const sendUnityText = (ip: string, port: number, message: string) => {
 
 const sendAppLaunchCommand = (ip: string, port: number, appId: AppLauncherId) => {
   sendUnityText(ip, port, `${APP_LAUNCH_COMMAND_PREFIX}${appId}`)
+}
+
+const sendQrCodeCommand = (ip: string, port: number) => {
+  sendUnityText(ip, port, QR_CODE_COMMAND)
 }
 
 const sendUnityTextAsync = (ip: string, port: number, message: string) => {
@@ -129,6 +134,7 @@ export {
   sendAppLaunchCommand,
   sendDynamicEvent,
   sendDynamicEventAsync,
+  sendQrCodeCommand,
   sendUnityText,
   sendUnityTextAsync,
   uploadUnityAsset,

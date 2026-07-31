@@ -1,9 +1,16 @@
+import { ArrowLeft, Sparkles } from 'lucide-react'
 import { DIRECT_UPLOAD_THEMES, type DirectUploadTheme } from '../services/directUploadThemes.ts'
 
 interface DirectUploadSelectPageProps {
   selectedThemeId: string
   onBackToEntry: () => void
   onSelectTheme: (theme: DirectUploadTheme) => void
+}
+
+const MASK_CATEGORY_LABELS: Record<DirectUploadTheme['maskPrefix'], string> = {
+  A: '多種動物',
+  B: '繽紛建築',
+  C: '多種魚類'
 }
 
 const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
@@ -13,20 +20,23 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
 }) => {
   return (
     <main className="ipad-screen direct-select-screen apple-container">
-      <header className="ipad-topbar">
-        <div className="topbar-title-row">
-          <button type="button" onClick={onBackToEntry} className="ipad-button ghost-button">
-            返回首頁
-          </button>
-          <div className="min-w-0">
-            <p className="eyebrow">MagicFloor</p>
-            <h1 className="screen-title">選擇快速上載類型</h1>
-          </div>
-        </div>
+      <div className="direct-magic-ambient" aria-hidden="true">
+        <span className="direct-ambient-rift rift-one" />
+        <span className="direct-ambient-rift rift-two" />
+        <span className="direct-ambient-thread thread-one" />
+        <span className="direct-ambient-thread thread-two" />
+      </div>
 
-        <div className="topbar-controls">
-          <span className="status-pill">藝術畫廊</span>
+      <header className="ipad-topbar direct-magic-header direct-magic-reveal">
+        <button type="button" onClick={onBackToEntry} className="direct-magic-back-button">
+          <ArrowLeft aria-hidden="true" />
+          <span>返回首頁</span>
+        </button>
+        <div className="direct-magic-heading">
+          <p><Sparkles aria-hidden="true" /> MagicFloor</p>
+          <h1>選擇快速上載類型</h1>
         </div>
+        <span className="direct-magic-status">互動藝術</span>
       </header>
 
       <section className="direct-select-workspace">
@@ -34,16 +44,23 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
           <button
             key={theme.id}
             type="button"
-            className={`direct-theme-card ${selectedThemeId === theme.id ? 'active' : ''}`}
+            className={`direct-theme-card direct-theme-${theme.id} ${selectedThemeId === theme.id ? 'active' : ''}`}
             onClick={() => onSelectTheme(theme)}
           >
-            <img src={theme.cover} alt={theme.label} className="direct-theme-image" />
-            <span className="direct-theme-shade" />
-            <span className="direct-theme-content">
-              <span className="eyebrow light">快速上載</span>
-              <strong>{theme.label}</strong>
-              <span>{theme.maskPrefix} 組遮罩</span>
+            <span className="direct-theme-media">
+              <img src={theme.cover} alt={theme.label} className="direct-theme-image" />
+              <span className="direct-theme-effect" aria-hidden="true">
+                {theme.id.startsWith('forest') && Array.from({ length: 8 }, (_, index) => (
+                  <i key={index} style={{ '--mote-index': index } as React.CSSProperties} />
+                ))}
+              </span>
+              <span className="direct-theme-shade" />
             </span>
+            <span className="direct-theme-content">
+              <strong>{theme.label}</strong>
+              <span className="direct-theme-mask">{MASK_CATEGORY_LABELS[theme.maskPrefix]}</span>
+            </span>
+            <span className="direct-theme-edge" aria-hidden="true" />
           </button>
         ))}
       </section>

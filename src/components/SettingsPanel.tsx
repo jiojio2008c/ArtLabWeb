@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LogOut } from 'lucide-react'
+import { LogOut, QrCode } from 'lucide-react'
 import type { NetworkSettings } from '../services/appSettings.ts'
 import type { UserAccount } from '../services/userProfileService.ts'
 
@@ -9,6 +9,7 @@ interface SettingsPanelProps {
   accountLoading: boolean
   onClose: () => void
   onSave: (settings: NetworkSettings) => void
+  onShowQrCode: (ip: string, port: number) => void
   onLogout: () => Promise<void>
 }
 
@@ -32,6 +33,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   accountLoading,
   onClose,
   onSave,
+  onShowQrCode,
   onLogout
 }) => {
   const [wsIp, setWsIp] = useState(settings.wsIp)
@@ -52,6 +54,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       interactivePort: normalizePortInput(interactivePort, settings.interactivePort)
     })
     onClose()
+  }
+
+  const handleShowQrCode = () => {
+    onShowQrCode(
+      wsIp.trim() || settings.wsIp,
+      normalizePortInput(interactivePort, settings.interactivePort)
+    )
   }
 
   const handleLogout = async () => {
@@ -147,6 +156,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             className="ipad-input"
           />
         </label>
+
+        <button
+          type="button"
+          className="ipad-button settings-qr-button"
+          onClick={handleShowQrCode}
+          disabled={isLoggingOut}
+        >
+          <span className="settings-qr-icon" aria-hidden="true"><QrCode /></span>
+          <span>顯示二維碼</span>
+        </button>
 
         <div className="settings-footer">
           <div className="settings-actions">

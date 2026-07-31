@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import LoginPage from './components/LoginPage.tsx'
 import EntryPage from './components/EntryPage.tsx'
 import UploadPage from './components/UploadPage.tsx'
@@ -9,6 +9,13 @@ import DynamicBackgroundPage from './components/DynamicBackgroundPage.tsx'
 import DynamicGroupsPage from './components/DynamicGroupsPage.tsx'
 import DynamicItemsPage from './components/DynamicItemsPage.tsx'
 import DynamicControlPage from './components/DynamicControlPage.tsx'
+import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
+import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
+import InteractiveMagicTransition from './components/interactiveTransitions/InteractiveMagicTransition.tsx'
+import type {
+  DynamicArtworkTransitionRequest,
+  DynamicTransitionOrigin
+} from './components/dynamicTransitions/types.ts'
 import {
   loadNetworkSettings,
   saveNetworkSettings,
@@ -23,7 +30,7 @@ import { markDynamicReceiverNeedsResync } from './services/dynamicArtReceiverSyn
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 import { getCurrentSession, logoutCurrentSession, subscribeToAuthChanges } from './services/authService.ts'
 import { loadCurrentUserAccount, type UserAccount } from './services/userProfileService.ts'
-import { sendAppLaunchCommand } from './services/unityBridge.ts'
+import { sendAppLaunchCommand, sendQrCodeCommand } from './services/unityBridge.ts'
 
 interface ImageData {
   name: string
@@ -39,7 +46,7 @@ type Page =
   | 'directSelect'
   | 'directUpload'
   | 'directComplete'
-type TransitionDirection = 'forward' | 'backward' | 'neutral'
+type TransitionDirection = 'forward' | 'backward' | 'neutral' | 'portal'
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated'
 
 const pageOrder: Record<Page, number> = {
@@ -68,6 +75,12 @@ function App() {
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
+  const [dynamicPortalOrigin, setDynamicPortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
+  const [interactivePortalOrigin, setInteractivePortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
+  const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
+  const entryRootRef = useRef<HTMLElement>(null)
+  const dynamicEntryCardRef = useRef<HTMLButtonElement>(null)
+  const interactiveEntryCardRef = useRef<HTMLButtonElement>(null)
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
 
@@ -102,6 +115,9 @@ function App() {
         setSettingsOpen(false)
         setDirectUploadResult(null)
         setSelectedDynamicItemId('')
+        setDynamicPortalOrigin(null)
+        setInteractivePortalOrigin(null)
+        setDynamicArtworkTransition(null)
         setCurrentAccount(null)
         setAccountLoading(false)
         setAuthStatus('unauthenticated')
@@ -198,7 +214,18 @@ function App() {
       setSelectedDynamicGroupId('')
       setSelectedDynamicItemId('')
     }
-    navigateTo('dynamicGroups')
+
+    const rect = dynamicEntryCardRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      navigateTo('dynamicGroups')
+      return
+    }
+    setDynamicPortalOrigin({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    })
   }
 
   const handleOpenDynamicArt = () => {
@@ -219,7 +246,17 @@ function App() {
 
   const handleOpenInteractiveArt = () => {
     setDirectUploadResult(null)
-    navigateTo('directSelect')
+    const rect = interactiveEntryCardRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      navigateTo('directSelect')
+      return
+    }
+    setInteractivePortalOrigin({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    })
   }
 
   const handleSelectDirectTheme = (theme: DirectUploadTheme) => {
@@ -241,10 +278,22 @@ function App() {
     navigateTo('directUpload')
   }
 
-  const handleCreateDynamicGroup = (group: DynamicGroup) => {
+  const beginDynamicArtworkTransition = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
-    navigateTo('dynamicControl')
+    const preview = group.thumbnail ?? group.background ?? group.items[0]?.media
+    setDynamicArtworkTransition({
+      direction: 'forward',
+      groupId: group.id,
+      groupName: group.name,
+      previewUrl: preview?.url,
+      previewType: preview?.type,
+      origin
+    })
+  }
+
+  const handleCreateDynamicGroup = (group: DynamicGroup) => {
+    beginDynamicArtworkTransition(group)
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
@@ -253,10 +302,8 @@ function App() {
     setSelectedDynamicItemId('')
   }
 
-  const handleSelectDynamicGroup = (group: DynamicGroup) => {
-    updateDynamicGroupState(group)
-    setSelectedDynamicItemId('')
-    navigateTo('dynamicControl')
+  const handleSelectDynamicGroup = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
+    beginDynamicArtworkTransition(group, origin)
   }
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
@@ -271,12 +318,27 @@ function App() {
     navigateTo('dynamicControl')
   }
 
+  const handleReturnFromDynamicControl = () => {
+    if (!selectedDynamicGroup || dynamicArtworkTransition) return
+    const preview = selectedDynamicGroup.thumbnail ?? selectedDynamicGroup.background ?? selectedDynamicGroup.items[0]?.media
+    setDynamicArtworkTransition({
+      direction: 'backward',
+      groupId: selectedDynamicGroup.id,
+      groupName: selectedDynamicGroup.name,
+      previewUrl: preview?.url,
+      previewType: preview?.type
+    })
+  }
+
   const handleAuthenticated = () => {
     setCurrentPage('entry')
     setTransitionDirection('neutral')
     setSettingsOpen(false)
     setDirectUploadResult(null)
     setSelectedDynamicItemId('')
+    setDynamicPortalOrigin(null)
+    setInteractivePortalOrigin(null)
+    setDynamicArtworkTransition(null)
     setAuthStatus('authenticated')
   }
 
@@ -287,6 +349,9 @@ function App() {
     setSettingsOpen(false)
     setDirectUploadResult(null)
     setSelectedDynamicItemId('')
+    setDynamicPortalOrigin(null)
+    setInteractivePortalOrigin(null)
+    setDynamicArtworkTransition(null)
     setCurrentAccount(null)
     setAccountLoading(false)
     setAuthStatus('unauthenticated')
@@ -315,8 +380,16 @@ function App() {
     )
   }
 
+  const dynamicTransitionClass = dynamicArtworkTransition
+    ? `dynamic-story-route-active dynamic-story-route-${dynamicArtworkTransition.direction}`
+    : dynamicPortalOrigin
+      ? 'dynamic-portal-route-active'
+      : interactivePortalOrigin
+        ? 'interactive-magic-route-active'
+        : ''
+
   return (
-    <div className="min-h-screen bg-white" onPointerDown={handleGlobalButtonPointerDown}>
+    <div className={`min-h-screen bg-white ${dynamicTransitionClass}`} onPointerDown={handleGlobalButtonPointerDown}>
       {portraitLock}
 
       <div key={currentPage} className={`page-frame page-${transitionDirection} page-view-${currentPage}`}>
@@ -328,6 +401,11 @@ function App() {
             onOpenDynamicGroup={handleSelectDynamicGroup}
             onOpenInteractiveArt={handleOpenInteractiveArt}
             onOpenSettings={() => setSettingsOpen(true)}
+            rootRef={entryRootRef}
+            dynamicCardRef={dynamicEntryCardRef}
+            interactiveCardRef={interactiveEntryCardRef}
+            transitioning={Boolean(dynamicPortalOrigin || interactivePortalOrigin)}
+            transitionType={dynamicPortalOrigin ? 'dynamic' : interactivePortalOrigin ? 'interactive' : undefined}
           />
         ) : currentPage === 'dynamicBackground' && selectedDynamicGroup ? (
           <DynamicBackgroundPage
@@ -348,6 +426,7 @@ function App() {
             onUpdateGroup={updateDynamicGroupState}
             onDeleteGroup={handleDeleteDynamicGroup}
             onSelectGroup={handleSelectDynamicGroup}
+            portalArrival={Boolean(dynamicPortalOrigin)}
           />
         ) : currentPage === 'dynamicItems' && selectedDynamicGroup ? (
           <DynamicItemsPage
@@ -363,7 +442,7 @@ function App() {
             group={selectedDynamicGroup}
             wsIp={networkSettings.wsIp}
             dynamicPort={networkSettings.dynamicPort}
-            onBack={() => navigateTo('dynamicGroups')}
+            onBack={handleReturnFromDynamicControl}
             onGroupChange={updateDynamicGroupState}
             initialItemId={selectedDynamicItemId}
           />
@@ -403,9 +482,51 @@ function App() {
             onOpenDynamicGroup={handleSelectDynamicGroup}
             onOpenInteractiveArt={handleOpenInteractiveArt}
             onOpenSettings={() => setSettingsOpen(true)}
+            rootRef={entryRootRef}
+            dynamicCardRef={dynamicEntryCardRef}
+            interactiveCardRef={interactiveEntryCardRef}
+            transitioning={Boolean(dynamicPortalOrigin || interactivePortalOrigin)}
+            transitionType={dynamicPortalOrigin ? 'dynamic' : interactivePortalOrigin ? 'interactive' : undefined}
           />
         )}
       </div>
+
+      {dynamicPortalOrigin && (
+        <DynamicPortalTransition
+          origin={dynamicPortalOrigin}
+          sourceRootRef={entryRootRef}
+          sourceCardRef={dynamicEntryCardRef}
+          onSceneSwitch={() => {
+            setTransitionDirection('portal')
+            setCurrentPage('dynamicGroups')
+          }}
+          onComplete={() => setDynamicPortalOrigin(null)}
+        />
+      )}
+
+      {interactivePortalOrigin && (
+        <InteractiveMagicTransition
+          origin={interactivePortalOrigin}
+          sourceRootRef={entryRootRef}
+          sourceCardRef={interactiveEntryCardRef}
+          onSceneSwitch={() => {
+            setTransitionDirection('portal')
+            setCurrentPage('directSelect')
+          }}
+          onComplete={() => setInteractivePortalOrigin(null)}
+        />
+      )}
+
+      {dynamicArtworkTransition && (
+        <DynamicArtworkTransition
+          request={dynamicArtworkTransition}
+          onSceneSwitch={() => {
+            setTransitionDirection(dynamicArtworkTransition.direction === 'forward' ? 'forward' : 'backward')
+            setCurrentPage(dynamicArtworkTransition.direction === 'forward' ? 'dynamicControl' : 'dynamicGroups')
+          }}
+          onComplete={() => setDynamicArtworkTransition(null)}
+        />
+      )}
 
       {settingsOpen && (
         <SettingsPanel
@@ -414,6 +535,7 @@ function App() {
           accountLoading={accountLoading}
           onClose={() => setSettingsOpen(false)}
           onSave={handleSettingsSave}
+          onShowQrCode={sendQrCodeCommand}
           onLogout={handleLogout}
         />
       )}
