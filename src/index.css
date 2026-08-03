@@ -5630,7 +5630,7 @@ code {
   user-select: none;
   touch-action: none;
   pointer-events: auto;
-  will-change: transform;
+  will-change: auto;
   --move-ratio: 0.5;
   --move-duration: 6.5s;
   --motion-delay: 0ms;
@@ -5696,7 +5696,42 @@ code {
   display: grid;
   place-items: center;
   transform-origin: center center;
+  will-change: auto;
+}
+
+.dynamic-stage-item-animation.is-animated {
   will-change: transform, opacity;
+}
+
+.dynamic-stage-item-user-transform {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  transform-origin: center center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+.dynamic-stage-item-visual-frame,
+.dynamic-stage-item-media-stack {
+  display: grid;
+  place-items: center;
+}
+
+.dynamic-stage-item-visual-frame {
+  min-width: 1px;
+  min-height: 1px;
+}
+
+.dynamic-stage-item-media-stack {
+  width: 100%;
+  height: 100%;
+}
+
+.dynamic-stage-item-media-stack > * {
+  grid-area: 1 / 1;
 }
 
 .dynamic-stage-item-visual {
@@ -5709,7 +5744,21 @@ code {
   transform-origin: center center;
   pointer-events: none;
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.18));
-  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.dynamic-stage-item-walk {
+  opacity: 0;
+  transition: opacity 80ms linear;
+}
+
+.dynamic-stage-item-walk.is-ready {
+  opacity: 1;
+}
+
+.dynamic-stage-item-visual.walk-source-hidden {
+  opacity: 0;
 }
 
 .dynamic-stage-item-visual.active {
@@ -5736,6 +5785,10 @@ code {
 
 .dynamic-stage-item-motion.move-random {
   animation: dynamic-preview-random var(--move-duration) ease-in-out var(--motion-delay) infinite both;
+}
+
+.dynamic-stage-item-motion:not(.move-none) {
+  will-change: transform;
 }
 
 .dynamic-stage-item-motion.move-none,
@@ -9962,6 +10015,12 @@ button.ui-pressed {
   isolation: isolate;
 }
 
+/* A single overflow clip avoids intermittent WebKit culling of very narrow transformed PNG layers. */
+.dynamic-control-screen .dynamic-stage {
+  clip-path: none;
+  -webkit-mask-image: none;
+}
+
 .dynamic-control-screen.dynamic-previewing .dynamic-stage-shell::after {
   border-radius: 18px;
 }
@@ -11827,5 +11886,194 @@ button.ui-pressed {
   .direct-theme-effect::after,
   .direct-theme-effect > i {
     animation: none !important;
+  }
+}
+
+/* Direct theme card -> quick upload shared-frame transition. */
+.direct-theme-upload-route-active {
+  overflow: hidden;
+  touch-action: none;
+}
+
+.direct-theme-upload-route-active .page-frame,
+.direct-theme-upload-route-active .apple-container {
+  animation: none !important;
+}
+
+.direct-theme-upload-route-active .page-view-directUpload .ipad-topbar .topbar-title-row > *,
+.direct-theme-upload-route-active .page-view-directUpload .ipad-topbar .topbar-controls,
+.direct-theme-upload-route-active .page-view-directUpload .direct-import-workspace .import-dropzone {
+  opacity: 0;
+}
+
+.direct-theme-upload-route-active .page-view-directUpload .upload-screen {
+  background: #f2f0eb;
+}
+
+.direct-theme-upload-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 820;
+  overflow: hidden;
+  pointer-events: none;
+  --direct-upload-accent: #76efff;
+  --direct-upload-secondary: #3b75ff;
+}
+
+.direct-theme-upload-veil,
+.direct-theme-upload-wash,
+.direct-theme-upload-traces {
+  position: absolute;
+  inset: 0;
+}
+
+.direct-theme-upload-veil {
+  z-index: 0;
+  background: rgba(236, 235, 231, 0.14);
+  backdrop-filter: blur(1.5px) saturate(0.92);
+  -webkit-backdrop-filter: blur(1.5px) saturate(0.92);
+}
+
+.direct-theme-upload-wash {
+  z-index: 1;
+  background: #f2f0eb;
+  box-shadow: 0 -18px 54px rgba(255, 255, 255, 0.4);
+  will-change: clip-path, opacity;
+}
+
+.direct-theme-upload-traces {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.direct-theme-upload-trace {
+  --trace-offset: calc((var(--trace-index) - 1.5) * 25px);
+  position: absolute;
+  top: calc(50% + var(--trace-offset));
+  left: 50%;
+  width: min(52vw, 620px);
+  height: 1px;
+  display: block;
+  background: linear-gradient(90deg, transparent, var(--direct-upload-accent), var(--direct-upload-secondary), transparent);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--direct-upload-accent) 38%, transparent);
+  transform: translateX(-50%);
+  will-change: opacity, transform;
+}
+
+.direct-theme-upload-moving-title {
+  position: fixed;
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.08;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: left, top, width, height, opacity, color, font-size;
+}
+
+.direct-theme-upload-clone {
+  position: fixed;
+  z-index: 4;
+  overflow: hidden;
+  border: 1px solid rgba(236, 255, 252, 0.72);
+  border-radius: 8px;
+  background: #071015;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  isolation: isolate;
+  will-change: left, top, width, height, transform, opacity, border-radius, background-color, box-shadow;
+}
+
+.direct-theme-upload-clone-image,
+.direct-theme-upload-clone-shade,
+.direct-theme-upload-clone-scan,
+.direct-theme-upload-clone-edge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.direct-theme-upload-clone-image {
+  z-index: 0;
+  display: block;
+  object-fit: cover;
+  will-change: transform, opacity, filter;
+}
+
+.direct-theme-upload-clone-shade {
+  z-index: 1;
+  background: linear-gradient(180deg, transparent 48%, rgba(2, 9, 14, 0.86));
+}
+
+.direct-theme-upload-clone-copy {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.direct-theme-upload-clone-plus {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #171717;
+  box-shadow: 0 9px 22px rgba(17, 19, 22, 0.2), inset 0 1px rgba(255, 255, 255, 0.14);
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.direct-theme-upload-clone-plus svg {
+  width: 29px;
+  height: 29px;
+  stroke-width: 2.1;
+}
+
+.direct-theme-upload-clone-scan {
+  left: -38%;
+  z-index: 6;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.66), transparent);
+  filter: blur(1px);
+  transform: skewX(-16deg);
+}
+
+.direct-theme-upload-clone-edge {
+  inset: 5px;
+  z-index: 7;
+  width: auto;
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--direct-upload-accent) 72%, white);
+  border-radius: 5px;
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--direct-upload-accent) 18%, transparent);
+}
+
+@media (max-width: 1080px) {
+  .direct-theme-upload-clone-copy {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .direct-theme-upload-transition {
+    display: block;
+  }
+
+  .direct-theme-upload-trace {
+    display: none;
   }
 }

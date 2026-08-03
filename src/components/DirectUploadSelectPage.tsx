@@ -1,10 +1,13 @@
+import type { RefObject } from 'react'
 import { ArrowLeft, Sparkles } from 'lucide-react'
 import { DIRECT_UPLOAD_THEMES, type DirectUploadTheme } from '../services/directUploadThemes.ts'
 
 interface DirectUploadSelectPageProps {
+  rootRef: RefObject<HTMLElement>
   selectedThemeId: string
+  transitioning: boolean
   onBackToEntry: () => void
-  onSelectTheme: (theme: DirectUploadTheme) => void
+  onSelectTheme: (theme: DirectUploadTheme, card: HTMLButtonElement) => void
 }
 
 const MASK_CATEGORY_LABELS: Record<DirectUploadTheme['maskPrefix'], string> = {
@@ -14,12 +17,14 @@ const MASK_CATEGORY_LABELS: Record<DirectUploadTheme['maskPrefix'], string> = {
 }
 
 const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
+  rootRef,
   selectedThemeId,
+  transitioning,
   onBackToEntry,
   onSelectTheme
 }) => {
   return (
-    <main className="ipad-screen direct-select-screen apple-container">
+    <main ref={rootRef} className="ipad-screen direct-select-screen apple-container">
       <div className="direct-magic-ambient" aria-hidden="true">
         <span className="direct-ambient-rift rift-one" />
         <span className="direct-ambient-rift rift-two" />
@@ -45,7 +50,9 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
             key={theme.id}
             type="button"
             className={`direct-theme-card direct-theme-${theme.id} ${selectedThemeId === theme.id ? 'active' : ''}`}
-            onClick={() => onSelectTheme(theme)}
+            data-theme-id={theme.id}
+            disabled={transitioning}
+            onClick={(event) => onSelectTheme(theme, event.currentTarget)}
           >
             <span className="direct-theme-media">
               <img src={theme.cover} alt={theme.label} className="direct-theme-image" />

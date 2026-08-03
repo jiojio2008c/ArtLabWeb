@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
 import {
@@ -157,6 +157,9 @@ const LAYER_TOUCH_SCROLL_THRESHOLD = 18
 const LAYER_AUTO_SCROLL_EDGE = 52
 const LAYER_AUTO_SCROLL_MAX_SPEED = 14
 const MAX_IMAGE_PREVIEW_SCALE = 5
+const MIN_STAGE_ITEM_TOUCH_SIZE = 64
+const STAGE_ITEM_TOUCH_PADDING = 14
+const MIN_STAGE_ITEM_COMPOSITOR_SIZE = 32
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -299,6 +302,144 @@ interface HorizontalAnimationState {
   currentTime: number | null
 }
 
+interface DynamicStageAppearanceProps {
+  previewing: boolean
+  ready: boolean
+  appearDelayMs: number
+  replayId: number
+  children: React.ReactNode
+}
+
+const DynamicStageAppearance: React.FC<DynamicStageAppearanceProps> = ({
+  previewing,
+  ready,
+  appearDelayMs,
+  replayId,
+  children
+}) => {
+  const elementRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const element = elementRef.current
+    if (!element) return undefined
+
+    element.getAnimations().forEach((animation) => animation.cancel())
+
+    if (!previewing) {
+      element.style.removeProperty('opacity')
+      element.style.removeProperty('transform')
+      return undefined
+    }
+
+    if (!ready) {
+      element.style.opacity = '0'
+      element.style.transform = 'scale(0.96)'
+      return undefined
+    }
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const animation = element.animate([
+      { opacity: 0, transform: reduceMotion ? 'scale(1)' : 'scale(0.96)' },
+      { opacity: 1, transform: 'scale(1)' }
+    ], {
+      duration: reduceMotion ? 140 : 420,
+      delay: appearDelayMs,
+      easing: 'ease',
+      fill: 'both'
+    })
+
+    return () => animation.cancel()
+  }, [appearDelayMs, previewing, ready, replayId])
+
+  return (
+    <div ref={elementRef} className="dynamic-stage-item-appear">
+      {children}
+    </div>
+  )
+}
+
+interface DynamicStageMediaProps {
+  src: string
+  name: string
+  mediaId: string
+  animationId: number
+  previewMode: boolean
+  replayId: number
+  active: boolean
+  copyPulse: boolean
+  onImageLoad: (mediaId: string, image: HTMLImageElement) => void
+  onImageError: (mediaId: string) => void
+}
+
+const addImageRetryToken = (src: string, token: number) => (
+  token > 0 ? `${src}${src.includes('#') ? '&' : '#'}magicfloor-retry=${token}` : src
+)
+
+const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
+  src,
+  name,
+  mediaId,
+  animationId,
+  previewMode,
+  replayId,
+  active,
+  copyPulse,
+  onImageLoad,
+  onImageError
+}) => {
+  const imageRef = useRef<HTMLImageElement>(null)
+  const [retryToken, setRetryToken] = useState(0)
+  const [walkReady, setWalkReady] = useState(false)
+  const walkActive = previewMode && animationId === 9
+
+  useEffect(() => {
+    setRetryToken(0)
+  }, [src])
+
+  useEffect(() => {
+    setWalkReady(false)
+  }, [replayId, src, walkActive])
+
+  useLayoutEffect(() => {
+    const image = imageRef.current
+    if (image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      onImageLoad(mediaId, image)
+    }
+  }, [mediaId, onImageLoad, retryToken])
+
+  const handleImageError = () => {
+    if (retryToken === 0) {
+      setRetryToken(Date.now())
+      return
+    }
+    onImageError(mediaId)
+  }
+
+  return (
+    <div className="dynamic-stage-item-media-stack">
+      <img
+        ref={imageRef}
+        src={addImageRetryToken(src, retryToken)}
+        alt={name}
+        draggable={false}
+        decoding="async"
+        onLoad={(event) => onImageLoad(mediaId, event.currentTarget)}
+        onError={handleImageError}
+        className={`dynamic-stage-item-visual ${active ? 'active' : ''} ${copyPulse ? 'copy-pulse' : ''} ${walkActive && walkReady ? 'walk-source-hidden' : ''}`}
+      />
+      {walkActive && (
+        <WalkAnimationCanvas
+          src={src}
+          ariaLabel={`${name}行走動畫`}
+          replayKey={replayId}
+          onFirstFrame={() => setWalkReady(true)}
+          className={`dynamic-stage-item-visual dynamic-stage-item-walk ${walkReady ? 'is-ready' : ''}`}
+        />
+      )}
+    </div>
+  )
+}
+
 const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
   item,
   motionMode,
@@ -368,12 +509,22 @@ const getDynamicItemPreviewSize = (
   cachedSize: MediaSize | undefined,
   stageSize: { width: number; height: number }
 ) => {
-  const naturalWidth = getPositiveDimension(item.media.width)
-    ?? cachedSize?.width
-    ?? DEFAULT_ITEM_NATURAL_WIDTH
-  const naturalHeight = getPositiveDimension(item.media.height)
-    ?? cachedSize?.height
-    ?? DEFAULT_ITEM_NATURAL_HEIGHT
+  const cachedWidth = getPositiveDimension(cachedSize?.width)
+  const cachedHeight = getPositiveDimension(cachedSize?.height)
+  const mediaWidth = getPositiveDimension(item.media.width)
+  const mediaHeight = getPositiveDimension(item.media.height)
+  const hasCachedSize = Boolean(cachedWidth && cachedHeight)
+  const hasMediaSize = Boolean(mediaWidth && mediaHeight)
+  const naturalWidth = hasCachedSize
+    ? cachedWidth!
+    : hasMediaSize
+      ? mediaWidth!
+      : DEFAULT_ITEM_NATURAL_WIDTH
+  const naturalHeight = hasCachedSize
+    ? cachedHeight!
+    : hasMediaSize
+      ? mediaHeight!
+      : DEFAULT_ITEM_NATURAL_HEIGHT
   const naturalMax = Math.max(naturalWidth, naturalHeight)
   let runtimeRatio = RUNTIME_ITEM_MAX_SIZE / naturalMax
 
@@ -391,6 +542,32 @@ const getDynamicItemPreviewSize = (
     width: Math.max(1, naturalWidth * runtimeRatio * stageRatio),
     height: Math.max(1, naturalHeight * runtimeRatio * stageRatio)
   }
+}
+
+const isPointInsideDynamicItem = (
+  item: DynamicItem,
+  itemSize: MediaSize,
+  stageRect: DOMRect,
+  clientPoint: Point
+) => {
+  const scale = Number.isFinite(item.scale) ? Math.max(Math.abs(item.scale), MIN_ITEM_SCALE) : 1
+  const hitWidth = Math.max(
+    MIN_STAGE_ITEM_TOUCH_SIZE,
+    itemSize.width * scale + STAGE_ITEM_TOUCH_PADDING * 2
+  )
+  const hitHeight = Math.max(
+    MIN_STAGE_ITEM_TOUCH_SIZE,
+    itemSize.height * scale + STAGE_ITEM_TOUCH_PADDING * 2
+  )
+  const centerX = stageRect.left + item.position.x * stageRect.width
+  const centerY = stageRect.top + item.position.y * stageRect.height
+  const deltaX = clientPoint.x - centerX
+  const deltaY = clientPoint.y - centerY
+  const rotation = item.rotation * Math.PI / 180
+  const localX = deltaX * Math.cos(rotation) + deltaY * Math.sin(rotation)
+  const localY = -deltaX * Math.sin(rotation) + deltaY * Math.cos(rotation)
+
+  return Math.abs(localX) <= hitWidth / 2 && Math.abs(localY) <= hitHeight / 2
 }
 
 const getMotionPreviewStyle = (
@@ -580,6 +757,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [manipulatingItemId, setManipulatingItemId] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [itemImageSizes, setItemImageSizes] = useState<Record<string, MediaSize>>({})
+  const [readyItemMediaIds, setReadyItemMediaIds] = useState<Record<string, boolean>>({})
   const [isAddingLayerItem, setIsAddingLayerItem] = useState(false)
   const [receiverSyncStatus, setReceiverSyncStatus] = useState('')
   const [receiverSyncError, setReceiverSyncError] = useState('')
@@ -1109,27 +1287,56 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     sendPreviewModeState(enabled, { replayId })
   }
 
+  const resolveStageItemIdAtPoint = (clientPoint: Point) => {
+    const stage = stageRef.current
+    if (!stage) return ''
+
+    const stageRect = stage.getBoundingClientRect()
+    if (stageRect.width <= 0 || stageRect.height <= 0) return ''
+
+    const itemsByHitPriority = [...latestGroupRef.current.items]
+      .sort((first, second) => second.order - first.order)
+    const selectedIndex = itemsByHitPriority.findIndex((item) => item.id === selectedItemId)
+    if (selectedIndex > 0) {
+      const [selected] = itemsByHitPriority.splice(selectedIndex, 1)
+      itemsByHitPriority.unshift(selected)
+    }
+
+    const measuredStageSize = { width: stageRect.width, height: stageRect.height }
+    const matchedItem = itemsByHitPriority.find((item) => isPointInsideDynamicItem(
+      item,
+      getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], measuredStageSize),
+      stageRect,
+      clientPoint
+    ))
+
+    return matchedItem?.id ?? ''
+  }
+
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (previewMode) {
       event.preventDefault()
       return
     }
 
-    const target = event.target as HTMLElement
-    const itemElement = target.closest<HTMLElement>('[data-dynamic-item-id]')
-    const itemId = itemElement?.dataset.dynamicItemId ?? gestureItemIdRef.current
+    const isFirstPointer = pointersRef.current.size === 0
+    const itemId = isFirstPointer
+      ? resolveStageItemIdAtPoint({ x: event.clientX, y: event.clientY })
+      : gestureItemIdRef.current ?? ''
     if (!itemId) {
-      setToolOpen(false)
-      setBackgroundPanelOpen(false)
-      setAppearPanelOpen(false)
-      setRightPanelCollapsed(false)
+      if (isFirstPointer) {
+        setToolOpen(false)
+        setBackgroundPanelOpen(false)
+        setAppearPanelOpen(false)
+        setRightPanelCollapsed(false)
+      }
       return
     }
 
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
 
-    if (itemElement && pointersRef.current.size === 0) {
+    if (isFirstPointer) {
       gestureMovedRef.current = false
       selectItem(itemId, false)
     }
@@ -1408,11 +1615,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
   }
 
-  const handleItemImageLoad = (
-    mediaId: string,
-    event: React.SyntheticEvent<HTMLImageElement>
-  ) => {
-    const image = event.currentTarget
+  const markItemMediaReady = useCallback((mediaId: string) => {
+    setReadyItemMediaIds((currentIds) => (
+      currentIds[mediaId]
+        ? currentIds
+        : { ...currentIds, [mediaId]: true }
+    ))
+  }, [])
+
+  const handleItemImageLoad = useCallback((mediaId: string, image: HTMLImageElement) => {
     const width = image.naturalWidth || image.width
     const height = image.naturalHeight || image.height
     if (width <= 0 || height <= 0) return
@@ -1425,7 +1636,34 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         [mediaId]: { width, height }
       }
     })
-  }
+
+    const loadedSrc = image.currentSrc || image.src
+    if (image.dataset.dynamicDecodedSrc === loadedSrc) {
+      markItemMediaReady(mediaId)
+      return
+    }
+    if (image.dataset.dynamicDecodePending === loadedSrc) return
+
+    image.dataset.dynamicDecodePending = loadedSrc
+    const finishDecode = () => {
+      if ((image.currentSrc || image.src) !== loadedSrc) return
+      image.dataset.dynamicDecodedSrc = loadedSrc
+      delete image.dataset.dynamicDecodePending
+      markItemMediaReady(mediaId)
+    }
+
+    const decodePromise = typeof image.decode === 'function'
+      ? image.decode().catch(() => undefined)
+      : Promise.resolve()
+    void Promise.race([
+      decodePromise,
+      new Promise<void>((resolve) => window.setTimeout(resolve, 800))
+    ]).then(finishDecode)
+  }, [markItemMediaReady])
+
+  const handleItemImageError = useCallback((mediaId: string) => {
+    markItemMediaReady(mediaId)
+  }, [markItemMediaReady])
 
   const handleBackgroundSelect = async (backgroundId: string) => {
     const nextGroup = await setActiveDynamicBackground(group.id, backgroundId)
@@ -2779,13 +3017,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const motionMode = shouldPlayMotion ? item.moveMode : 'none'
               const appearDelayMs = previewMode && group.appearMode === 'sequence' ? index * appearIntervalMs : 0
               const itemPreviewSize = getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], stageSize)
+              const compositorSize = {
+                width: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.width),
+                height: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.height)
+              }
               const animationCoordinateScale = Math.min(
                 (stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH) / RUNTIME_STAGE_WIDTH,
                 (stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT) / RUNTIME_STAGE_HEIGHT
               )
               return (
                 <DynamicStageMotion
-                  key={`${item.id}-${previewMode ? previewReplayId : 'edit'}`}
+                  key={item.id}
                   item={item}
                   motionMode={motionMode}
                   stageSize={stageSize}
@@ -2793,15 +3035,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   replayId={previewReplayId}
                   style={{
                     ...getMotionPreviewStyle(item, !shouldPlayMotion, stageSize),
-                    width: `${itemPreviewSize.width}px`,
-                    height: `${itemPreviewSize.height}px`,
+                    width: `${compositorSize.width}px`,
+                    height: `${compositorSize.height}px`,
                     '--motion-delay': `${appearDelayMs}ms`
                   } as React.CSSProperties}
                 >
                   <div className="dynamic-stage-item-wave">
-                    <div
-                      className={`dynamic-stage-item-appear ${previewMode ? 'previewing' : ''}`}
-                      style={{ '--appear-delay': `${appearDelayMs}ms` } as React.CSSProperties}
+                    <DynamicStageAppearance
+                      previewing={previewMode}
+                      ready={Boolean(readyItemMediaIds[item.media.id])}
+                      appearDelayMs={appearDelayMs}
+                      replayId={previewReplayId}
                     >
                       <DynamicStageItemAnimation
                         animationId={item.animationId}
@@ -2809,30 +3053,35 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         enabled={previewMode && item.animationId !== 9}
                         coordinateScale={animationCoordinateScale}
                       >
-                        {previewMode && item.animationId === 9 ? (
-                          <WalkAnimationCanvas
-                            src={item.media.url}
-                            ariaLabel={`${item.name}行走動畫`}
-                            replayKey={previewReplayId}
-                            className="dynamic-stage-item-visual dynamic-stage-item-walk"
+                        <div
+                          className="dynamic-stage-item-user-transform"
+                          style={{
+                            transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
+                          }}
+                        >
+                          <div
+                            className="dynamic-stage-item-visual-frame"
                             style={{
-                              transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
+                              width: `${itemPreviewSize.width}px`,
+                              height: `${itemPreviewSize.height}px`
                             }}
-                          />
-                        ) : (
-                          <img
-                            src={item.media.url}
-                            alt={item.name}
-                            draggable={false}
-                            onLoad={(event) => handleItemImageLoad(item.media.id, event)}
-                            className={`dynamic-stage-item-visual ${!previewMode && selectedItem?.id === item.id ? 'active' : ''} ${copyFeedbackItemId === item.id ? 'copy-pulse' : ''}`}
-                            style={{
-                              transform: `rotate(${item.rotation}deg) scale(${getItemFlipX(item) ? -item.scale : item.scale}, ${getItemFlipY(item) ? -item.scale : item.scale})`
-                            }}
-                          />
-                        )}
+                          >
+                            <DynamicStageMedia
+                              src={item.media.url}
+                              name={item.name}
+                              mediaId={item.media.id}
+                              animationId={item.animationId}
+                              previewMode={previewMode}
+                              replayId={previewReplayId}
+                              active={!previewMode && selectedItem?.id === item.id}
+                              copyPulse={copyFeedbackItemId === item.id}
+                              onImageLoad={handleItemImageLoad}
+                              onImageError={handleItemImageError}
+                            />
+                          </div>
+                        </div>
                       </DynamicStageItemAnimation>
-                    </div>
+                    </DynamicStageAppearance>
                   </div>
                 </DynamicStageMotion>
               )

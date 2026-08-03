@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import { ArrowLeft, RotateCcw, Sparkles } from 'lucide-react'
 import type { InteractiveCardSize } from '../types.ts'
+import { INTERACTIVE_THEMES, type InteractiveTheme } from './interactiveThemeData.ts'
 
 interface InteractiveThemeSceneProps {
   rootRef: RefObject<HTMLElement>
@@ -9,38 +10,9 @@ interface InteractiveThemeSceneProps {
   onBackHome: () => void
   onCardSizeChange: (size: InteractiveCardSize) => void
   onReplay: () => void
+  onOpenTheme: (theme: InteractiveTheme, card: HTMLButtonElement) => void
+  transitioning: boolean
 }
-
-const themes = [
-  {
-    id: 'ocean',
-    title: '美麗海洋',
-    mask: '多種魚類',
-    image: '/assets/interactive-ocean.jpg',
-    effect: 'ocean'
-  },
-  {
-    id: 'forest-1',
-    title: '魔幻森林1',
-    mask: '多種動物',
-    image: '/assets/interactive-forest-1.jpg',
-    effect: 'forest-one'
-  },
-  {
-    id: 'forest-2',
-    title: '魔幻森林2',
-    mask: '多種動物',
-    image: '/assets/interactive-forest-2.jpg',
-    effect: 'forest-two'
-  },
-  {
-    id: 'painting',
-    title: '畫境成真',
-    mask: '繽紛建築',
-    image: '/assets/interactive-painting.png',
-    effect: 'painting'
-  }
-]
 
 const InteractiveThemeScene: React.FC<InteractiveThemeSceneProps> = ({
   rootRef,
@@ -48,7 +20,9 @@ const InteractiveThemeScene: React.FC<InteractiveThemeSceneProps> = ({
   cardSize,
   onBackHome,
   onCardSizeChange,
-  onReplay
+  onReplay,
+  onOpenTheme,
+  transitioning
 }) => (
   <section
     ref={rootRef}
@@ -76,12 +50,15 @@ const InteractiveThemeScene: React.FC<InteractiveThemeSceneProps> = ({
     </header>
 
     <div className="interactive-theme-grid">
-      {themes.map((theme, index) => (
+      {INTERACTIVE_THEMES.map((theme, index) => (
         <button
           key={theme.id}
           type="button"
           className={`interactive-theme-card theme-${theme.effect}`}
           style={{ '--theme-index': index } as React.CSSProperties}
+          data-theme-id={theme.id}
+          disabled={transitioning}
+          onClick={(event) => onOpenTheme(theme, event.currentTarget)}
         >
           <span className="interactive-theme-media">
             <img src={theme.image} alt="" draggable={false} />
@@ -93,7 +70,7 @@ const InteractiveThemeScene: React.FC<InteractiveThemeSceneProps> = ({
           </span>
           <span className="interactive-theme-copy">
             <strong>{theme.title}</strong>
-            <span className="interactive-theme-mask">{theme.mask}</span>
+            <span className="interactive-theme-mask">{theme.maskLabel}</span>
           </span>
           <span className="interactive-theme-edge" aria-hidden="true" />
         </button>

@@ -10,6 +10,7 @@ interface WalkAnimationCanvasProps {
   style?: CSSProperties
   ariaLabel?: string
   replayKey?: string | number
+  onFirstFrame?: () => void
 }
 
 interface CanvasSize {
@@ -25,17 +26,25 @@ const WalkAnimationCanvas = ({
   className,
   style,
   ariaLabel = '行走動畫',
-  replayKey = 0
+  replayKey = 0,
+  onFirstFrame
 }: WalkAnimationCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const sizeRef = useRef<CanvasSize>({ width: 0, height: 0, pixelRatio: 1 })
   const startedAtRef = useRef(0)
+  const firstFrameDrawnRef = useRef(false)
+  const onFirstFrameRef = useRef(onFirstFrame)
   const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    onFirstFrameRef.current = onFirstFrame
+  }, [onFirstFrame])
 
   useEffect(() => {
     const image = new Image()
     let active = true
+    firstFrameDrawnRef.current = false
     image.decoding = 'async'
     image.onload = () => {
       if (!active) return
@@ -58,6 +67,7 @@ const WalkAnimationCanvas = ({
 
   useEffect(() => {
     startedAtRef.current = performance.now() / 1000
+    firstFrameDrawnRef.current = false
   }, [replayKey])
 
   useLayoutEffect(() => {
@@ -103,6 +113,10 @@ const WalkAnimationCanvas = ({
       context.imageSmoothingQuality = 'high'
       const elapsed = reduceMotion ? 0 : Math.max(0, timeSeconds - startedAtRef.current)
       drawWalkImage(context, image, 0, 0, width, height, elapsed)
+      if (!firstFrameDrawnRef.current) {
+        firstFrameDrawnRef.current = true
+        onFirstFrameRef.current?.()
+      }
     })
   }, [])
 

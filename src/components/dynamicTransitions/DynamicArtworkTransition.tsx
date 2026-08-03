@@ -40,11 +40,14 @@ const waitForPaint = () => new Promise<void>((resolve) => {
 
 const waitForStageMedia = async (stage: HTMLElement) => {
   const imagePromises = Array.from(stage.querySelectorAll<HTMLImageElement>('img')).map((image) => {
+    const decodeImage = () => image.decode?.().catch(() => undefined) ?? Promise.resolve()
     if (image.complete && image.naturalWidth > 0) {
-      return image.decode?.().catch(() => undefined) ?? Promise.resolve()
+      return decodeImage()
     }
     return new Promise<void>((resolve) => {
-      image.addEventListener('load', () => resolve(), { once: true })
+      image.addEventListener('load', () => {
+        void decodeImage().then(() => resolve())
+      }, { once: true })
       image.addEventListener('error', () => resolve(), { once: true })
     })
   })
@@ -58,7 +61,7 @@ const waitForStageMedia = async (stage: HTMLElement) => {
 
   await Promise.race([
     Promise.allSettled([...imagePromises, ...videoPromises]),
-    new Promise<void>((resolve) => window.setTimeout(resolve, 360))
+    new Promise<void>((resolve) => window.setTimeout(resolve, 900))
   ])
 }
 

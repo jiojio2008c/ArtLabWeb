@@ -38,15 +38,15 @@ const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
 const CONTROL_MASK_OPTIONS: UploadMaskOption[] = [
   { id: '0', label: '無' },
-  { id: '1', label: '1', src: '/MaskTexture/Mask1.png' },
-  { id: '2', label: '2', src: '/MaskTexture/Mask2.png' },
-  { id: '3', label: '3', src: '/MaskTexture/Mask3.png' },
-  { id: '4', label: '4', src: '/MaskTexture/Mask4.png' },
-  { id: '5', label: '5', src: '/MaskTexture/Mask5.png' }
+  { id: '1', label: '恐龍', src: '/MaskTexture/mask-character-dinosaur-01.png' },
+  { id: '2', label: '小熊', src: '/MaskTexture/mask-character-teddy-bear-02.png' },
+  { id: '3', label: '魚', src: '/MaskTexture/mask-animal-fish-03.png' },
+  { id: '4', label: '全身人形', src: '/MaskTexture/mask-human-full-body-04.png' },
+  { id: '5', label: '人像', src: '/MaskTexture/mask-human-portrait-05.png' }
 ]
 
 const DIRECT_FALLBACK_MASK_OPTIONS: UploadMaskOption[] = [
-  { id: 'C-01', label: 'C-01', src: '/Mask/C-01.png' }
+  { id: 'C-01', label: '旗魚', src: '/Mask/mask-marine-marlin-01.png' }
 ]
 
 interface UploadPageProps {

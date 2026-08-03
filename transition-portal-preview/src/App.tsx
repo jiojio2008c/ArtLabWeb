@@ -2,12 +2,15 @@ import { useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import HomeScene from './components/HomeScene.tsx'
 import InteractiveThemeScene from './components/InteractiveThemeScene.tsx'
+import InteractiveUploadScene from './components/InteractiveUploadScene.tsx'
 import LibraryScene from './components/LibraryScene.tsx'
 import ControlScene from './components/ControlScene.tsx'
 import MagicPortalTransition from './components/MagicPortalTransition.tsx'
 import MaterialStageTransition from './components/MaterialStageTransition.tsx'
 import PrototypeModeSwitch from './components/PrototypeModeSwitch.tsx'
+import ThemeUploadTransition from './components/ThemeUploadTransition.tsx'
 import TransitionPortal from './components/TransitionPortal.tsx'
+import type { InteractiveTheme } from './components/interactiveThemeData.ts'
 import type {
   InteractiveCardSize,
   MaterialTransitionDirection,
@@ -22,6 +25,8 @@ const App = () => {
   const [interactiveCardSize, setInteractiveCardSize] = useState<InteractiveCardSize>('compact')
   const [origin, setOrigin] = useState<PortalOrigin | null>(null)
   const [interactiveOrigin, setInteractiveOrigin] = useState<PortalOrigin | null>(null)
+  const [uploadOrigin, setUploadOrigin] = useState<PortalOrigin | null>(null)
+  const [selectedInteractiveTheme, setSelectedInteractiveTheme] = useState<InteractiveTheme | null>(null)
   const [materialOrigin, setMaterialOrigin] = useState<PortalOrigin | null>(null)
   const [materialDirection, setMaterialDirection] = useState<MaterialTransitionDirection>('forward')
   const [runId, setRunId] = useState(0)
@@ -29,6 +34,7 @@ const App = () => {
   const libraryRef = useRef<HTMLElement>(null)
   const controlRef = useRef<HTMLElement>(null)
   const interactiveRef = useRef<HTMLElement>(null)
+  const uploadRef = useRef<HTMLElement>(null)
   const dynamicCardRef = useRef<HTMLButtonElement>(null)
   const interactiveCardRef = useRef<HTMLButtonElement>(null)
 
@@ -37,12 +43,14 @@ const App = () => {
       homeRef.current,
       libraryRef.current,
       interactiveRef.current,
+      uploadRef.current,
       dynamicCardRef.current,
       interactiveCardRef.current,
       ...Array.from(homeRef.current?.querySelectorAll('.home-fade') ?? []),
       ...Array.from(libraryRef.current?.querySelectorAll('.library-reveal, .library-item') ?? []),
       ...Array.from(controlRef.current?.querySelectorAll('.control-reveal, .control-character') ?? []),
-      ...Array.from(interactiveRef.current?.querySelectorAll('.interactive-reveal, .interactive-theme-card') ?? [])
+      ...Array.from(interactiveRef.current?.querySelectorAll('.interactive-reveal, .interactive-theme-card, .interactive-card-size-switch') ?? []),
+      ...Array.from(uploadRef.current?.querySelectorAll('.upload-reveal, .upload-detail-reveal, .upload-mask-reveal') ?? [])
     ].filter(Boolean)
 
     gsap.set(targets, { clearProps: 'all' })
@@ -68,7 +76,39 @@ const App = () => {
     clearTransitionStyles()
     setOrigin(null)
     setInteractiveOrigin(null)
+    setUploadOrigin(null)
     setView('home')
+  }
+
+  const startThemeUpload = (theme: InteractiveTheme, card: HTMLButtonElement) => {
+    if (view !== 'interactive') return
+    const rect = card.getBoundingClientRect()
+    setSelectedInteractiveTheme(theme)
+    setUploadOrigin({ left: rect.left, top: rect.top, width: rect.width, height: rect.height })
+    setRunId((current) => current + 1)
+    setView('interactive-upload-transition')
+  }
+
+  const returnToInteractiveThemes = () => {
+    clearTransitionStyles()
+    setUploadOrigin(null)
+    setView('interactive')
+  }
+
+  const replayThemeUpload = () => {
+    if (!selectedInteractiveTheme) return
+    const theme = selectedInteractiveTheme
+    clearTransitionStyles()
+    setUploadOrigin(null)
+    setView('interactive')
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const card = interactiveRef.current?.querySelector<HTMLButtonElement>(`[data-theme-id="${theme.id}"]`)
+      if (!card) return
+      const rect = card.getBoundingClientRect()
+      setUploadOrigin({ left: rect.left, top: rect.top, width: rect.width, height: rect.height })
+      setRunId((current) => current + 1)
+      setView('interactive-upload-transition')
+    }))
   }
 
   const openMaterial = (nextOrigin: PortalOrigin) => {
@@ -135,11 +175,20 @@ const App = () => {
       />
       <InteractiveThemeScene
         rootRef={interactiveRef}
-        visible={view === 'interactive-transition' || view === 'interactive'}
+        visible={view === 'interactive-transition' || view === 'interactive' || view === 'interactive-upload-transition'}
         cardSize={interactiveCardSize}
         onBackHome={resetToHome}
         onCardSizeChange={setInteractiveCardSize}
         onReplay={replayInteractiveTransition}
+        onOpenTheme={startThemeUpload}
+        transitioning={view === 'interactive-upload-transition'}
+      />
+      <InteractiveUploadScene
+        rootRef={uploadRef}
+        visible={view === 'interactive-upload-transition' || view === 'interactive-upload'}
+        theme={selectedInteractiveTheme}
+        onBack={returnToInteractiveThemes}
+        onReplay={replayThemeUpload}
       />
       <LibraryScene
         rootRef={libraryRef}
@@ -177,6 +226,17 @@ const App = () => {
         />
       )}
 
+      {view === 'interactive-upload-transition' && uploadOrigin && selectedInteractiveTheme && (
+        <ThemeUploadTransition
+          key={`theme-upload-${runId}`}
+          origin={uploadOrigin}
+          theme={selectedInteractiveTheme}
+          interactiveRef={interactiveRef}
+          uploadRef={uploadRef}
+          onComplete={() => setView('interactive-upload')}
+        />
+      )}
+
       {view === 'material-transition' && materialOrigin && (
         <MaterialStageTransition
           key={`${transitionMode}-${materialDirection}-${runId}`}
@@ -191,7 +251,10 @@ const App = () => {
 
       <PrototypeModeSwitch
         mode={transitionMode}
-        disabled={view === 'transition' || view === 'material-transition' || view === 'interactive-transition'}
+        disabled={view === 'transition'
+          || view === 'material-transition'
+          || view === 'interactive-transition'
+          || view === 'interactive-upload-transition'}
         onChange={setTransitionMode}
       />
 

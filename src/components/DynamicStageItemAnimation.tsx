@@ -27,12 +27,12 @@ const DynamicStageItemAnimation = ({
   children
 }: DynamicStageItemAnimationProps) => {
   const elementRef = useRef<HTMLDivElement>(null)
+  const shouldAnimate = enabled
+    && animationId >= ITEM_ANIMATION_MIN_ID
+    && animationId <= ITEM_ANIMATION_MAX_ID
 
   useLayoutEffect(() => {
     const element = elementRef.current
-    const shouldAnimate = enabled
-      && animationId >= ITEM_ANIMATION_MIN_ID
-      && animationId <= ITEM_ANIMATION_MAX_ID
 
     if (!element || !shouldAnimate) {
       if (element) resetAnimationStyles(element)
@@ -64,7 +64,7 @@ const DynamicStageItemAnimation = ({
   return (
     <div
       ref={elementRef}
-      className="dynamic-stage-item-animation"
+      className={`dynamic-stage-item-animation ${shouldAnimate ? 'is-animated' : ''}`}
       data-animation-id={animationId}
     >
       {children}

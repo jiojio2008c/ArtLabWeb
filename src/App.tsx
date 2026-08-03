@@ -12,6 +12,7 @@ import DynamicControlPage from './components/DynamicControlPage.tsx'
 import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
 import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
 import InteractiveMagicTransition from './components/interactiveTransitions/InteractiveMagicTransition.tsx'
+import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
 import type {
   DynamicArtworkTransitionRequest,
   DynamicTransitionOrigin
@@ -35,6 +36,11 @@ import { sendAppLaunchCommand, sendQrCodeCommand } from './services/unityBridge.
 interface ImageData {
   name: string
   url: string
+}
+
+interface DirectThemeUploadTransitionRequest {
+  theme: DirectUploadTheme
+  origin: DynamicTransitionOrigin
 }
 
 type Page =
@@ -71,6 +77,7 @@ function App() {
   const [directUploadResult, setDirectUploadResult] = useState<ImageData | null>(null)
   const [selectedDirectTheme, setSelectedDirectTheme] = useState<DirectUploadTheme>(() => DIRECT_UPLOAD_THEMES[0])
   const [directUploadOpenMaskSelector, setDirectUploadOpenMaskSelector] = useState(false)
+  const [directThemeUploadTransition, setDirectThemeUploadTransition] = useState<DirectThemeUploadTransitionRequest | null>(null)
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
@@ -81,6 +88,7 @@ function App() {
   const entryRootRef = useRef<HTMLElement>(null)
   const dynamicEntryCardRef = useRef<HTMLButtonElement>(null)
   const interactiveEntryCardRef = useRef<HTMLButtonElement>(null)
+  const directSelectRootRef = useRef<HTMLElement>(null)
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
 
@@ -117,6 +125,7 @@ function App() {
         setSelectedDynamicItemId('')
         setDynamicPortalOrigin(null)
         setInteractivePortalOrigin(null)
+        setDirectThemeUploadTransition(null)
         setDynamicArtworkTransition(null)
         setCurrentAccount(null)
         setAccountLoading(false)
@@ -259,12 +268,28 @@ function App() {
     })
   }
 
-  const handleSelectDirectTheme = (theme: DirectUploadTheme) => {
+  const handleSelectDirectTheme = (theme: DirectUploadTheme, card: HTMLButtonElement) => {
+    if (directThemeUploadTransition) return
+
     sendAppLaunchCommand(networkSettings.wsIp, networkSettings.interactivePort, theme.launcherAppId)
     setSelectedDirectTheme(theme)
     setDirectUploadOpenMaskSelector(false)
     setDirectUploadResult(null)
-    navigateTo('directUpload')
+    const rect = card.getBoundingClientRect()
+    if (!rect.width || !rect.height) {
+      navigateTo('directUpload')
+      return
+    }
+
+    setDirectThemeUploadTransition({
+      theme,
+      origin: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    })
   }
 
   const handleDirectUploadSuccess = (data: ImageData) => {
@@ -386,6 +411,8 @@ function App() {
       ? 'dynamic-portal-route-active'
       : interactivePortalOrigin
         ? 'interactive-magic-route-active'
+        : directThemeUploadTransition
+          ? 'direct-theme-upload-route-active'
         : ''
 
   return (
@@ -448,7 +475,9 @@ function App() {
           />
         ) : currentPage === 'directSelect' ? (
           <DirectUploadSelectPage
+            rootRef={directSelectRootRef}
             selectedThemeId={selectedDirectTheme.id}
+            transitioning={Boolean(directThemeUploadTransition)}
             onBackToEntry={() => navigateTo('entry')}
             onSelectTheme={handleSelectDirectTheme}
           />
@@ -514,6 +543,20 @@ function App() {
             setCurrentPage('directSelect')
           }}
           onComplete={() => setInteractivePortalOrigin(null)}
+        />
+      )}
+
+      {directThemeUploadTransition && (
+        <DirectThemeUploadTransition
+          key={`direct-theme-upload-${directThemeUploadTransition.theme.id}`}
+          origin={directThemeUploadTransition.origin}
+          theme={directThemeUploadTransition.theme}
+          sourceRootRef={directSelectRootRef}
+          onSceneSwitch={() => {
+            setTransitionDirection('portal')
+            setCurrentPage('directUpload')
+          }}
+          onComplete={() => setDirectThemeUploadTransition(null)}
         />
       )}
 
