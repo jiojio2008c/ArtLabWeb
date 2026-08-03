@@ -164,8 +164,28 @@ const MAX_IMAGE_PREVIEW_SCALE = 5
 const MIN_STAGE_ITEM_TOUCH_SIZE = 64
 const STAGE_ITEM_TOUCH_PADDING = 14
 const MIN_STAGE_ITEM_COMPOSITOR_SIZE = 32
+const RANDOM_PREVIEW_MOTION_MODES: DynamicMoveMode[] = [
+  'verticalWave',
+  'left',
+  'right',
+  'orbit'
+]
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const hashString = (value: string) => {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+const mixHash = (value: number) => {
+  let mixed = value | 0
+  mixed = Math.imul(mixed ^ (mixed >>> 16), 0x7feb352d)
+  mixed = Math.imul(mixed ^ (mixed >>> 15), 0x846ca68b)
+  return (mixed ^ (mixed >>> 16)) >>> 0
+}
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 const getAngle = (a: Point, b: Point) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI
 const getBackgroundIntervalUnit = (intervalMs: number): BackgroundIntervalUnit => (
@@ -234,6 +254,15 @@ const getItemTrack = (item: DynamicItem) => item.moveTrack ?? getTrack(item.posi
 const getItemMoveSpeed = (item: DynamicItem) => clamp(item.moveSpeed ?? DEFAULT_MOVE_SPEED, 0, 100)
 const getItemFlipX = (item: DynamicItem) => item.flipX ?? false
 const getItemFlipY = (item: DynamicItem) => item.flipY ?? false
+const resolvePreviewMotionMode = (
+  item: DynamicItem,
+  groupId: string,
+  replayId: number
+): DynamicMoveMode => {
+  if (item.moveMode !== 'random') return item.moveMode
+  const modeIndex = mixHash(hashString(`${groupId}:${item.id}:${replayId}`)) % RANDOM_PREVIEW_MOTION_MODES.length
+  return RANDOM_PREVIEW_MOTION_MODES[modeIndex]
+}
 
 const getTrackBounds = (track: DynamicMoveTrack) => {
   if (track === 'top') return { start: 0, end: 1 / 3 }
@@ -271,6 +300,7 @@ const formatHorizontalMotionTransform = (point: Point) => (
 
 const buildHorizontalMotionKeyframes = (
   item: DynamicItem,
+  motionMode: DynamicMoveMode,
   stageSize: { width: number; height: number }
 ): Keyframe[] => {
   const frameCount = HORIZONTAL_WAVE_CYCLES * HORIZONTAL_KEYFRAMES_PER_WAVE
@@ -279,7 +309,7 @@ const buildHorizontalMotionKeyframes = (
     return {
       offset,
       transform: formatHorizontalMotionTransform(
-        getHorizontalMotionPoint(item.moveMode, offset, item.movePercent, stageSize)
+        getHorizontalMotionPoint(motionMode, offset, item.movePercent, stageSize)
       )
     }
   })
@@ -464,7 +494,7 @@ const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
     }
 
     const duration = getMoveDuration(getItemMoveSpeed(item), 8.5) * 1000
-    const animation = element.animate(buildHorizontalMotionKeyframes(item, stageSize), {
+    const animation = element.animate(buildHorizontalMotionKeyframes(item, motionMode, stageSize), {
       duration,
       delay: appearDelayMs,
       iterations: Infinity,
@@ -485,7 +515,7 @@ const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
       }
       animation.cancel()
     }
-  }, [appearDelayMs, isHorizontalMotion, item.id, item.moveMode, item.movePercent, item.moveSpeed, replayId, stageSize.height, stageSize.width])
+  }, [appearDelayMs, isHorizontalMotion, item.id, item.movePercent, item.moveSpeed, motionMode, replayId, stageSize.height, stageSize.width])
 
   return (
     <div
@@ -571,13 +601,14 @@ const isPointInsideDynamicItem = (
 
 const getMotionPreviewStyle = (
   item: DynamicItem,
+  motionMode: DynamicMoveMode,
   isManipulating: boolean,
   stageSize: { width: number; height: number }
 ): React.CSSProperties => {
   const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
   const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
   const moveTrack = getItemTrack(item)
-  const isLoopMove = !isManipulating && (item.moveMode === 'left' || item.moveMode === 'right')
+  const isLoopMove = !isManipulating && (motionMode === 'left' || motionMode === 'right')
   const amplitudeRatio = clamp(item.movePercent, 0, 100) / 100
   const localRatio = Math.min(amplitudeRatio / 0.5, 1)
   const fullRatio = Math.max((amplitudeRatio - 0.5) / 0.5, 0)
@@ -594,7 +625,7 @@ const getMotionPreviewStyle = (
   const randomX = Math.round(amplitudeRatio * stageWidth * 0.18)
   const randomY = Math.round(amplitudeRatio * stageHeight * 0.24)
   const horizontalStartPoint = isLoopMove
-    ? getHorizontalMotionPoint(item.moveMode, 0, item.movePercent, { width: stageWidth, height: stageHeight })
+    ? getHorizontalMotionPoint(motionMode, 0, item.movePercent, { width: stageWidth, height: stageHeight })
     : null
   const localOrbitY = Math.max(Math.min(localUpLimit, localDownLimit) * localRatio, 0)
   const localOrbitX = Math.min(stageWidth * 0.28, Math.max(stageWidth * 0.08 * localRatio, localOrbitY * 2.2))
@@ -3032,9 +3063,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
             {sortedItems.map((item, index) => {
               const isManipulating = manipulatingItemId === item.id
-              const isAmplitudeStatic = item.moveMode !== 'left' && item.moveMode !== 'right' && item.movePercent <= 0
+              const resolvedMoveMode = resolvePreviewMotionMode(item, group.id, previewReplayId)
+              const isAmplitudeStatic = resolvedMoveMode !== 'left' && resolvedMoveMode !== 'right' && item.movePercent <= 0
               const shouldPlayMotion = previewMode && !isManipulating && !isAmplitudeStatic
-              const motionMode = shouldPlayMotion ? item.moveMode : 'none'
+              const motionMode = shouldPlayMotion ? resolvedMoveMode : 'none'
               const appearDelayMs = previewMode && group.appearMode === 'sequence' ? index * appearIntervalMs : 0
               const itemPreviewSize = getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], stageSize)
               const compositorSize = {
@@ -3054,7 +3086,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   appearDelayMs={appearDelayMs}
                   replayId={previewReplayId}
                   style={{
-                    ...getMotionPreviewStyle(item, !shouldPlayMotion, stageSize),
+                    ...getMotionPreviewStyle(item, motionMode, !shouldPlayMotion, stageSize),
                     width: `${compositorSize.width}px`,
                     height: `${compositorSize.height}px`,
                     '--motion-delay': `${appearDelayMs}ms`

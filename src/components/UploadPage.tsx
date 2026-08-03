@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import axios from 'axios'
-import { Image as ImageIcon, Zap, ZapOff } from 'lucide-react'
+import { Image as ImageIcon, Plus, Zap, ZapOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
@@ -1600,7 +1600,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
             onDrop={handleDrop}
             className={`import-dropzone ${isDragging ? 'is-dragging' : ''}`}
           >
-            <span className="import-plus">+</span>
+            <span className="import-plus" aria-hidden="true">
+              <Plus />
+            </span>
             <strong>{isDirectMode ? t('upload.chooseQuickImage') : t('upload.chooseArtworkImage')}</strong>
             <span>JPEG / PNG / GIF / WebP</span>
           </button>

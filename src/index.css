@@ -822,14 +822,18 @@ code {
   width: 86px;
   height: 86px;
   border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   color: #fff;
   background: var(--ink);
-  font-size: 52px;
-  font-weight: 300;
-  line-height: 1;
+  line-height: 0;
+}
+
+.import-plus svg {
+  display: block;
+  width: 40px;
+  height: 40px;
+  stroke-width: 1.8;
 }
 
 .import-dropzone strong {
@@ -12337,4 +12341,9 @@ button.ui-pressed {
   .dynamic-library-topbar .dynamic-library-create-action {
     padding-inline: 11px;
   }
+}
+
+/* Keep short artwork names clear of the control top bar's lower edge. */
+.dynamic-control-screen > .dynamic-control-topbar .screen-title {
+  transform: translateY(-3px);
 }

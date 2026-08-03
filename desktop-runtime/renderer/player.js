@@ -44,6 +44,7 @@ let randomBackgroundState = { key: '', cycle: 0, index: 0 }
 
 const imageCache = new Map()
 const videoCache = new Map()
+const RANDOM_PREVIEW_MOTION_MODES = ['verticalWave', 'left', 'right', 'orbit']
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const lerp = (a, b, t) => a + (b - a) * t
@@ -57,6 +58,13 @@ const hashString = (value) => {
     hash |= 0
   }
   return Math.abs(hash)
+}
+
+const mixHash = (value) => {
+  let mixed = value | 0
+  mixed = Math.imul(mixed ^ (mixed >>> 16), 0x7feb352d)
+  mixed = Math.imul(mixed ^ (mixed >>> 15), 0x846ca68b)
+  return (mixed ^ (mixed >>> 16)) >>> 0
 }
 
 const smoothstep = (value) => {
@@ -294,9 +302,17 @@ const speedToCycleSeconds = (speed, baseSeconds = 5.5) => {
   return lerp(baseSeconds * 1.55, baseSeconds * 0.46, normalized)
 }
 
+const resolvePreviewMotionMode = (item, preview) => {
+  if (item.moveMode !== 'random') return item.moveMode
+  const groupId = preview.groupId || runtimeState.activeGroupId || ''
+  const key = `${groupId}:${item.itemId}:${preview.replayId || 0}`
+  return RANDOM_PREVIEW_MOTION_MODES[mixHash(hashString(key)) % RANDOM_PREVIEW_MOTION_MODES.length]
+}
+
 const getMotionTransform = (item, now) => {
   const preview = runtimeState.preview ?? {}
-  if (!preview.enabled || item.moveMode === 'none') {
+  const motionMode = resolvePreviewMotionMode(item, preview)
+  if (!preview.enabled || motionMode === 'none') {
     return {
       x: 0,
       y: 0,
@@ -312,7 +328,7 @@ const getMotionTransform = (item, now) => {
   const baseX = clamp(item.position?.x ?? 0.5, -0.2, 1.2) * STAGE_WIDTH
   const baseY = clamp(item.position?.y ?? 0.5, -0.2, 1.2) * STAGE_HEIGHT
 
-  switch (item.moveMode) {
+  switch (motionMode) {
     case 'verticalWave': {
       const amplitude = percent * STAGE_HEIGHT * 0.58
       return {
@@ -328,7 +344,7 @@ const getMotionTransform = (item, now) => {
       const margin = 260
       const travel = STAGE_WIDTH + margin * 2
       const raw = ((now / 1000) / speedToCycleSeconds(item.moveSpeed, 8.5) + seed * 0.013) % 1
-      const progress = item.moveMode === 'right' ? raw : 1 - raw
+      const progress = motionMode === 'right' ? raw : 1 - raw
       const targetX = -margin + travel * progress
       const waveCount = 7
       const amplitude = percent * STAGE_HEIGHT * 0.5
@@ -352,17 +368,6 @@ const getMotionTransform = (item, now) => {
         y,
         scale: lerp(0.82, 1.2, depth),
         rotation: 0
-      }
-    }
-
-    case 'random': {
-      const amplitudeX = percent * STAGE_WIDTH * 0.22
-      const amplitudeY = percent * STAGE_HEIGHT * 0.2
-      return {
-        x: Math.sin(phase * 0.71 + seed) * amplitudeX + Math.sin(phase * 1.27) * amplitudeX * 0.35,
-        y: Math.cos(phase * 0.83 + seed) * amplitudeY + Math.sin(phase * 1.41) * amplitudeY * 0.35,
-        scale: 1 + Math.sin(phase * 0.7) * 0.05,
-        rotation: Math.sin(phase * 0.9) * 4
       }
     }
 
