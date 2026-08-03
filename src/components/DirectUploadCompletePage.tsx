@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { playUiSound } from '../services/uiFeedback.ts'
 
 interface DirectUploadCompletePageProps {
@@ -16,6 +17,7 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
   onBackToEntry,
   onReupload
 }) => {
+  const { t } = useTranslation()
   useEffect(() => {
     const timer = window.setTimeout(() => playUiSound('artwork-arrived'), 180)
     return () => window.clearTimeout(timer)
@@ -25,17 +27,17 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
     <main className="ipad-screen direct-complete-screen apple-container">
       <header className="ipad-topbar">
         <div className="min-w-0">
-          <p className="eyebrow">快速上載</p>
-          <h1 className="screen-title">上載完成</h1>
+          <p className="eyebrow">{t('directComplete.eyebrow')}</p>
+          <h1 className="screen-title">{t('directComplete.title')}</h1>
         </div>
       </header>
 
       <section className="direct-complete-workspace">
         <div className="complete-preview-panel">
           {result?.url ? (
-            <img src={result.url} alt="快速上載預覽" className="complete-preview-image" />
+            <img src={result.url} alt={t('directComplete.previewAlt')} className="complete-preview-image" />
           ) : (
-            <div className="complete-empty-preview">上載完成</div>
+            <div className="complete-empty-preview">{t('directComplete.title')}</div>
           )}
         </div>
 
@@ -43,21 +45,21 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
           <div className="complete-mark" aria-hidden="true">
             <Check />
           </div>
-          <p className="eyebrow">結果</p>
-          <h2>圖片已發送</h2>
+          <p className="eyebrow">{t('directComplete.result')}</p>
+          <h2>{t('directComplete.sent')}</h2>
           <div className="complete-meta">
-            <span>檔案</span>
-            <strong>{result?.name ?? '未記錄檔案名稱'}</strong>
+            <span>{t('common.file')}</span>
+            <strong>{result?.name ?? t('directComplete.unknownFile')}</strong>
           </div>
         </aside>
       </section>
 
       <div className="direct-complete-actions">
         <button type="button" className="ipad-button secondary-button" onClick={onBackToEntry}>
-          返回首頁
+          {t('common.backHome')}
         </button>
         <button type="button" className="ipad-button primary-button" onClick={onReupload}>
-          重新上載
+          {t('directComplete.uploadAgain')}
         </button>
       </div>
     </main>

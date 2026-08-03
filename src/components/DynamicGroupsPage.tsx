@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
   ChevronRight,
@@ -77,7 +78,7 @@ const getEntityUpdatedAt = (entity: LibraryEntity) => (
   entity.kind === 'folder' ? entity.folder.updatedAt : entity.group.updatedAt
 )
 
-const formatLibraryDate = (timestamp: number) => new Intl.DateTimeFormat('zh-HK', {
+const formatLibraryDate = (timestamp: number, locale: string) => new Intl.DateTimeFormat(locale, {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
@@ -119,6 +120,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onSelectGroup,
   portalArrival = false
 }) => {
+  const { t, i18n } = useTranslation()
   const initialPreferencesRef = useRef(loadDynamicLibraryPreferences())
   const thumbnailInputRef = useRef<HTMLInputElement>(null)
   const editThumbnailInputRef = useRef<HTMLInputElement>(null)
@@ -704,15 +706,15 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const getFolderContent = (folder: DynamicFolder) => {
     const folderCount = folders.filter((item) => item.parentId === folder.id).length
     const materialCount = groups.filter((group) => group.folderId === folder.id).length
-    const parts = []
-    if (folderCount > 0) parts.push(`${folderCount} 個資料夾`)
-    if (materialCount > 0) parts.push(`${materialCount} 個素材`)
-    return parts.join(' · ') || '空白資料夾'
+    const parts: string[] = []
+    if (folderCount > 0) parts.push(t('groups.folderCount', { count: folderCount }))
+    if (materialCount > 0) parts.push(t('groups.materialCount', { count: materialCount }))
+    return parts.join(' · ') || t('groups.emptyFolder')
   }
 
   const getMaterialContent = (group: DynamicGroup) => {
     const backgroundCount = group.backgrounds?.length ?? (group.background ? 1 : 0)
-    return `${backgroundCount} 個背景 · ${group.items.length} 個物件`
+    return t('groups.materialSummary', { backgrounds: backgroundCount, objects: group.items.length })
   }
 
   const markPreviewFailed = (entityId: string) => {
@@ -731,7 +733,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           muted
           playsInline
           preload="metadata"
-          aria-label={`${group.name} 預覽`}
+          aria-label={t('groups.preview', { name: group.name })}
           onError={() => markPreviewFailed(group.id)}
         />
       )
@@ -750,8 +752,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         const rect = event.currentTarget.getBoundingClientRect()
         openEntityMenu(entity, rect.right, rect.bottom, false)
       } : undefined}
-      aria-label={`開啟 ${getEntityName(entity)} 選單`}
-      title="更多操作"
+      aria-label={t('groups.openMenu', { name: getEntityName(entity) })}
+      title={t('groups.moreActions')}
     >
       <MoreHorizontal aria-hidden="true" />
     </button>
@@ -823,8 +825,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           </span>
           <strong>{getEntityName(entity)}</strong>
         </span>
-        <time>{formatLibraryDate(getEntityUpdatedAt(entity))}</time>
-        <span>{entity.kind === 'folder' ? '資料夾' : '素材'}</span>
+        <time>{formatLibraryDate(getEntityUpdatedAt(entity), i18n.resolvedLanguage ?? i18n.language)}</time>
+        <span>{entity.kind === 'folder' ? t('groups.folder') : t('groups.material')}</span>
         <span>{entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)}</span>
       </button>
       {renderMoreButton(entity, interactive)}
@@ -838,13 +840,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   ) => {
     if (!folder) return null
     return (
-      <nav className="dynamic-library-breadcrumbs" aria-label="目前路徑">
+      <nav className="dynamic-library-breadcrumbs" aria-label={t('groups.currentPath')}>
         <button
           type="button"
           disabled={!interactive || folderTransitioning}
           onClick={interactive ? () => transitionToFolder('', undefined, 'backward') : undefined}
         >
-          作品檔案
+          {t('groups.archive')}
         </button>
         {trail.map((trailFolder, index) => (
           <span key={trailFolder.id}>
@@ -864,13 +866,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const renderLibraryBrowser = (list: LibraryEntity[], layerKey: string, interactive: boolean) => (
-    <section className={`dynamic-library-browser view-${viewMode}`} aria-label="作品素材庫">
+    <section className={`dynamic-library-browser view-${viewMode}`} aria-label={t('groups.libraryLabel')}>
       {viewMode === 'details' && list.length > 0 && (
         <div className="dynamic-library-detail-header" aria-hidden="true">
-          <span>名稱</span>
-          <span>修改日期</span>
-          <span>類型</span>
-          <span>內容</span>
+          <span>{t('groups.name')}</span>
+          <span>{t('groups.modified')}</span>
+          <span>{t('groups.type')}</span>
+          <span>{t('groups.content')}</span>
           <span />
         </div>
       )}
@@ -881,13 +883,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         {list.length === 0 && (
           <div className="dynamic-library-empty-state">
             <span><Folder aria-hidden="true" /></span>
-            <strong>此資料夾尚未建立內容</strong>
+            <strong>{t('groups.emptyContent')}</strong>
             <div>
               <button type="button" disabled={!interactive} onClick={interactive ? () => openCreator('folder') : undefined}>
-                <FolderPlus aria-hidden="true" />資料夾
+                <FolderPlus aria-hidden="true" />{t('groups.folder')}
               </button>
               <button type="button" disabled={!interactive} onClick={interactive ? () => openCreator('material') : undefined}>
-                <FilePlus2 aria-hidden="true" />素材
+                <FilePlus2 aria-hidden="true" />{t('groups.material')}
               </button>
             </div>
           </div>
@@ -911,22 +913,22 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         <div className="topbar-title-row">
           <button type="button" className="ipad-button ghost-button dynamic-library-back" onClick={handleBack}>
             <ArrowLeft aria-hidden="true" />
-            <span>{currentFolder ? '上一層' : '返回'}</span>
+            <span>{currentFolder ? t('groups.previousLevel') : t('common.back')}</span>
           </button>
           <div className="min-w-0">
-            <p className="eyebrow">動態藝術</p>
-            <h1 className="screen-title">作品檔案</h1>
+            <p className="eyebrow">{t('home.dynamicArt')}</p>
+            <h1 className="screen-title">{t('groups.archive')}</h1>
           </div>
         </div>
 
         <div className="dynamic-library-toolbar-actions">
-          <div className="dynamic-library-view-switch" role="group" aria-label="檢視方式">
+          <div className="dynamic-library-view-switch" role="group" aria-label={t('groups.viewMode')}>
             <button
               type="button"
               className={viewMode === 'icons' ? 'active' : ''}
               onClick={() => setViewMode('icons')}
-              aria-label="圖示模式"
-              title="圖示模式"
+              aria-label={t('groups.iconMode')}
+              title={t('groups.iconMode')}
             >
               <Grid2X2 aria-hidden="true" />
             </button>
@@ -934,27 +936,27 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
               type="button"
               className={viewMode === 'details' ? 'active' : ''}
               onClick={() => setViewMode('details')}
-              aria-label="詳細模式"
-              title="詳細模式"
+              aria-label={t('groups.detailMode')}
+              title={t('groups.detailMode')}
             >
               <List aria-hidden="true" />
             </button>
           </div>
           <label className="dynamic-library-sort">
-            <span>排序</span>
+            <span>{t('groups.sort')}</span>
             <select value={sortMode} onChange={(event) => setSortMode(event.target.value as DynamicLibrarySortMode)}>
-              <option value="updated">修改日期</option>
-              <option value="name">名稱</option>
-              <option value="type">類型</option>
+              <option value="updated">{t('groups.modified')}</option>
+              <option value="name">{t('groups.name')}</option>
+              <option value="type">{t('groups.type')}</option>
             </select>
           </label>
           <button type="button" className="ipad-button secondary-button dynamic-library-create-action" onClick={() => openCreator('folder')}>
             <FolderPlus aria-hidden="true" />
-            <span>新建資料夾</span>
+            <span>{t('groups.newFolder')}</span>
           </button>
           <button type="button" className="ipad-button primary-button dynamic-library-create-action" onClick={() => openCreator('material')}>
             <FilePlus2 aria-hidden="true" />
-            <span>新建素材</span>
+            <span>{t('groups.newMaterial')}</span>
           </button>
         </div>
       </header>
@@ -984,17 +986,17 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
       {menuTarget && (
         <>
-          <button type="button" className="dynamic-group-menu-overlay" onClick={closeEntityMenu} aria-label="關閉選單" />
+          <button type="button" className="dynamic-group-menu-overlay" onClick={closeEntityMenu} aria-label={t('groups.closeMenu')} />
           <section
             className="dynamic-group-menu-popover dynamic-library-menu-popover"
             style={{ left: menuPosition.x, top: menuPosition.y }}
             role="menu"
-            aria-label={`${getEntityName(menuTarget)} 選單`}
+            aria-label={t('groups.entityMenu', { name: getEntityName(menuTarget) })}
           >
-            <button type="button" onClick={() => startEdit(menuTarget)} role="menuitem"><Pencil aria-hidden="true" />編輯</button>
-            <button type="button" onClick={() => startMove(menuTarget)} role="menuitem"><FolderInput aria-hidden="true" />移動到</button>
+            <button type="button" onClick={() => startEdit(menuTarget)} role="menuitem"><Pencil aria-hidden="true" />{t('groups.edit')}</button>
+            <button type="button" onClick={() => startMove(menuTarget)} role="menuitem"><FolderInput aria-hidden="true" />{t('groups.moveTo')}</button>
             <button type="button" className="danger-menu-button" onClick={() => startDelete(menuTarget)} role="menuitem">
-              <Trash2 aria-hidden="true" />刪除
+              <Trash2 aria-hidden="true" />{t('groups.delete')}
             </button>
           </section>
         </>
@@ -1013,29 +1015,29 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           <section ref={creatorDialogRef} className="dynamic-library-form-modal" role="dialog" aria-modal="true" aria-labelledby="library-create-title" tabIndex={-1}>
             <div className="dynamic-library-modal-heading">
               <div>
-                <p className="eyebrow">{currentFolder?.name ?? '作品檔案'}</p>
-                <h2 id="library-create-title">{creatorType === 'folder' ? '新建資料夾' : '新建素材'}</h2>
+                <p className="eyebrow">{currentFolder?.name ?? t('groups.archive')}</p>
+                <h2 id="library-create-title">{creatorType === 'folder' ? t('groups.newFolder') : t('groups.newMaterial')}</h2>
               </div>
-              <button type="button" className="dynamic-panel-close" onClick={resetCreator} aria-label="關閉"><X aria-hidden="true" /></button>
+              <button type="button" className="dynamic-panel-close" onClick={resetCreator} aria-label={t('common.close')}><X aria-hidden="true" /></button>
             </div>
 
             {creatorType === 'material' && (
               <>
                 <input ref={thumbnailInputRef} type="file" accept="image/*" className="hidden" onChange={handleThumbnailChange} />
                 <button type="button" className="dynamic-library-thumbnail-picker" onClick={() => thumbnailInputRef.current?.click()}>
-                  {thumbnailPreview ? <img src={thumbnailPreview} alt="縮略圖預覽" /> : <span><ImageIcon aria-hidden="true" /><strong>選擇縮略圖</strong></span>}
+                  {thumbnailPreview ? <img src={thumbnailPreview} alt={t('groups.thumbnailPreview')} /> : <span><ImageIcon aria-hidden="true" /><strong>{t('groups.chooseThumbnail')}</strong></span>}
                 </button>
               </>
             )}
 
             <label className="settings-field">
-              <span>{creatorType === 'folder' ? '資料夾名稱' : '素材名稱'}</span>
+              <span>{creatorType === 'folder' ? t('groups.folderName') : t('groups.materialName')}</span>
               <input
                 type="text"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 className="ipad-input"
-                placeholder={creatorType === 'folder' ? '輸入資料夾名稱' : '輸入素材名稱'}
+                placeholder={creatorType === 'folder' ? t('groups.folderPlaceholder') : t('groups.materialPlaceholder')}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') void handleCreate()
                 }}
@@ -1043,9 +1045,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
             </label>
 
             <div className="settings-actions">
-              <button type="button" className="ipad-button secondary-button" onClick={resetCreator}>取消</button>
+              <button type="button" className="ipad-button secondary-button" onClick={resetCreator}>{t('common.cancel')}</button>
               <button type="button" className="ipad-button primary-button" disabled={!name.trim() || isCreating} onClick={() => void handleCreate()}>
-                {isCreating ? '建立中' : '建立'}
+                {isCreating ? t('groups.creating') : t('groups.create')}
               </button>
             </div>
           </section>
@@ -1054,30 +1056,30 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
       {(editingGroup || editingFolder) && (
         <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
-          <button type="button" className="settings-scrim" onClick={resetEditor} aria-label="關閉" />
+          <button type="button" className="settings-scrim" onClick={resetEditor} aria-label={t('common.close')} />
           <section className="dynamic-library-form-modal" role="dialog" aria-modal="true" aria-labelledby="library-edit-title">
             <div className="dynamic-library-modal-heading">
-              <div><p className="eyebrow">編輯</p><h2 id="library-edit-title">{editingFolder ? '資料夾' : '素材'}</h2></div>
-              <button type="button" className="dynamic-panel-close" onClick={resetEditor} aria-label="關閉"><X aria-hidden="true" /></button>
+              <div><p className="eyebrow">{t('groups.edit')}</p><h2 id="library-edit-title">{editingFolder ? t('groups.folder') : t('groups.material')}</h2></div>
+              <button type="button" className="dynamic-panel-close" onClick={resetEditor} aria-label={t('common.close')}><X aria-hidden="true" /></button>
             </div>
 
             {editingGroup && (
               <>
                 <input ref={editThumbnailInputRef} type="file" accept="image/*" className="hidden" onChange={handleEditThumbnailChange} />
                 <button type="button" className="dynamic-library-thumbnail-picker" onClick={() => editThumbnailInputRef.current?.click()}>
-                  {editThumbnailPreview ? <img src={editThumbnailPreview} alt="縮略圖預覽" /> : <span><ImageIcon aria-hidden="true" /><strong>選擇縮略圖</strong></span>}
+                  {editThumbnailPreview ? <img src={editThumbnailPreview} alt={t('groups.thumbnailPreview')} /> : <span><ImageIcon aria-hidden="true" /><strong>{t('groups.chooseThumbnail')}</strong></span>}
                 </button>
               </>
             )}
 
             <label className="settings-field">
-              <span>名稱</span>
+              <span>{t('groups.name')}</span>
               <input type="text" value={editName} onChange={(event) => setEditName(event.target.value)} className="ipad-input" autoFocus />
             </label>
             <div className="settings-actions">
-              <button type="button" className="ipad-button secondary-button" onClick={resetEditor}>取消</button>
+              <button type="button" className="ipad-button secondary-button" onClick={resetEditor}>{t('common.cancel')}</button>
               <button type="button" className="ipad-button primary-button" disabled={!editName.trim() || isSavingEdit} onClick={() => void handleSaveEdit()}>
-                {isSavingEdit ? '儲存中' : '儲存'}
+                {isSavingEdit ? t('groups.saving') : t('common.save')}
               </button>
             </div>
           </section>
@@ -1086,16 +1088,16 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
       {moveTarget && (
         <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
-          <button type="button" className="settings-scrim" onClick={() => setMoveTarget(null)} aria-label="關閉" />
+          <button type="button" className="settings-scrim" onClick={() => setMoveTarget(null)} aria-label={t('common.close')} />
           <section className="dynamic-library-form-modal dynamic-library-move-modal" role="dialog" aria-modal="true" aria-labelledby="library-move-title">
             <div className="dynamic-library-modal-heading">
-              <div><p className="eyebrow">{getEntityName(moveTarget)}</p><h2 id="library-move-title">移動到</h2></div>
-              <button type="button" className="dynamic-panel-close" onClick={() => setMoveTarget(null)} aria-label="關閉"><X aria-hidden="true" /></button>
+              <div><p className="eyebrow">{getEntityName(moveTarget)}</p><h2 id="library-move-title">{t('groups.moveTo')}</h2></div>
+              <button type="button" className="dynamic-panel-close" onClick={() => setMoveTarget(null)} aria-label={t('common.close')}><X aria-hidden="true" /></button>
             </div>
-            <div className="dynamic-library-folder-destinations" role="radiogroup" aria-label="目的位置">
+            <div className="dynamic-library-folder-destinations" role="radiogroup" aria-label={t('groups.destination')}>
               <label className={!moveDestinationId ? 'active' : ''}>
                 <input type="radio" name="destination" value="" checked={!moveDestinationId} onChange={() => setMoveDestinationId('')} />
-                <span><Folder aria-hidden="true" /><strong>作品檔案</strong></span>
+                <span><Folder aria-hidden="true" /><strong>{t('groups.archive')}</strong></span>
               </label>
               {availableMoveFolders.map((folder) => (
                 <label key={folder.id} className={moveDestinationId === folder.id ? 'active' : ''}>
@@ -1105,8 +1107,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
               ))}
             </div>
             <div className="settings-actions">
-              <button type="button" className="ipad-button secondary-button" onClick={() => setMoveTarget(null)}>取消</button>
-              <button type="button" className="ipad-button primary-button" onClick={() => void handleMove()}>移動</button>
+              <button type="button" className="ipad-button secondary-button" onClick={() => setMoveTarget(null)}>{t('common.cancel')}</button>
+              <button type="button" className="ipad-button primary-button" onClick={() => void handleMove()}>{t('groups.move')}</button>
             </div>
           </section>
         </div>
@@ -1114,40 +1116,40 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
       {deleteTarget && (
         <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
-          <button type="button" className="settings-scrim" onClick={() => setDeleteTarget(null)} aria-label="關閉" />
+          <button type="button" className="settings-scrim" onClick={() => setDeleteTarget(null)} aria-label={t('common.close')} />
           <section className="dynamic-library-delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="library-delete-title">
             <span className="dynamic-library-delete-icon"><Trash2 aria-hidden="true" /></span>
             <div>
-              <p className="eyebrow">{deleteTarget.kind === 'folder' ? '資料夾' : '素材'}</p>
-              <h2 id="library-delete-title">{confirmRecursiveDelete ? '再次確認刪除' : `刪除「${getEntityName(deleteTarget)}」？`}</h2>
+              <p className="eyebrow">{deleteTarget.kind === 'folder' ? t('groups.folder') : t('groups.material')}</p>
+              <h2 id="library-delete-title">{confirmRecursiveDelete ? t('groups.confirmDeleteAgain') : t('groups.deleteQuestion', { name: getEntityName(deleteTarget) })}</h2>
               {deleteTarget.kind === 'folder' && deleteFolderHasContents && (
-                <p>{confirmRecursiveDelete ? '資料夾內的所有素材與子資料夾都會永久刪除。' : `內含 ${deleteFolderChildCount} 個子資料夾與 ${deleteFolderMaterialCount} 個素材。`}</p>
+                <p>{confirmRecursiveDelete ? t('groups.recursiveWarning') : t('groups.folderContents', { folders: deleteFolderChildCount, materials: deleteFolderMaterialCount })}</p>
               )}
             </div>
             <div className="dynamic-library-delete-actions">
               <button type="button" className="ipad-button secondary-button" onClick={() => {
                 setDeleteTarget(null)
                 setConfirmRecursiveDelete(false)
-              }}>取消</button>
+              }}>{t('common.cancel')}</button>
               {deleteTarget.kind === 'material' ? (
                 <button type="button" className="ipad-button danger-button" disabled={isDeleting} onClick={() => void handleDeleteMaterial(deleteTarget.group)}>
-                  {isDeleting ? '刪除中' : '刪除素材'}
+                  {isDeleting ? t('groups.deleting') : t('groups.deleteMaterial')}
                 </button>
               ) : !deleteFolderHasContents ? (
                 <button type="button" className="ipad-button danger-button" disabled={isDeleting} onClick={() => void handleDeleteFolderOnly(deleteTarget.folder)}>
-                  {isDeleting ? '刪除中' : '刪除資料夾'}
+                  {isDeleting ? t('groups.deleting') : t('groups.deleteFolder')}
                 </button>
               ) : confirmRecursiveDelete ? (
                 <button type="button" className="ipad-button danger-button" disabled={isDeleting} onClick={() => void handleDeleteFolderAndContents(deleteTarget.folder)}>
-                  {isDeleting ? '刪除中' : '確認全部刪除'}
+                  {isDeleting ? t('groups.deleting') : t('groups.confirmDeleteAll')}
                 </button>
               ) : (
                 <>
                   <button type="button" className="ipad-button secondary-button" disabled={isDeleting} onClick={() => void handleDeleteFolderOnly(deleteTarget.folder)}>
-                    移出內容並刪除
+                    {t('groups.moveContentsDelete')}
                   </button>
                   <button type="button" className="ipad-button danger-button" disabled={isDeleting} onClick={() => void handleDeleteFolderAndContents(deleteTarget.folder)}>
-                    連同內容刪除
+                    {t('groups.deleteWithContents')}
                   </button>
                 </>
               )}

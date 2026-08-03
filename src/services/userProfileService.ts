@@ -24,7 +24,7 @@ const getFallbackName = (email: string, metadata: Record<string, unknown>) => {
     .find(Boolean)
 
   if (metadataName) return metadataName
-  return email.split('@')[0]?.trim() || '使用者'
+  return email.split('@')[0]?.trim() || ''
 }
 
 const normalizeAvatarUrl = (value: unknown) => {

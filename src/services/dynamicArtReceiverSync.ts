@@ -20,7 +20,7 @@ interface ReceiverSyncState {
 }
 
 interface SyncStatus {
-  label: string
+  phase: 'starting' | 'background' | 'item' | 'parameters'
   current?: number
   total?: number
 }
@@ -227,11 +227,11 @@ const syncDynamicGroupToReceiver = async ({
     const total = backgrounds.length + group.items.length
     let current = 0
 
-    onStatus?.({ label: '正在同步作品檔案', current, total })
+    onStatus?.({ phase: 'starting', current, total })
 
     for (const background of backgrounds) {
       current += 1
-      onStatus?.({ label: `正在同步背景 ${current}/${total}`, current, total })
+      onStatus?.({ phase: 'background', current, total })
       await uploadMediaForSync(background, {
         role: 'background',
         groupId: group.id,
@@ -244,7 +244,7 @@ const syncDynamicGroupToReceiver = async ({
     const sortedItems = group.items.slice().sort((a, b) => a.order - b.order)
     for (const item of sortedItems) {
       current += 1
-      onStatus?.({ label: `正在同步圖片 ${current}/${total}`, current, total })
+      onStatus?.({ phase: 'item', current, total })
       await uploadMediaForSync(item.media, {
         role: 'item',
         groupId: group.id,
@@ -255,7 +255,7 @@ const syncDynamicGroupToReceiver = async ({
       }, ip, port)
     }
 
-    onStatus?.({ label: '正在同步作品參數', current: total, total })
+    onStatus?.({ phase: 'parameters', current: total, total })
     await sendDynamicEventAsync(ip, port, 'GroupSelectAndSync', buildGroupSyncPayload(group))
     markGroupSynced(receiverKey, group.id, assetSignature)
     return true

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import LoginPage from './components/LoginPage.tsx'
 import EntryPage from './components/EntryPage.tsx'
 import UploadPage from './components/UploadPage.tsx'
@@ -67,6 +68,7 @@ const pageOrder: Record<Page, number> = {
 }
 
 function App() {
+  const { t } = useTranslation()
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [currentPage, setCurrentPage] = useState<Page>('entry')
   const [transitionDirection, setTransitionDirection] = useState<TransitionDirection>('neutral')
@@ -385,8 +387,8 @@ function App() {
   const portraitLock = (
     <div className="portrait-lock" aria-hidden="true">
       <div>
-        <strong>請橫屏使用 iPad</strong>
-        <span>MagicFloor 為橫屏控制台設計，請旋轉設備繼續操作。</span>
+        <strong>{t('orientation.title')}</strong>
+        <span>{t('orientation.body')}</span>
       </div>
     </div>
   )
@@ -494,7 +496,7 @@ function App() {
             uploadPort={networkSettings.interactivePort}
             shouldCacheArtwork={false}
             maskOptions={getDirectMasksForTheme(selectedDirectTheme)}
-            directThemeName={selectedDirectTheme.label}
+            directThemeName={t(selectedDirectTheme.labelKey)}
             openMaskSelector={directUploadOpenMaskSelector}
           />
         ) : currentPage === 'directComplete' ? (

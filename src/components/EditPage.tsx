@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { removeArtworkFromIp } from '../services/artworkStorage.ts'
 
 interface EditPageProps {
@@ -55,6 +56,7 @@ const EditPage: React.FC<EditPageProps> = ({
   onBackToHome,
   onDeleteArtwork
 }) => {
+  const { t } = useTranslation()
   const [position, setPosition] = useState({ x: 0.5, y: 0.5 })
   const [scale, setScale] = useState(1)
   const [rotation, setRotation] = useState(0)
@@ -277,7 +279,7 @@ const EditPage: React.FC<EditPageProps> = ({
   const handleDeleteArtwork = async () => {
     if (isDeletingArtwork) return
 
-    const confirmed = window.confirm(`確定刪除槽位 ${selectedObjectIndex} 的作品嗎？`)
+    const confirmed = window.confirm(t('edit.confirmDeleteSlot', { index: selectedObjectIndex }))
     if (!confirmed) return
 
     setIsDeletingArtwork(true)
@@ -292,7 +294,7 @@ const EditPage: React.FC<EditPageProps> = ({
       onDeleteArtwork()
     } catch (error) {
       console.error('Failed to delete artwork:', error)
-      window.alert('刪除作品失敗，請稍後再試。')
+      window.alert(t('edit.deleteFailed'))
     } finally {
       setIsDeletingArtwork(false)
     }
@@ -432,12 +434,12 @@ const EditPage: React.FC<EditPageProps> = ({
     }
   }
 
-  const tools: { id: ControlTool; label: string }[] = [
-    { id: 'scale', label: '縮放' },
-    { id: 'rotate', label: '旋轉' },
-    { id: 'animation', label: '動畫' },
-    { id: 'scene', label: '場景' },
-    { id: 'object', label: '物件' }
+  const tools: { id: ControlTool; labelKey: string }[] = [
+    { id: 'scale', labelKey: 'control.scale' },
+    { id: 'rotate', labelKey: 'control.rotation' },
+    { id: 'animation', labelKey: 'control.animation' },
+    { id: 'scene', labelKey: 'edit.scene' },
+    { id: 'object', labelKey: 'items.object' }
   ]
 
   return (
@@ -445,16 +447,16 @@ const EditPage: React.FC<EditPageProps> = ({
       <header className="ipad-topbar">
         <div className="topbar-title-row">
           <button onClick={onBackToHome} className="ipad-button ghost-button">
-            首頁
+            {t('common.backHome')}
           </button>
           <div className="min-w-0">
             <p className="eyebrow">MagicFloor</p>
-            <h1 className="screen-title">作品控制</h1>
+            <h1 className="screen-title">{t('edit.title')}</h1>
           </div>
         </div>
 
         <div className="edit-status-strip">
-          <span className="status-pill">格位 {gridIndex}</span>
+          <span className="status-pill">{t('edit.gridPosition', { index: gridIndex })}</span>
           <span className="status-pill">{scale.toFixed(1)}x</span>
           <span className="status-pill">{rotation.toFixed(0)}°</span>
           <span className="status-pill">{wsIp}:8080</span>
@@ -465,11 +467,11 @@ const EditPage: React.FC<EditPageProps> = ({
         <div className="edit-stage-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">舞台預覽</p>
-              <h2>拖動作品定位，雙點開啟工具</h2>
+              <p className="eyebrow">{t('edit.stagePreview')}</p>
+              <h2>{t('edit.stageHelp')}</h2>
             </div>
             <span className={`status-pill ${isReleased ? 'warning' : ''}`}>
-              {isReleased ? '釋放信號' : '可控制'}
+              {isReleased ? t('edit.releaseSignal') : t('edit.controllable')}
             </span>
           </div>
 
@@ -498,7 +500,7 @@ const EditPage: React.FC<EditPageProps> = ({
             <img
               ref={imageRef}
               src={imageData.url}
-              alt="編輯中"
+              alt={t('edit.editingAlt')}
               draggable={false}
               className="draggable-image"
               style={{
@@ -529,15 +531,15 @@ const EditPage: React.FC<EditPageProps> = ({
           <aside className="edit-control-drawer">
             <div className="drawer-heading">
               <div>
-                <p className="eyebrow">工具</p>
-                <h2>作品工具</h2>
+                <p className="eyebrow">{t('edit.tools')}</p>
+                <h2>{t('edit.artworkTools')}</h2>
               </div>
               <button
                 type="button"
                 className="mini-action-button"
                 onClick={() => setIsControlPanelOpen(false)}
               >
-                收起
+                {t('edit.collapse')}
               </button>
             </div>
 
@@ -549,14 +551,14 @@ const EditPage: React.FC<EditPageProps> = ({
                   onClick={() => setActiveTool(tool.id)}
                   className={`tool-tab ${activeTool === tool.id ? 'active' : ''}`}
                 >
-                  {tool.label}
+                  {t(tool.labelKey)}
                 </button>
               ))}
             </div>
 
             {activeTool === 'scale' && (
               <section className="rail-section">
-                <p className="eyebrow">縮放</p>
+                <p className="eyebrow">{t('control.scale')}</p>
                 <div className="control-row">
                   <button type="button" onClick={() => handleScaleNudge(-0.1)} className="scale-step-button">
                     -
@@ -588,14 +590,14 @@ const EditPage: React.FC<EditPageProps> = ({
                   ))}
                 </div>
                 <button onClick={handleResetScale} className="ipad-button secondary-button scale-reset-button">
-                  重設縮放
+                  {t('edit.resetScale')}
                 </button>
               </section>
             )}
 
             {activeTool === 'rotate' && (
               <section className="rail-section">
-                <p className="eyebrow">旋轉</p>
+                <p className="eyebrow">{t('control.rotation')}</p>
                 <div className="control-row">
                   <button type="button" onClick={() => handleRotationNudge(-5)} className="scale-step-button">
                     -
@@ -627,14 +629,14 @@ const EditPage: React.FC<EditPageProps> = ({
                   ))}
                 </div>
                 <button onClick={handleResetRotation} className="ipad-button secondary-button scale-reset-button">
-                  重設旋轉
+                  {t('edit.resetRotation')}
                 </button>
               </section>
             )}
 
             {activeTool === 'animation' && (
               <section className="rail-section">
-                <p className="eyebrow">動畫</p>
+                <p className="eyebrow">{t('control.animation')}</p>
                 <div className="animation-grid">
                   {Array.from({ length: 10 }, (_, i) => i).map((id) => (
                     <button
@@ -657,7 +659,7 @@ const EditPage: React.FC<EditPageProps> = ({
                       <img
                         key={animationId}
                         src={`/animations/${animationId}.gif`}
-                        alt={`動畫 ${animationId}`}
+                        alt={t('edit.animationNumber', { id: animationId })}
                         className="animation-preview-image"
                         onLoad={() => setAnimationPreviewError(false)}
                         onError={() => setAnimationPreviewError(true)}
@@ -665,7 +667,7 @@ const EditPage: React.FC<EditPageProps> = ({
                     )}
                   </div>
                   <div className="animation-preview-meta">
-                    <span>動畫 {animationId}</span>
+                    <span>{t('edit.animationNumber', { id: animationId })}</span>
                     <strong>{animationId}</strong>
                   </div>
                 </div>
@@ -674,12 +676,12 @@ const EditPage: React.FC<EditPageProps> = ({
 
             {activeTool === 'scene' && (
               <section className="rail-section">
-                <p className="eyebrow">場景</p>
+                <p className="eyebrow">{t('edit.scene')}</p>
                 <div className="scene-stack">
                   {[
-                    { value: 'fish', label: '海底珊瑚' },
-                    { value: 'people', label: '動物小鎮' },
-                    { value: 'other', label: '空白網格' }
+                    { value: 'fish', labelKey: 'edit.sceneCoral' },
+                    { value: 'people', labelKey: 'edit.sceneTown' },
+                    { value: 'other', labelKey: 'edit.sceneBlank' }
                   ].map((scene) => (
                     <button
                       key={scene.value}
@@ -691,7 +693,7 @@ const EditPage: React.FC<EditPageProps> = ({
                         sendHttpMessage(`Bg:${bgMap[scene.value] || 'Other'}`)
                       }}
                     >
-                      {scene.label}
+                      {t(scene.labelKey)}
                     </button>
                   ))}
                 </div>
@@ -700,7 +702,7 @@ const EditPage: React.FC<EditPageProps> = ({
 
             {activeTool === 'object' && (
               <section className="rail-section">
-                <p className="eyebrow">物件</p>
+                <p className="eyebrow">{t('items.object')}</p>
                 <div className="toggle-stack">
                   <label className="toggle-control wide">
                     <input
@@ -709,7 +711,7 @@ const EditPage: React.FC<EditPageProps> = ({
                       checked={isFlipped}
                       onChange={handleFlipChange}
                     />
-                    <span>水平翻轉</span>
+                    <span>{t('control.flipHorizontal')}</span>
                   </label>
                   <label className="toggle-control wide">
                     <input
@@ -718,7 +720,7 @@ const EditPage: React.FC<EditPageProps> = ({
                       checked={isReleased}
                       onChange={handleReleaseChange}
                     />
-                    <span>釋放物件</span>
+                    <span>{t('edit.releaseObject')}</span>
                   </label>
                 </div>
               </section>
@@ -728,16 +730,16 @@ const EditPage: React.FC<EditPageProps> = ({
 
         <div className="edit-bottom-dock">
           <button type="button" onClick={() => openControlPanel('scale')} className="ipad-button primary-button">
-            工具
+            {t('edit.tools')}
           </button>
           <button onClick={handleResetPosition} className="ipad-button secondary-button">
-            重設位置
+            {t('edit.resetPosition')}
           </button>
           <button onClick={onBackToHome} className="ipad-button secondary-button">
-            返回首頁
+            {t('common.backHome')}
           </button>
           <button onClick={onResetUpload} className="ipad-button danger-button">
-            重新上載
+            {t('edit.uploadAgain')}
           </button>
           <button
             type="button"
@@ -745,7 +747,7 @@ const EditPage: React.FC<EditPageProps> = ({
             disabled={isDeletingArtwork}
             className="ipad-button danger-button"
           >
-            {isDeletingArtwork ? '刪除中' : '刪除作品'}
+            {isDeletingArtwork ? t('groups.deleting') : t('edit.deleteArtwork')}
           </button>
         </div>
       </section>

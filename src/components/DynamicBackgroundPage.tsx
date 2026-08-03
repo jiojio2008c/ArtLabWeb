@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { setDynamicBackground, type DynamicBackground, type DynamicGroup } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
 
@@ -19,6 +20,7 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
   onGroupChange,
   onContinue
 }) => {
+  const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadedGroup, setUploadedGroup] = useState<DynamicGroup | undefined>()
@@ -115,11 +117,11 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
       <header className="ipad-topbar">
         <div className="topbar-title-row">
           <button type="button" className="ipad-button ghost-button" onClick={onBack}>
-            返回作品檔案
+            {t('background.back')}
           </button>
           <div className="min-w-0">
-            <p className="eyebrow">動態藝術 · {currentGroup.name}</p>
-            <h1 className="screen-title">背景上載</h1>
+            <p className="eyebrow">{t('background.eyebrow', { name: currentGroup.name })}</p>
+            <h1 className="screen-title">{t('background.title')}</h1>
           </div>
         </div>
       </header>
@@ -135,14 +137,14 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
           ) : (
             <div className="dynamic-empty-stage">
               <strong>16:9</strong>
-              <span>選擇圖片或影片作為動態藝術背景</span>
+              <span>{t('background.prompt')}</span>
             </div>
           )}
         </div>
 
         <aside className="dynamic-side-panel">
-          <p className="eyebrow">背景資源</p>
-          <h2>上載背景</h2>
+          <p className="eyebrow">{t('background.resource')}</p>
+          <h2>{t('background.upload')}</h2>
           <input
             ref={inputRef}
             type="file"
@@ -151,7 +153,7 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
             onChange={handleFileChange}
           />
           <button type="button" className="ipad-button primary-button" onClick={() => inputRef.current?.click()}>
-            {isUploading ? '處理中' : '選擇背景'}
+            {isUploading ? t('common.processing') : t('background.select')}
           </button>
           <button
             type="button"
@@ -159,13 +161,13 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
             disabled={!currentBackground}
             onClick={handleContinue}
           >
-            下一步
+            {t('common.next')}
           </button>
           {currentBackground && (
             <div className="dynamic-meta-card">
-              <span>目前背景</span>
+              <span>{t('background.current')}</span>
               <strong>{currentBackground.name}</strong>
-              <small>{currentBackground.type === 'video' ? '影片背景' : '圖片背景'}</small>
+              <small>{currentBackground.type === 'video' ? t('background.video') : t('background.image')}</small>
             </div>
           )}
         </aside>

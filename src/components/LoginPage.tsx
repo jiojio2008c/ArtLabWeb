@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react'
-import { getLoginErrorMessage, loginWithPassword } from '../services/authService.ts'
+import { useTranslation } from 'react-i18next'
+import { getLoginErrorKey, loginWithPassword } from '../services/authService.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
 
 interface LoginPageProps {
@@ -17,6 +18,7 @@ const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 const LOGIN_EXIT_DELAY_MS = 320
 
 const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated }) => {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -41,8 +43,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
     if (isSubmitting || loginComplete) return
 
     const nextErrors: FieldErrors = {}
-    if (!email.trim()) nextErrors.email = '請輸入電子郵件。'
-    if (!password) nextErrors.password = '請輸入密碼。'
+    if (!email.trim()) nextErrors.email = t('auth.emailRequired')
+    if (!password) nextErrors.password = t('auth.passwordRequired')
 
     setFieldErrors(nextErrors)
     setFormError('')
@@ -66,7 +68,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
         onAuthenticated()
       }, LOGIN_EXIT_DELAY_MS)
     } catch (error) {
-      setFormError(getLoginErrorMessage(error))
+      setFormError(t(getLoginErrorKey(error)))
       passwordInputRef.current?.focus()
       passwordInputRef.current?.select()
     } finally {
@@ -87,12 +89,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
           <form className="login-panel" onSubmit={handleSubmit} noValidate>
             <div className="login-heading">
               <p className="eyebrow">MagicFloor</p>
-              <h1>登入</h1>
+              <h1>{t('auth.signIn')}</h1>
             </div>
 
             <div className="login-fields">
               <div className="login-field">
-                <label htmlFor="login-email">電子郵件</label>
+                <label htmlFor="login-email">{t('auth.email')}</label>
                 <span className={`login-input-shell ${fieldErrors.email ? 'has-error' : ''}`}>
                   <Mail aria-hidden="true" />
                   <input
@@ -116,7 +118,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
               </div>
 
               <div className="login-field">
-                <label htmlFor="login-password">密碼</label>
+                <label htmlFor="login-password">{t('auth.password')}</label>
                 <span className={`login-input-shell ${fieldErrors.password ? 'has-error' : ''}`}>
                   <LockKeyhole aria-hidden="true" />
                   <input
@@ -138,7 +140,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
                     type="button"
                     className="login-password-toggle"
                     onClick={() => setPasswordVisible((current) => !current)}
-                    aria-label={passwordVisible ? '隱藏密碼' : '顯示密碼'}
+                    aria-label={passwordVisible ? t('auth.hidePassword') : t('auth.showPassword')}
                     disabled={isSubmitting || loginComplete}
                   >
                     {passwordVisible ? <EyeOff /> : <Eye />}
@@ -159,7 +161,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
               data-silent={loginComplete ? 'true' : undefined}
             >
               {loginComplete ? <Check aria-hidden="true" /> : null}
-              {loginComplete ? '登入成功' : isSubmitting ? '登入中' : '登入'}
+              {loginComplete ? t('auth.signInSuccess') : isSubmitting ? t('auth.signingIn') : t('auth.signIn')}
             </button>
           </form>
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   addDynamicItem,
@@ -8,7 +9,7 @@ import {
   type DynamicItem
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
-import { syncDynamicGroupToReceiver } from '../services/dynamicArtReceiverSync.ts'
+import { syncDynamicGroupToReceiver, type SyncStatus } from '../services/dynamicArtReceiverSync.ts'
 
 interface DynamicItemsPageProps {
   group: DynamicGroup
@@ -27,8 +28,6 @@ interface MenuPosition {
 const LONG_PRESS_DELAY_MS = 520
 const LONG_PRESS_MOVE_TOLERANCE = 12
 
-const getFileDefaultName = (file: File) => file.name.trim() || '未命名物件'
-
 const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   group,
   wsIp,
@@ -37,6 +36,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   onGroupChange,
   onOpenControl
 }) => {
+  const { t } = useTranslation()
   const createInputRef = useRef<HTMLInputElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const longPressTimerRef = useRef<number | null>(null)
@@ -56,8 +56,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   const [editPreview, setEditPreview] = useState<string | undefined>()
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [deletingItemId, setDeletingItemId] = useState('')
-  const [receiverSyncStatus, setReceiverSyncStatus] = useState('')
-  const [receiverSyncError, setReceiverSyncError] = useState('')
+  const [receiverSyncStatus, setReceiverSyncStatus] = useState<SyncStatus | 'complete' | null>(null)
+  const [receiverSyncError, setReceiverSyncError] = useState(false)
 
   const activeMenuItem = group.items.find((item) => item.id === menuItemId)
 
@@ -74,28 +74,28 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
     let cancelled = false
     let clearTimer: number | undefined
 
-    setReceiverSyncError('')
+    setReceiverSyncError(false)
     void syncDynamicGroupToReceiver({
       group,
       ip: wsIp,
       port: dynamicPort,
       onStatus: (status) => {
-        if (!cancelled) setReceiverSyncStatus(status.label)
+        if (!cancelled) setReceiverSyncStatus(status)
       }
     })
       .then((synced) => {
         if (cancelled || !synced) return
-        setReceiverSyncStatus('作品檔案已同步')
+        setReceiverSyncStatus('complete')
         clearTimer = window.setTimeout(() => {
-          setReceiverSyncStatus('')
+          setReceiverSyncStatus(null)
         }, 1600)
       })
       .catch(() => {
         if (cancelled) return
-        setReceiverSyncStatus('')
-        setReceiverSyncError('作品檔案同步失敗，請確認藝術畫廊已開啟。')
+        setReceiverSyncStatus(null)
+        setReceiverSyncError(true)
         clearTimer = window.setTimeout(() => {
-          setReceiverSyncError('')
+          setReceiverSyncError(false)
         }, 2600)
       })
 
@@ -150,7 +150,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
     setCreateFile(file)
     setCreatePreview(URL.createObjectURL(file))
-    setCreateName((currentName) => currentName || getFileDefaultName(file))
+    setCreateName((currentName) => currentName || file.name.trim() || t('items.untitled'))
     event.target.value = ''
   }
 
@@ -160,7 +160,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
     setEditFile(file)
     setEditPreview(URL.createObjectURL(file))
-    setEditName((currentName) => currentName || getFileDefaultName(file))
+    setEditName((currentName) => currentName || file.name.trim() || t('items.untitled'))
     event.target.value = ''
   }
 
@@ -224,12 +224,12 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
     if (isCreating) return
 
     if (group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
-      window.alert('每個作品檔案最多可建立 30 張圖片。')
+      window.alert(t('items.limitReached'))
       return
     }
 
     if (!createFile) {
-      window.alert('請先上載圖片。')
+      window.alert(t('items.uploadFirst'))
       return
     }
 
@@ -317,7 +317,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   const handleDeleteItem = async (item: DynamicItem) => {
     if (deletingItemId) return
 
-    const confirmed = window.confirm('確定要刪除此物件？')
+    const confirmed = window.confirm(t('items.confirmDelete'))
     if (!confirmed) return
 
     setDeletingItemId(item.id)
@@ -341,10 +341,10 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
       <header className="ipad-topbar">
         <div className="topbar-title-row">
           <button type="button" className="ipad-button ghost-button" onClick={onBack}>
-            返回
+            {t('common.back')}
           </button>
           <div className="min-w-0">
-            <p className="eyebrow">作品檔案</p>
+            <p className="eyebrow">{t('groups.archive')}</p>
             <h1 className="screen-title">{group.name}</h1>
           </div>
         </div>
@@ -352,20 +352,29 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
       {(receiverSyncStatus || receiverSyncError) && (
         <div className={`status-toast ${receiverSyncError ? 'error' : 'success'}`}>
-          {receiverSyncError || receiverSyncStatus}
+          {receiverSyncError
+            ? t('sync.failed')
+            : receiverSyncStatus === 'complete'
+              ? t('sync.complete')
+              : receiverSyncStatus
+                ? t(`sync.${receiverSyncStatus.phase}`, {
+                    current: receiverSyncStatus.current ?? 0,
+                    total: receiverSyncStatus.total ?? 0
+                  })
+                : ''}
         </div>
       )}
 
-      <section className="dynamic-items-workspace" aria-label="作品圖片列表">
+      <section className="dynamic-items-workspace" aria-label={t('items.listLabel')}>
         <button
           type="button"
           className="dynamic-create-card"
           disabled={isCreating || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP}
           onClick={() => setIsCreatorOpen(true)}
-          aria-label="新增物件"
+          aria-label={t('items.add')}
         >
           <span className="dynamic-plus-mark">+</span>
-          <strong>{isCreating ? '建立中' : '新增'}</strong>
+          <strong>{isCreating ? t('groups.creating') : t('items.addShort')}</strong>
         </button>
 
         {group.items.map((item) => (
@@ -396,16 +405,16 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
             type="button"
             className="dynamic-group-menu-overlay"
             onClick={closeItemMenu}
-            aria-label="關閉物件選單"
+            aria-label={t('items.closeMenu')}
           />
           <section
             className="dynamic-group-menu-popover"
             style={{ left: menuPosition.x, top: menuPosition.y }}
             role="menu"
-            aria-label={`${activeMenuItem.name} 選單`}
+            aria-label={t('groups.entityMenu', { name: activeMenuItem.name })}
           >
             <button type="button" onClick={() => startEditItem(activeMenuItem)} role="menuitem">
-              編輯物件
+              {t('items.edit')}
             </button>
             <button
               type="button"
@@ -413,7 +422,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
               onClick={() => handleDeleteItem(activeMenuItem)}
               role="menuitem"
             >
-              {deletingItemId === activeMenuItem.id ? '刪除中' : '刪除物件'}
+              {deletingItemId === activeMenuItem.id ? t('groups.deleting') : t('items.delete')}
             </button>
           </section>
         </>
@@ -421,15 +430,15 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
       {isCreatorOpen && (
         <div className="dynamic-modal-overlay">
-          <button type="button" className="settings-scrim" onClick={resetCreator} aria-label="關閉" />
+          <button type="button" className="settings-scrim" onClick={resetCreator} aria-label={t('common.close')} />
           <section className="dynamic-create-modal">
             <div className="settings-heading">
               <div>
-                <p className="eyebrow">物件</p>
-                <h2>新增物件</h2>
+                <p className="eyebrow">{t('items.object')}</p>
+                <h2>{t('items.add')}</h2>
               </div>
               <button type="button" className="mini-action-button" onClick={resetCreator}>
-                關閉
+                {t('common.close')}
               </button>
             </div>
 
@@ -447,29 +456,29 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
               onClick={() => createInputRef.current?.click()}
             >
               {createPreview ? (
-                <img src={createPreview} alt="物件圖片預覽" />
+                <img src={createPreview} alt={t('items.imagePreview')} />
               ) : (
-                <span>上載圖片</span>
+                <span>{t('items.uploadImage')}</span>
               )}
             </button>
 
             <label className="settings-field">
-              <span>物件名稱</span>
+              <span>{t('items.name')}</span>
               <input
                 type="text"
                 value={createName}
                 onChange={(event) => setCreateName(event.target.value)}
                 className="ipad-input"
-                placeholder="輸入物件名稱"
+                placeholder={t('items.namePlaceholder')}
               />
             </label>
 
             <div className="settings-actions">
               <button type="button" className="ipad-button secondary-button" onClick={resetCreator}>
-                取消
+                {t('common.cancel')}
               </button>
               <button type="button" className="ipad-button primary-button" onClick={handleCreateItem}>
-                {isCreating ? '建立中' : '建立'}
+                {isCreating ? t('groups.creating') : t('groups.create')}
               </button>
             </div>
           </section>
@@ -478,15 +487,15 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
       {editingItem && (
         <div className="dynamic-modal-overlay">
-          <button type="button" className="settings-scrim" onClick={resetEditor} aria-label="關閉" />
+          <button type="button" className="settings-scrim" onClick={resetEditor} aria-label={t('common.close')} />
           <section className="dynamic-create-modal">
             <div className="settings-heading">
               <div>
-                <p className="eyebrow">物件</p>
-                <h2>編輯物件</h2>
+                <p className="eyebrow">{t('items.object')}</p>
+                <h2>{t('items.edit')}</h2>
               </div>
               <button type="button" className="mini-action-button" onClick={resetEditor}>
-                關閉
+                {t('common.close')}
               </button>
             </div>
 
@@ -504,29 +513,29 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
               onClick={() => editInputRef.current?.click()}
             >
               {editPreview ? (
-                <img src={editPreview} alt="物件圖片預覽" />
+                <img src={editPreview} alt={t('items.imagePreview')} />
               ) : (
-                <span>更換圖片</span>
+                <span>{t('items.replaceImage')}</span>
               )}
             </button>
 
             <label className="settings-field">
-              <span>物件名稱</span>
+              <span>{t('items.name')}</span>
               <input
                 type="text"
                 value={editName}
                 onChange={(event) => setEditName(event.target.value)}
                 className="ipad-input"
-                placeholder="輸入物件名稱"
+                placeholder={t('items.namePlaceholder')}
               />
             </label>
 
             <div className="settings-actions">
               <button type="button" className="ipad-button secondary-button" onClick={resetEditor}>
-                取消
+                {t('common.cancel')}
               </button>
               <button type="button" className="ipad-button primary-button" onClick={handleUpdateItem}>
-                {isSavingEdit ? '儲存中' : '儲存'}
+                {isSavingEdit ? t('groups.saving') : t('common.save')}
               </button>
             </div>
           </section>
@@ -537,7 +546,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
         <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span>
         {group.items.length > 0 && (
           <button type="button" className="ipad-button primary-button" onClick={() => onOpenControl()}>
-            進入控制頁
+            {t('items.enterControl')}
           </button>
         )}
       </div>

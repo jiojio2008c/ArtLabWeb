@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   addDynamicItem,
@@ -35,7 +36,10 @@ import {
   type DynamicMoveTrack
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
-import { syncDynamicGroupToReceiver } from '../services/dynamicArtReceiverSync.ts'
+import {
+  syncDynamicGroupToReceiver,
+  type SyncStatus
+} from '../services/dynamicArtReceiverSync.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
 import DynamicAnimationPreview, {
   DYNAMIC_ANIMATION_PREVIEWS,
@@ -181,12 +185,6 @@ const normalizeRotation = (value: number) => {
 
 const getTrack = (y: number) => getDynamicMoveTrackFromPosition(y)
 
-const getTrackLabel = (track: DynamicMoveTrack) => {
-  if (track === 'top') return '上'
-  if (track === 'bottom') return '下'
-  return '中'
-}
-
 const getBackgrounds = (nextGroup: DynamicGroup) => {
   if (nextGroup.backgrounds?.length) return nextGroup.backgrounds
   return nextGroup.background ? [nextGroup.background] : []
@@ -203,26 +201,26 @@ const toBackgroundPayload = (background?: DynamicBackground) => (
     : null
 )
 
-const motionOptions: { id: DynamicMoveMode; label: string; icon: string }[] = [
-  { id: 'none', label: '停止', icon: 'none' },
-  { id: 'verticalWave', label: '上下', icon: 'wave' },
-  { id: 'left', label: '左移', icon: 'left' },
-  { id: 'right', label: '右移', icon: 'right' },
-  { id: 'orbit', label: '360回環', icon: 'orbit' },
-  { id: 'random', label: '隨機', icon: 'random' }
+const motionOptions: { id: DynamicMoveMode; labelKey: string; icon: string }[] = [
+  { id: 'none', labelKey: 'control.motionNone', icon: 'none' },
+  { id: 'verticalWave', labelKey: 'control.motionVertical', icon: 'wave' },
+  { id: 'left', labelKey: 'control.motionLeft', icon: 'left' },
+  { id: 'right', labelKey: 'control.motionRight', icon: 'right' },
+  { id: 'orbit', labelKey: 'control.motionOrbit', icon: 'orbit' },
+  { id: 'random', labelKey: 'control.motionRandom', icon: 'random' }
 ]
 
-const trackOptions: { id: DynamicMoveTrack; label: string }[] = [
-  { id: 'top', label: '上' },
-  { id: 'middle', label: '中' },
-  { id: 'bottom', label: '下' }
+const trackOptions: { id: DynamicMoveTrack; labelKey: string }[] = [
+  { id: 'top', labelKey: 'control.trackTop' },
+  { id: 'middle', labelKey: 'control.trackMiddle' },
+  { id: 'bottom', labelKey: 'control.trackBottom' }
 ]
 
-const copyFieldOptions: { id: DynamicCopyField; label: string }[] = [
-  { id: 'motion', label: '移動方式' },
-  { id: 'animation', label: '動畫' },
-  { id: 'size', label: '大小' },
-  { id: 'deform', label: '變形' }
+const copyFieldOptions: { id: DynamicCopyField; labelKey: string }[] = [
+  { id: 'motion', labelKey: 'control.motion' },
+  { id: 'animation', labelKey: 'control.animation' },
+  { id: 'size', labelKey: 'control.size' },
+  { id: 'deform', labelKey: 'control.deform' }
 ]
 
 const ALL_COPY_FIELDS = copyFieldOptions.map((option) => option.id)
@@ -387,6 +385,7 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
   onImageLoad,
   onImageError
 }) => {
+  const { t } = useTranslation()
   const imageRef = useRef<HTMLImageElement>(null)
   const [retryToken, setRetryToken] = useState(0)
   const [walkReady, setWalkReady] = useState(false)
@@ -430,7 +429,7 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
       {walkActive && (
         <WalkAnimationCanvas
           src={src}
-          ariaLabel={`${name}行走動畫`}
+          ariaLabel={t('animation.namedWalk', { name })}
           replayKey={replayId}
           onFirstFrame={() => setWalkReady(true)}
           className={`dynamic-stage-item-visual dynamic-stage-item-walk ${walkReady ? 'is-ready' : ''}`}
@@ -665,6 +664,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   onGroupChange,
   initialItemId
 }) => {
+  const { t } = useTranslation()
   const stageRef = useRef<HTMLDivElement>(null)
   const stageBackgroundVideoRef = useRef<HTMLVideoElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -738,13 +738,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [selectedCopyFields, setSelectedCopyFields] = useState<DynamicCopyField[]>(ALL_COPY_FIELDS)
   const [copyConfirmOpen, setCopyConfirmOpen] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
-  const [copyError, setCopyError] = useState('')
+  const [copyErrorKey, setCopyErrorKey] = useState('')
   const [copyFeedbackItemId, setCopyFeedbackItemId] = useState('')
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false)
   const [imagePreviewTransform, setImagePreviewTransform] = useState<ImagePreviewTransform>({ scale: 1, x: 0, y: 0 })
   const [isEditingItemName, setIsEditingItemName] = useState(false)
   const [itemNameDraft, setItemNameDraft] = useState('')
-  const [itemNameError, setItemNameError] = useState('')
+  const [itemNameErrorKey, setItemNameErrorKey] = useState('')
   const [isSavingItemName, setIsSavingItemName] = useState(false)
   const [draggedLayerItemId, setDraggedLayerItemId] = useState('')
   const [pressedLayerItemId, setPressedLayerItemId] = useState('')
@@ -759,8 +759,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [itemImageSizes, setItemImageSizes] = useState<Record<string, MediaSize>>({})
   const [readyItemMediaIds, setReadyItemMediaIds] = useState<Record<string, boolean>>({})
   const [isAddingLayerItem, setIsAddingLayerItem] = useState(false)
-  const [receiverSyncStatus, setReceiverSyncStatus] = useState('')
-  const [receiverSyncError, setReceiverSyncError] = useState('')
+  const [receiverSyncStatus, setReceiverSyncStatus] = useState<SyncStatus | 'complete' | null>(null)
+  const [receiverSyncError, setReceiverSyncError] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
   const [previewReplayId, setPreviewReplayId] = useState(0)
   const [previewBackgroundId, setPreviewBackgroundId] = useState(group.background?.id ?? '')
@@ -882,14 +882,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setAppearPanelOpen(false)
     setCopyConfirmOpen(false)
     setIsCopying(false)
-    setCopyError('')
+    setCopyErrorKey('')
     setCopiedSourceItemId('')
     setSelectedCopyFields([...ALL_COPY_FIELDS])
     setIsImagePreviewOpen(false)
     setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
     setIsEditingItemName(false)
     setItemNameDraft('')
-    setItemNameError('')
+    setItemNameErrorKey('')
     setIsSavingItemName(false)
     setSelectedLayerItemIds([])
     setSelectedBackgroundIds([])
@@ -898,14 +898,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   useEffect(() => {
     setCopyConfirmOpen(false)
-    setCopyError('')
+    setCopyErrorKey('')
     setCopiedSourceItemId((currentId) => currentId === selectedItemId ? '' : currentId)
     setIsImagePreviewOpen(false)
     setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
     imagePreviewPointersRef.current.clear()
     imagePreviewGestureRef.current = null
     setIsEditingItemName(false)
-    setItemNameError('')
+    setItemNameErrorKey('')
     setItemNameDraft(latestGroupRef.current.items.find((item) => item.id === selectedItemId)?.name ?? '')
   }, [selectedItemId])
 
@@ -946,7 +946,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       }
       if (isCopying) return
       setCopyConfirmOpen(false)
-      setCopyError('')
+      setCopyErrorKey('')
       window.requestAnimationFrame(() => copyReturnFocusRef.current?.focus({ preventScroll: true }))
     }
     window.addEventListener('keydown', handleModalKeyDown)
@@ -1077,28 +1077,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     let cancelled = false
     let clearTimer: number | undefined
 
-    setReceiverSyncError('')
+    setReceiverSyncError(false)
+    setReceiverSyncStatus(null)
     void syncDynamicGroupToReceiver({
       group,
       ip: wsIp,
       port: dynamicPort,
       onStatus: (status) => {
-        if (!cancelled) setReceiverSyncStatus(status.label)
+        if (!cancelled) setReceiverSyncStatus(status)
       }
     })
       .then((synced) => {
         if (cancelled || !synced) return
-        setReceiverSyncStatus('作品檔案已同步')
+        setReceiverSyncStatus('complete')
         clearTimer = window.setTimeout(() => {
-          setReceiverSyncStatus('')
+          setReceiverSyncStatus(null)
         }, 1600)
       })
       .catch(() => {
         if (cancelled) return
-        setReceiverSyncStatus('')
-        setReceiverSyncError('作品檔案同步失敗，請確認藝術畫廊已開啟。')
+        setReceiverSyncStatus(null)
+        setReceiverSyncError(true)
         clearTimer = window.setTimeout(() => {
-          setReceiverSyncError('')
+          setReceiverSyncError(false)
         }, 2600)
       })
 
@@ -1566,7 +1567,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
     const currentGroup = latestGroupRef.current
     if (currentGroup.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
-      window.alert('每個作品檔案最多可建立 30 張圖片。')
+      window.alert(t('items.limitReached'))
       return
     }
 
@@ -1763,7 +1764,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const handleBackgroundDelete = async () => {
     if (selectedBackgroundIds.length === 0) return
 
-    const confirmed = window.confirm('確定要刪除選取的背景？')
+    const confirmed = window.confirm(t('control.confirmDeleteBackgrounds'))
     if (!confirmed) return
 
     const previousActiveId = group.background?.id
@@ -1818,7 +1819,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleItemDelete = async (itemId: string) => {
-    const confirmed = window.confirm('確定要刪除此圖片？')
+    const confirmed = window.confirm(t('items.confirmDelete'))
     if (!confirmed) return
 
     const nextGroup = await deleteDynamicItem(group.id, itemId)
@@ -1851,7 +1852,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const handleLayerBulkDelete = async () => {
     if (selectedLayerItemIds.length === 0) return
 
-    const confirmed = window.confirm(`確定要刪除選取的 ${selectedLayerItemIds.length} 個物件？`)
+    const confirmed = window.confirm(t('control.confirmDeleteObjects', { count: selectedLayerItemIds.length }))
     if (!confirmed) return
 
     const deletedIds = [...selectedLayerItemIds]
@@ -2062,13 +2063,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const startItemNameEdit = () => {
     if (!selectedItem || isSavingItemName) return
     setItemNameDraft(selectedItem.name)
-    setItemNameError('')
+    setItemNameErrorKey('')
     setIsEditingItemName(true)
   }
 
   const cancelItemNameEdit = () => {
     setItemNameDraft(selectedItem?.name ?? '')
-    setItemNameError('')
+    setItemNameErrorKey('')
     setIsEditingItemName(false)
   }
 
@@ -2076,7 +2077,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!selectedItem || isSavingItemName) return
     const nextName = itemNameDraft.trim()
     if (!nextName) {
-      setItemNameError('名稱不能留空')
+      setItemNameErrorKey('control.nameRequired')
       propertyNameInputRef.current?.focus({ preventScroll: true })
       return
     }
@@ -2086,14 +2087,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
 
     setIsSavingItemName(true)
-    setItemNameError('')
+    setItemNameErrorKey('')
     try {
       clearPendingTransformPersist()
       upsertDynamicGroup(latestGroupRef.current)
       const nextGroup = await updateDynamicItemMeta(group.id, selectedItem.id, { name: nextName })
       const updatedItem = nextGroup?.items.find((item) => item.id === selectedItem.id)
       if (!nextGroup || !updatedItem) {
-        setItemNameError('無法儲存名稱，請重試')
+        setItemNameErrorKey('control.nameSaveFailed')
         return
       }
 
@@ -2112,7 +2113,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       setIsEditingItemName(false)
       playUiSound('success')
     } catch {
-      setItemNameError('無法儲存名稱，請重試')
+      setItemNameErrorKey('control.nameSaveFailed')
     } finally {
       setIsSavingItemName(false)
     }
@@ -2131,14 +2132,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     copyReturnFocusRef.current = trigger
     setCopiedSourceItemId(sourceItemId)
     setSelectedCopyFields([...ALL_COPY_FIELDS])
-    setCopyError('')
+    setCopyErrorKey('')
     setCopyConfirmOpen(true)
   }
 
   const closeCopyConfirm = () => {
     if (isCopying) return
     setCopyConfirmOpen(false)
-    setCopyError('')
+    setCopyErrorKey('')
     window.requestAnimationFrame(() => copyReturnFocusRef.current?.focus({ preventScroll: true }))
   }
 
@@ -2149,7 +2150,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const sourceItemId = copySourceItem.id
     const copyFields = [...selectedCopyFields]
     setIsCopying(true)
-    setCopyError('')
+    setCopyErrorKey('')
     try {
       const nextGroup = await copyDynamicItemSettings(
         group.id,
@@ -2159,7 +2160,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         latestGroupRef.current
       )
       if (!nextGroup) {
-        setCopyError('無法複製屬性，請確認來源物件仍然存在。')
+        setCopyErrorKey('control.copySourceMissing')
         return
       }
 
@@ -2222,7 +2223,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         copyFeedbackTimerRef.current = null
       }, 1400)
     } catch {
-      setCopyError('無法複製屬性，請重試。')
+      setCopyErrorKey('control.copyFailed')
     } finally {
       setIsCopying(false)
     }
@@ -2887,6 +2888,25 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     selectItem(itemId, false)
   }
 
+  const receiverSyncMessage = receiverSyncError
+    ? t('sync.failed')
+    : receiverSyncStatus === 'complete'
+      ? t('sync.complete')
+      : receiverSyncStatus
+        ? t(`sync.${receiverSyncStatus.phase}`, {
+            current: receiverSyncStatus.current ?? 0,
+            total: receiverSyncStatus.total ?? 0
+          })
+        : ''
+  const getTranslatedMotionLabel = (moveMode: DynamicMoveMode) => {
+    const labelKey = motionOptions.find((option) => option.id === moveMode)?.labelKey ?? 'control.motionNone'
+    return t(labelKey)
+  }
+  const getTranslatedTrackLabel = (track: DynamicMoveTrack) => {
+    const labelKey = trackOptions.find((option) => option.id === track)?.labelKey ?? 'control.trackMiddle'
+    return t(labelKey)
+  }
+
   return (
     <main className={`ipad-screen dynamic-control-screen apple-container ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} dynamic-right-panel-${rightPanelMode}`}>
       <header className="ipad-topbar dynamic-control-topbar">
@@ -2897,17 +2917,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               className="ipad-button preview-action secondary-button preview-stop-button"
               onClick={() => setPreviewModeEnabled(false)}
             >
-              停止預覽
+              {t('control.stopPreview')}
             </button>
           </div>
         ) : (
           <>
             <div className="topbar-title-row">
               <button type="button" className="ipad-button ghost-button" onClick={onBack}>
-                返回
+                {t('common.back')}
               </button>
               <div className="min-w-0">
-                <p className="eyebrow">作品檔案</p>
+                <p className="eyebrow">{t('groups.archive')}</p>
                 <h1 className="screen-title">{group.name}</h1>
               </div>
             </div>
@@ -2940,7 +2960,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   }
                 }}
               >
-                出現設定
+                {t('control.appearanceSettings')}
               </button>
               <button
                 type="button"
@@ -2949,14 +2969,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 aria-expanded={backgroundPanelOpen}
                 aria-haspopup="dialog"
               >
-                編輯背景
+                {t('control.editBackground')}
               </button>
               <button
                 type="button"
                 className="ipad-button preview-action primary-button success-button"
                 onClick={() => setPreviewModeEnabled(true)}
               >
-                預覽
+                {t('control.preview')}
               </button>
             </div>
           </>
@@ -2965,7 +2985,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
       {(receiverSyncStatus || receiverSyncError) && (
         <div className={`status-toast ${receiverSyncError ? 'error' : 'success'}`}>
-          {receiverSyncError || receiverSyncStatus}
+          {receiverSyncMessage}
         </div>
       )}
 
@@ -3006,7 +3026,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             ) : (
               <div className="dynamic-empty-stage">
                 <strong>16:9</strong>
-                <span>請新增或選擇背景</span>
+                <span>{t('control.chooseBackgroundPrompt')}</span>
               </div>
             )}
 
@@ -3092,13 +3112,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         {rightPanelMode === 'layers' && (
           <aside
             className="dynamic-layer-panel"
-            aria-label="圖層"
+            aria-label={t('control.layers')}
             style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
             <div className="dynamic-layer-header">
               <div>
-                <p className="eyebrow">舞台結構</p>
-                <h2>圖層 <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
+                <p className="eyebrow">{t('control.stageStructure')}</p>
+                <h2>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
               </div>
               <button
                 type="button"
@@ -3111,8 +3131,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   setAppearPanelOpen(false)
                   layerItemInputRef.current?.click()
                 }}
-                aria-label="新增物件"
-                title="新增物件"
+                aria-label={t('items.add')}
+                title={t('items.add')}
               >
                 +
               </button>
@@ -3125,8 +3145,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   setBackgroundPanelOpen(false)
                   setAppearPanelOpen(false)
                 }}
-                aria-label="收起圖層"
-                title="收起圖層"
+                aria-label={t('control.collapseLayers')}
+                title={t('control.collapseLayers')}
               >
                 ›
               </button>
@@ -3143,16 +3163,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   onChange={toggleAllLayerSelection}
                 />
                 <span aria-hidden="true" />
-                <strong>全選</strong>
+                <strong>{t('common.selectAll')}</strong>
               </label>
-              <span className="dynamic-layer-selected-count">已選 {selectedLayerItemIds.length}</span>
+              <span className="dynamic-layer-selected-count">{t('common.selectedCount', { count: selectedLayerItemIds.length })}</span>
               <button
                 type="button"
                 className="dynamic-layer-bulk-delete danger-inline-button"
                 disabled={selectedLayerItemIds.length === 0}
                 onClick={handleLayerBulkDelete}
               >
-                刪除
+                {t('common.delete')}
               </button>
             </div>
 
@@ -3161,7 +3181,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               className={`dynamic-layer-list ${draggedLayerItemId ? 'is-reordering' : ''}`}
             >
               {layerItems.map((item) => {
-                const motionLabel = motionOptions.find((option) => option.id === item.moveMode)?.label ?? '停止'
+                const motionLabel = getTranslatedMotionLabel(item.moveMode)
                 return (
                   <article
                     key={item.id}
@@ -3176,7 +3196,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       className="dynamic-layer-select"
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
-                      aria-label={`選取 ${item.name}`}
+                      aria-label={t('common.selectNamed', { name: item.name })}
                     >
                       <input
                         type="checkbox"
@@ -3203,7 +3223,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       <img src={item.media.url} alt={item.name} />
                       <span className="dynamic-layer-copy">
                         <strong>{item.name}</strong>
-                        <small>{motionLabel} · 動畫 {item.animationId}</small>
+                        <small>{t('control.layerSummary', { motion: motionLabel, animation: item.animationId })}</small>
                       </span>
                     </button>
                     <div className="dynamic-layer-actions">
@@ -3215,17 +3235,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           event.stopPropagation()
                           selectItem(item.id, true)
                         }}
-                        aria-label={`開啟 ${item.name} 的物件屬性`}
-                        title="物件屬性"
+                        aria-label={t('control.openObjectProperties', { name: item.name })}
+                        title={t('control.objectProperties')}
                       >
-                        屬性
+                        {t('control.properties')}
                       </button>
                       <button
                         type="button"
                         className="dynamic-layer-delete-button"
                         onClick={() => handleItemDelete(item.id)}
-                        aria-label={`刪除 ${item.name}`}
-                        title="刪除物件"
+                        aria-label={t('control.deleteNamed', { name: item.name })}
+                        title={t('items.delete')}
                       >
                         ×
                       </button>
@@ -3247,17 +3267,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               setBackgroundPanelOpen(false)
               setAppearPanelOpen(false)
             }}
-            aria-label="展開圖層"
-            title="展開圖層"
+            aria-label={t('control.expandLayers')}
+            title={t('control.expandLayers')}
           >
-            圖層
+            {t('control.layers')}
           </button>
         )}
 
         {rightPanelMode === 'object' && selectedItem && (
           <aside
             className="dynamic-tool-panel side-right dynamic-property-overlay-panel"
-            aria-label="物件屬性"
+            aria-label={t('control.objectProperties')}
             style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
             <div className={`dynamic-tool-header ${isEditingItemName ? 'is-renaming' : ''}`}>
@@ -3267,8 +3287,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   type="button"
                   className="dynamic-property-thumbnail-button"
                   onClick={openImagePreview}
-                  aria-label={`預覽 ${selectedItem.name}`}
-                  title="預覽圖片"
+                  aria-label={t('control.previewNamed', { name: selectedItem.name })}
+                  title={t('control.previewImage')}
                 >
                   <img src={selectedItem.media.url} alt="" draggable={false} />
                   <span className="dynamic-property-thumbnail-icon" aria-hidden="true">
@@ -3276,7 +3296,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   </span>
                 </button>
                 <div className="dynamic-property-title-copy">
-                  <p className="eyebrow">物件屬性</p>
+                  <p className="eyebrow">{t('control.objectProperties')}</p>
                   {isEditingItemName ? (
                     <div className="dynamic-property-name-editor">
                       <input
@@ -3287,7 +3307,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         disabled={isSavingItemName}
                         onChange={(event) => {
                           setItemNameDraft(event.target.value)
-                          if (itemNameError) setItemNameError('')
+                          if (itemNameErrorKey) setItemNameErrorKey('')
                         }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') {
@@ -3299,17 +3319,17 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                             cancelItemNameEdit()
                           }
                         }}
-                        aria-label="物件名稱"
-                        aria-invalid={Boolean(itemNameError)}
-                        aria-describedby={itemNameError ? 'dynamic-item-name-error' : undefined}
+                        aria-label={t('items.name')}
+                        aria-invalid={Boolean(itemNameErrorKey)}
+                        aria-describedby={itemNameErrorKey ? 'dynamic-item-name-error' : undefined}
                       />
                       <button
                         type="button"
                         className="dynamic-property-name-action cancel"
                         onClick={cancelItemNameEdit}
                         disabled={isSavingItemName}
-                        aria-label="取消修改名稱"
-                        title="取消"
+                        aria-label={t('control.cancelRename')}
+                        title={t('common.cancel')}
                       >
                         <X size={15} strokeWidth={2.5} />
                       </button>
@@ -3318,8 +3338,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         className="dynamic-property-name-action confirm"
                         onClick={() => void saveItemName()}
                         disabled={isSavingItemName || !itemNameDraft.trim()}
-                        aria-label="儲存物件名稱"
-                        title="儲存"
+                        aria-label={t('control.saveObjectName')}
+                        title={t('common.save')}
                       >
                         <Check size={15} strokeWidth={2.7} />
                       </button>
@@ -3329,16 +3349,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       type="button"
                       className="dynamic-property-name-button"
                       onClick={startItemNameEdit}
-                      aria-label={`修改物件名稱：${selectedItem.name}`}
-                      title="修改名稱"
+                      aria-label={t('control.renameNamed', { name: selectedItem.name })}
+                      title={t('control.rename')}
                     >
                       <span>{selectedItem.name}</span>
                       <Pencil size={13} strokeWidth={2.4} aria-hidden="true" />
                     </button>
                   )}
-                  {itemNameError && (
+                  {itemNameErrorKey && (
                     <span id="dynamic-item-name-error" className="dynamic-property-name-error" role="alert">
-                      {itemNameError}
+                      {t(itemNameErrorKey)}
                     </span>
                   )}
                 </div>
@@ -3351,10 +3371,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   setBackgroundPanelOpen(false)
                   setRightPanelCollapsed(false)
                   setIsEditingItemName(false)
-                  setItemNameError('')
+                  setItemNameErrorKey('')
                 }}
-                aria-label="返回圖層"
-                title="返回圖層"
+                aria-label={t('control.backToLayers')}
+                title={t('control.backToLayers')}
               >
                 ×
               </button>
@@ -3362,10 +3382,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
             <div className="tool-tabs dynamic-tool-tabs">
               {[
-                { id: 'motion', label: '移動方式' },
-                { id: 'animation', label: '動畫' },
-                { id: 'transform', label: '變形' },
-                { id: 'copy', label: '屬性複製' }
+                { id: 'motion', labelKey: 'control.motion' },
+                { id: 'animation', labelKey: 'control.animation' },
+                { id: 'transform', labelKey: 'control.deform' },
+                { id: 'copy', labelKey: 'control.copyProperties' }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -3373,7 +3393,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   className={`tool-tab ${visibleActiveTab === tab.id ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.id as ControlTab)}
                 >
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </button>
               ))}
             </div>
@@ -3389,12 +3409,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       onClick={() => handleMotionChange(motion.id)}
                     >
                       <span className={`motion-icon motion-icon-${motion.icon}`} />
-                      <strong>{motion.label}</strong>
+                      <strong>{t(motion.labelKey)}</strong>
                     </button>
                   ))}
                 </div>
                 <label className="dynamic-percent-control">
-                  <span>幅度 {selectedItem.movePercent}% · 軌道 {getTrackLabel(activeTrack)}</span>
+                  <span>{t('control.amplitudeTrack', { percent: selectedItem.movePercent, track: getTranslatedTrackLabel(activeTrack) })}</span>
                   <input
                     type="range"
                     min="0"
@@ -3406,7 +3426,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   />
                 </label>
                 <label className="dynamic-percent-control">
-                  <span>速度 {selectedMoveSpeed}%</span>
+                  <span>{t('control.speedPercent', { percent: selectedMoveSpeed })}</span>
                   <input
                     type="range"
                     min="0"
@@ -3417,8 +3437,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     className="ipad-slider"
                   />
                 </label>
-                <div className="dynamic-track-selector" aria-label="軌道選擇">
-                  <span>軌道</span>
+                <div className="dynamic-track-selector" aria-label={t('control.trackSelection')}>
+                  <span>{t('control.track')}</span>
                   <div className="dynamic-track-buttons">
                     {trackOptions.map((track) => (
                       <button
@@ -3427,7 +3447,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         className={activeTrack === track.id ? 'active' : ''}
                         onClick={() => handleMoveTrackChange(track.id)}
                       >
-                        {track.label}
+                        {t(track.labelKey)}
                       </button>
                     ))}
                   </div>
@@ -3448,13 +3468,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       <span className={`animation-tile-icon animation-tile-icon-${animation.className}`} aria-hidden="true">
                         <span />
                       </span>
-                      <span>{animation.shortLabel}</span>
+                      <span>{t(animation.shortLabelKey)}</span>
                     </button>
                   ))}
                 </div>
                 <div className="dynamic-animation-preview">
                   <DynamicAnimationPreview animationId={selectedItem.animationId} />
-                  <strong>{getDynamicAnimationPreview(selectedItem.animationId).label}</strong>
+                  <strong>{t(getDynamicAnimationPreview(selectedItem.animationId).labelKey)}</strong>
                 </div>
               </div>
             )}
@@ -3463,22 +3483,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <div className="dynamic-tool-body compact">
                 <div className="dynamic-transform-readout dynamic-transform-readout-clean">
                   <span>
-                    <small>縮放</small>
+                    <small>{t('control.scale')}</small>
                     <strong>{Math.round(selectedItem.scale * 100)}%</strong>
                   </span>
                   <span>
-                    <small>旋轉</small>
+                    <small>{t('control.rotation')}</small>
                     <strong>{selectedItem.rotation.toFixed(0)}°</strong>
                   </span>
                 </div>
                 <div className="control-row">
                   <button type="button" className="scale-step-button" onClick={() => handleScaleNudge(-0.1)}>-</button>
-                  <strong>縮放</strong>
+                  <strong>{t('control.scale')}</strong>
                   <button type="button" className="scale-step-button" onClick={() => handleScaleNudge(0.1)}>+</button>
                 </div>
                 <div className="control-row">
                   <button type="button" className="scale-step-button" onClick={() => handleRotationNudge(-5)}>-</button>
-                  <strong>旋轉</strong>
+                  <strong>{t('control.rotation')}</strong>
                   <button type="button" className="scale-step-button" onClick={() => handleRotationNudge(5)}>+</button>
                 </div>
                 <div className="dynamic-deform-stack">
@@ -3488,7 +3508,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       checked={getItemFlipX(selectedItem)}
                       onChange={(event) => handleDeformChange('x', event.target.checked)}
                     />
-                    <span>水平翻轉</span>
+                    <span>{t('control.flipHorizontal')}</span>
                   </label>
                   <label className="toggle-control wide">
                     <input
@@ -3496,7 +3516,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       checked={getItemFlipY(selectedItem)}
                       onChange={(event) => handleDeformChange('y', event.target.checked)}
                     />
-                    <span>垂直翻轉</span>
+                    <span>{t('control.flipVertical')}</span>
                   </label>
                 </div>
               </div>
@@ -3505,8 +3525,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             {visibleActiveTab === 'copy' && (
               <div className="dynamic-tool-body compact">
                 <div className="dynamic-copy-section-heading">
-                  <span>來源物件</span>
-                  <small>{Math.max(0, sortedItems.length - 1)} 個可選</small>
+                  <span>{t('control.sourceObject')}</span>
+                  <small>{t('control.availableCount', { count: Math.max(0, sortedItems.length - 1) })}</small>
                 </div>
                 <div className="copy-source-list">
                   {sortedItems.filter((item) => item.id !== selectedItem.id).map((item) => (
@@ -3525,11 +3545,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     </button>
                   ))}
                   {sortedItems.length <= 1 && (
-                    <span className="copy-empty">暫無其他物件可複製。</span>
+                    <span className="copy-empty">{t('control.noCopySource')}</span>
                   )}
                 </div>
                 {copyFeedbackItemId === selectedItem.id && (
-                  <div className="dynamic-copy-feedback">屬性已複製</div>
+                  <div className="dynamic-copy-feedback">{t('control.propertiesCopied')}</div>
                 )}
               </div>
             )}
@@ -3539,7 +3559,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         {layerDragPreview && (() => {
           const draggedItem = group.items.find((item) => item.id === layerDragPreview.itemId)
           if (!draggedItem) return null
-          const motionLabel = motionOptions.find((option) => option.id === draggedItem.moveMode)?.label ?? '停止'
+          const motionLabel = getTranslatedMotionLabel(draggedItem.moveMode)
           return (
             <div
               className="dynamic-layer-drag-preview"
@@ -3554,7 +3574,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <img src={draggedItem.media.url} alt="" />
               <span>
                 <strong>{draggedItem.name}</strong>
-                <small>{motionLabel} · 動畫 {draggedItem.animationId}</small>
+                <small>{t('control.layerSummary', { motion: motionLabel, animation: draggedItem.animationId })}</small>
               </span>
             </div>
           )
@@ -3583,21 +3603,21 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               )}
               <span className="background-copy">
                 <strong>{draggedBackground.name}</strong>
-                <small>{draggedBackground.type === 'video' ? '影片背景' : '圖片背景'}</small>
+                <small>{draggedBackground.type === 'video' ? t('background.video') : t('background.image')}</small>
               </span>
             </div>
           )
         })(), document.body)}
 
         {!previewMode && appearPanelOpen && (
-          <aside className="dynamic-appear-popover" aria-label="出現設定">
+          <aside className="dynamic-appear-popover" aria-label={t('control.appearanceSettings')}>
             <div className="drawer-heading">
               <div>
-                <p className="eyebrow">舞台</p>
-                <h2>出現設定</h2>
+                <p className="eyebrow">{t('control.stage')}</p>
+                <h2>{t('control.appearanceSettings')}</h2>
               </div>
               <button type="button" className="mini-action-button" onClick={() => setAppearPanelOpen(false)}>
-                關閉
+                {t('common.close')}
               </button>
             </div>
             <div className="dynamic-mode-segmented">
@@ -3606,18 +3626,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 className={group.appearMode === 'sequence' ? 'active' : ''}
                 onClick={() => setAppearMode('sequence')}
               >
-                逐個出現
+                {t('control.appearSequence')}
               </button>
               <button
                 type="button"
                 className={group.appearMode === 'all' ? 'active' : ''}
                 onClick={() => setAppearMode('all')}
               >
-                全部出現
+                {t('control.appearAll')}
               </button>
             </div>
             <label className={`dynamic-percent-control ${group.appearMode === 'all' ? 'disabled' : ''}`}>
-              <span>間隔 {appearIntervalSeconds}s</span>
+              <span>{t('control.intervalSeconds', { value: appearIntervalSeconds })}</span>
               <input
                 type="range"
                 min={MIN_DYNAMIC_APPEAR_INTERVAL_MS}
@@ -3629,7 +3649,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 className="ipad-slider"
               />
             </label>
-            <p className="dynamic-appear-order-note">依圖層順序播放</p>
+            <p className="dynamic-appear-order-note">{t('control.playInLayerOrder')}</p>
           </aside>
         )}
 
@@ -3652,40 +3672,40 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           >
             <div className="drawer-heading dynamic-background-modal-heading">
               <div>
-                <p className="eyebrow">舞台背景</p>
-                <h2 id="background-editor-title">編輯背景 <span>{backgrounds.length} 個素材</span></h2>
+                <p className="eyebrow">{t('control.stageBackground')}</p>
+                <h2 id="background-editor-title">{t('control.editBackground')} <span>{t('control.assetCount', { count: backgrounds.length })}</span></h2>
               </div>
               <button
                 type="button"
                 className="dynamic-panel-close"
                 onClick={closeBackgroundEditor}
-                aria-label="關閉編輯背景"
-                title="關閉"
+                aria-label={t('control.closeBackgroundEditor')}
+                title={t('common.close')}
               >
                 ×
               </button>
             </div>
 
             <div className={`dynamic-background-playback ${group.backgroundPlayMode === 'fixed' ? 'fixed-mode' : ''}`}>
-              <div className="dynamic-mode-segmented" aria-label="背景切換方式">
+              <div className="dynamic-mode-segmented" aria-label={t('control.backgroundPlaybackMode')}>
                 {([
-                  ['fixed', '固定背景'],
-                  ['random', '隨機切換'],
-                  ['sequence', '逐個切換']
-                ] as const).map(([mode, label]) => (
+                  ['fixed', 'control.backgroundFixed'],
+                  ['random', 'control.backgroundRandom'],
+                  ['sequence', 'control.backgroundSequence']
+                ] as const).map(([mode, labelKey]) => (
                   <button
                     key={mode}
                     type="button"
                     className={group.backgroundPlayMode === mode ? 'active' : ''}
                     onClick={() => setBackgroundPlayback(mode)}
                   >
-                    {label}
+                    {t(labelKey)}
                   </button>
                 ))}
               </div>
               {group.backgroundPlayMode !== 'fixed' && (
                 <label className="dynamic-interval-input">
-                  <span>切換間隔</span>
+                  <span>{t('control.switchInterval')}</span>
                   <span className="dynamic-interval-fields">
                     <input
                       type="number"
@@ -3703,15 +3723,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           event.currentTarget.blur()
                         }
                       }}
-                      aria-label="背景切換間隔"
+                      aria-label={t('control.backgroundInterval')}
                     />
                     <select
                       value={backgroundIntervalUnit}
                       onChange={(event) => handleBackgroundIntervalUnitChange(event.target.value as BackgroundIntervalUnit)}
-                      aria-label="背景切換間隔單位"
+                      aria-label={t('control.backgroundIntervalUnit')}
                     >
-                      <option value="seconds">秒</option>
-                      <option value="minutes">分鐘</option>
+                      <option value="seconds">{t('control.seconds')}</option>
+                      <option value="minutes">{t('control.minutes')}</option>
                     </select>
                   </span>
                 </label>
@@ -3729,10 +3749,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   onChange={toggleAllBackgroundSelection}
                 />
                 <span aria-hidden="true" />
-                <strong>全選</strong>
+                <strong>{t('common.selectAll')}</strong>
               </label>
-              <span>按住卡片拖拽可調整播放順序</span>
-              <strong>已選 {selectedBackgroundIds.length}</strong>
+              <span>{t('control.dragBackgroundHint')}</span>
+              <strong>{t('common.selectedCount', { count: selectedBackgroundIds.length })}</strong>
             </div>
 
             <div
@@ -3753,7 +3773,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     className="background-check"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
-                    aria-label={`選取 ${background.name}`}
+                    aria-label={t('common.selectNamed', { name: background.name })}
                   >
                     <input
                       type="checkbox"
@@ -3771,13 +3791,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     )}
                     <span className="background-copy">
                       <strong>{background.name}</strong>
-                      <small>{background.type === 'video' ? '影片背景' : '圖片背景'}</small>
+                      <small>{background.type === 'video' ? t('background.video') : t('background.image')}</small>
                     </span>
                   </button>
                 </article>
               ))}
               {backgrounds.length === 0 && (
-                <div className="background-empty-state">尚未加入背景</div>
+                <div className="background-empty-state">{t('control.noBackgrounds')}</div>
               )}
             </div>
 
@@ -3788,14 +3808,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 disabled={selectedBackgroundIds.length === 0}
                 onClick={handleBackgroundDelete}
               >
-                刪除選取
+                {t('control.deleteSelected')}
               </button>
               <button
                 type="button"
                 className="ipad-button primary-button"
                 onClick={() => backgroundInputRef.current?.click()}
               >
-                新增背景
+                {t('control.addBackground')}
               </button>
             </div>
           </section>
@@ -3813,7 +3833,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           >
             <div className="dynamic-image-preview-heading">
               <div>
-                <p className="eyebrow">物件預覽</p>
+                <p className="eyebrow">{t('control.objectPreview')}</p>
                 <h2 id="dynamic-image-preview-title">{selectedItem.name}</h2>
               </div>
               <div className="dynamic-image-preview-tools">
@@ -3823,8 +3843,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   className="dynamic-image-preview-tool"
                   onClick={resetImagePreview}
                   disabled={imagePreviewTransform.scale === 1 && imagePreviewTransform.x === 0 && imagePreviewTransform.y === 0}
-                  aria-label="重設圖片預覽"
-                  title="重設預覽"
+                  aria-label={t('control.resetImagePreview')}
+                  title={t('control.resetPreview')}
                 >
                   <RotateCcw size={18} strokeWidth={2.2} />
                 </button>
@@ -3833,8 +3853,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   type="button"
                   className="dynamic-panel-close"
                   onClick={closeImagePreview}
-                  aria-label="關閉圖片預覽"
-                  title="關閉"
+                  aria-label={t('control.closeImagePreview')}
+                  title={t('common.close')}
                 >
                   <X size={19} strokeWidth={2.3} />
                 </button>
@@ -3870,13 +3890,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             type="button"
             className="settings-scrim"
             onClick={closeCopyConfirm}
-            aria-label="取消複製"
+            aria-label={t('control.cancelCopy')}
           />
           <section className="dynamic-copy-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="copy-confirm-title">
             <div className="dynamic-copy-confirm-heading">
               <div>
-                <p className="eyebrow">屬性複製</p>
-                <h2 id="copy-confirm-title">確認複製屬性</h2>
+                <p className="eyebrow">{t('control.copyProperties')}</p>
+                <h2 id="copy-confirm-title">{t('control.confirmCopyProperties')}</h2>
               </div>
               <button
                 ref={copyConfirmCloseButtonRef}
@@ -3884,7 +3904,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 className="dynamic-panel-close"
                 onClick={closeCopyConfirm}
                 disabled={isCopying}
-                aria-label="關閉"
+                aria-label={t('common.close')}
               >
                 <X size={18} strokeWidth={2.4} />
               </button>
@@ -3893,20 +3913,20 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             <div className="dynamic-copy-route">
               <div className="dynamic-copy-route-item">
                 <img src={copySourceItem.media.url} alt={copySourceItem.name} />
-                <span>來源</span>
+                <span>{t('control.source')}</span>
                 <strong>{copySourceItem.name}</strong>
               </div>
               <span className="dynamic-copy-route-arrow" aria-hidden="true">→</span>
               <div className="dynamic-copy-route-item target">
                 <img src={selectedItem.media.url} alt={selectedItem.name} />
-                <span>目標</span>
+                <span>{t('control.target')}</span>
                 <strong>{selectedItem.name}</strong>
               </div>
             </div>
 
             <div className="dynamic-copy-confirm-selection">
               <div className="dynamic-copy-section-heading copy-options-heading">
-                <span>複製內容</span>
+                <span>{t('control.copyContent')}</span>
                 <button
                   type="button"
                   className="dynamic-copy-select-all"
@@ -3915,10 +3935,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   )}
                   disabled={isCopying}
                 >
-                  {selectedCopyFields.length === ALL_COPY_FIELDS.length ? '全部取消' : '全選'}
+                  {selectedCopyFields.length === ALL_COPY_FIELDS.length ? t('common.deselectAll') : t('common.selectAll')}
                 </button>
               </div>
-              <div className="dynamic-copy-options dynamic-copy-modal-options" aria-label="複製內容">
+              <div className="dynamic-copy-options dynamic-copy-modal-options" aria-label={t('control.copyContent')}>
                 {copyFieldOptions.map((option) => (
                   <label key={option.id} className="dynamic-copy-option">
                     <input
@@ -3928,14 +3948,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       disabled={isCopying}
                     />
                     <span className="dynamic-copy-checkbox" aria-hidden="true" />
-                    <strong>{option.label}</strong>
+                    <strong>{t(option.labelKey)}</strong>
                   </label>
                 ))}
               </div>
             </div>
 
-            <p className="dynamic-copy-confirm-note">目標物件所選的屬性將被取代，其他屬性維持不變。</p>
-            {copyError && <p className="dynamic-copy-error" role="alert">{copyError}</p>}
+            <p className="dynamic-copy-confirm-note">{t('control.copyReplaceNote')}</p>
+            {copyErrorKey && <p className="dynamic-copy-error" role="alert">{t(copyErrorKey)}</p>}
             <div className="dynamic-copy-confirm-actions">
               <button
                 type="button"
@@ -3943,7 +3963,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 onClick={closeCopyConfirm}
                 disabled={isCopying}
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -3951,7 +3971,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 onClick={() => void handleCopyConfirm()}
                 disabled={selectedCopyFields.length === 0 || isCopying}
               >
-                {isCopying ? '正在複製...' : '確認複製'}
+                {isCopying ? t('control.copying') : t('control.confirmCopy')}
               </button>
             </div>
           </section>

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   drawWalkImage,
   subscribeWalkAnimation
@@ -25,10 +26,12 @@ const WalkAnimationCanvas = ({
   src,
   className,
   style,
-  ariaLabel = '行走動畫',
+  ariaLabel,
   replayKey = 0,
   onFirstFrame
 }: WalkAnimationCanvasProps) => {
+  const { t } = useTranslation()
+  const resolvedAriaLabel = ariaLabel ?? t('animation.walk')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const sizeRef = useRef<CanvasSize>({ width: 0, height: 0, pixelRatio: 1 })
@@ -130,7 +133,7 @@ const WalkAnimationCanvas = ({
       className={className}
       style={style}
       role="img"
-      aria-label={ariaLabel}
+      aria-label={resolvedAriaLabel}
     />
   )
 }

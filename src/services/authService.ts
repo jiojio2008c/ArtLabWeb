@@ -38,7 +38,7 @@ const subscribeToAuthChanges = (
   return () => data.subscription.unsubscribe()
 }
 
-const getLoginErrorMessage = (error: unknown) => {
+const getLoginErrorKey = (error: unknown) => {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
 
   if (
@@ -46,7 +46,7 @@ const getLoginErrorMessage = (error: unknown) => {
     || message.includes('failed to fetch')
     || message.includes('network')
   ) {
-    return '無法連線，請檢查網路後重試。'
+    return 'auth.networkError'
   }
 
   if (
@@ -54,19 +54,19 @@ const getLoginErrorMessage = (error: unknown) => {
     || message.includes('invalid_credentials')
     || message.includes('email not confirmed')
   ) {
-    return '電子郵件或密碼不正確。'
+    return 'auth.invalidCredentials'
   }
 
   if (message.includes('rate limit') || message.includes('too many requests')) {
-    return '嘗試次數過多，請稍後再試。'
+    return 'auth.tooManyAttempts'
   }
 
-  return '暫時無法登入，請稍後再試。'
+  return 'auth.unavailable'
 }
 
 export {
   getCurrentSession,
-  getLoginErrorMessage,
+  getLoginErrorKey,
   loginWithPassword,
   logoutCurrentSession,
   subscribeToAuthChanges

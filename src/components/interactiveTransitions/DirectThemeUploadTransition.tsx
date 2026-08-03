@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { Plus } from 'lucide-react'
 import { gsap } from 'gsap'
+import { useTranslation } from 'react-i18next'
 import type { DynamicTransitionOrigin } from '../dynamicTransitions/types.ts'
 import type { DirectUploadTheme } from '../../services/directUploadThemes.ts'
 
@@ -35,6 +36,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
   onSceneSwitch,
   onComplete
 }) => {
+  const { t } = useTranslation()
   const rootRef = useRef<HTMLDivElement>(null)
   const washRef = useRef<HTMLDivElement>(null)
   const cloneRef = useRef<HTMLDivElement>(null)
@@ -335,12 +337,12 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
           />
         ))}
       </div>
-      <span ref={movingTitleRef} className="direct-theme-upload-moving-title">{theme.label}</span>
+      <span ref={movingTitleRef} className="direct-theme-upload-moving-title">{t(theme.labelKey)}</span>
       <div ref={cloneRef} className="direct-theme-upload-clone">
         <img className="direct-theme-upload-clone-image" src={theme.cover} alt="" />
         <span className="direct-theme-upload-clone-shade" />
         <div className="direct-theme-upload-clone-copy">
-          <strong>{theme.label}</strong>
+          <strong>{t(theme.labelKey)}</strong>
         </div>
         <span ref={clonePlusRef} className="direct-theme-upload-clone-plus">
           <Plus />

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { loadArtworkForIp, loadThumbnailsForIp, type StoredArtwork } from '../services/artworkStorage.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
@@ -11,6 +12,7 @@ interface HomePageProps {
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange, onBackToEntry }) => {
+  const { t } = useTranslation()
   const [thumbnails, setThumbnails] = useState<Record<number, string>>(() => {
     if (wsIp.trim()) return loadThumbnailsForIp(wsIp.trim())
     return {}
@@ -83,11 +85,11 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange,
       <header className="ipad-topbar">
         <div className="topbar-title-row">
           <button type="button" onClick={onBackToEntry} className="ipad-button ghost-button">
-            返回入口
+            {t('legacyHome.back')}
           </button>
           <div className="min-w-0">
             <p className="eyebrow">MagicFloor</p>
-            <h1 className="screen-title">作品控制上載</h1>
+            <h1 className="screen-title">{t('legacyHome.title')}</h1>
           </div>
         </div>
 
@@ -98,15 +100,15 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange,
               type="text"
               value={wsIp}
               onChange={(event) => onWsIpChange(event.target.value)}
-              placeholder="藝術畫廊 IP"
+              placeholder={t('legacyHome.ipPlaceholder')}
               className="ipad-input ip-input"
             />
             <button type="button" onClick={handleLoadConfig} className="ipad-button compact-button">
-              載入
+              {t('common.load')}
             </button>
             <span className="port-chip">:{CONTROL_PORT}</span>
           </div>
-          <span className="status-pill">HTTP 直送</span>
+          <span className="status-pill">{t('legacyHome.directHttp')}</span>
         </div>
       </header>
 
@@ -116,18 +118,18 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange,
           <div className="showcase-shade" />
           <div className="showcase-content">
             <p className="eyebrow light">MagicFloor</p>
-            <h2>選擇一個作品槽位</h2>
-            <p>進入已有作品可直接打開控制頁；空槽位會進入上載流程。</p>
+            <h2>{t('legacyHome.selectSlot')}</h2>
+            <p>{t('legacyHome.slotHelp')}</p>
           </div>
         </div>
 
         <div className="slot-workspace">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">作品槽位</p>
-              <h2>作品槽位</h2>
+              <p className="eyebrow">{t('legacyHome.slots')}</p>
+              <h2>{t('legacyHome.slots')}</h2>
             </div>
-            <span className="status-pill">{Object.keys(thumbnails).length}/20 已快取</span>
+            <span className="status-pill">{t('legacyHome.cached', { count: Object.keys(thumbnails).length })}</span>
           </div>
 
           <div className="slot-grid">
@@ -137,10 +139,10 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectObject, wsIp, onWsIpChange,
                 type="button"
                 onClick={() => handleObjectClick(index)}
                 className={`slot-tile ${thumbnails[index] ? 'has-thumbnail' : ''} ${selectedSlot === index ? 'is-selected' : ''}`}
-                aria-label={`選擇作品槽位 ${index}`}
+                aria-label={t('legacyHome.selectSlotLabel', { index })}
               >
                 {thumbnails[index] ? (
-                  <img src={thumbnails[index]} alt={`作品槽位 ${index}`} />
+                  <img src={thumbnails[index]} alt={t('legacyHome.slotAlt', { index })} />
                 ) : (
                   <span className="slot-empty">{String(index).padStart(2, '0')}</span>
                 )}

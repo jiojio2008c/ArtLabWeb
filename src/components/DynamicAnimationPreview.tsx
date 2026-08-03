@@ -1,23 +1,24 @@
 import WalkAnimationCanvas from './WalkAnimationCanvas.tsx'
+import { useTranslation } from 'react-i18next'
 
 interface DynamicAnimationPreviewMeta {
   id: number
-  label: string
-  shortLabel: string
+  labelKey: string
+  shortLabelKey: string
   className: string
 }
 
 export const DYNAMIC_ANIMATION_PREVIEWS: DynamicAnimationPreviewMeta[] = [
-  { id: 0, label: '無動畫', shortLabel: '無', className: 'none' },
-  { id: 1, label: '呼吸縮放', shortLabel: '呼吸', className: 'breathe' },
-  { id: 2, label: '搖擺', shortLabel: '搖擺', className: 'swing' },
-  { id: 3, label: '閃爍', shortLabel: '閃爍', className: 'blink' },
-  { id: 4, label: '輕微旋轉', shortLabel: '旋轉', className: 'rotate' },
-  { id: 5, label: '彈跳', shortLabel: '彈跳', className: 'bounce' },
-  { id: 6, label: '波動', shortLabel: '波動', className: 'wave' },
-  { id: 7, label: '快速翻轉', shortLabel: '翻轉', className: 'flip' },
-  { id: 8, label: '透明脈衝', shortLabel: '脈衝', className: 'pulse' },
-  { id: 9, label: '行走', shortLabel: '行走', className: 'walk' }
+  { id: 0, labelKey: 'animation.none', shortLabelKey: 'animation.shortNone', className: 'none' },
+  { id: 1, labelKey: 'animation.breathe', shortLabelKey: 'animation.shortBreathe', className: 'breathe' },
+  { id: 2, labelKey: 'animation.swing', shortLabelKey: 'animation.shortSwing', className: 'swing' },
+  { id: 3, labelKey: 'animation.blink', shortLabelKey: 'animation.shortBlink', className: 'blink' },
+  { id: 4, labelKey: 'animation.rotate', shortLabelKey: 'animation.shortRotate', className: 'rotate' },
+  { id: 5, labelKey: 'animation.bounce', shortLabelKey: 'animation.shortBounce', className: 'bounce' },
+  { id: 6, labelKey: 'animation.wave', shortLabelKey: 'animation.shortWave', className: 'wave' },
+  { id: 7, labelKey: 'animation.flip', shortLabelKey: 'animation.shortFlip', className: 'flip' },
+  { id: 8, labelKey: 'animation.pulse', shortLabelKey: 'animation.shortPulse', className: 'pulse' },
+  { id: 9, labelKey: 'animation.walk', shortLabelKey: 'animation.shortWalk', className: 'walk' }
 ]
 
 export const getDynamicAnimationPreview = (animationId: number) => (
@@ -29,12 +30,13 @@ interface DynamicAnimationPreviewProps {
 }
 
 const DynamicAnimationPreview = ({ animationId }: DynamicAnimationPreviewProps) => {
+  const { t } = useTranslation()
   const preview = getDynamicAnimationPreview(animationId)
 
   return (
     <div
       className={`dynamic-animation-preview-stage dynamic-animation-preview-stage-${preview.className}`}
-      aria-label={`${preview.label}預覽`}
+      aria-label={t('animation.preview', { name: t(preview.labelKey) })}
     >
       <div className="dynamic-animation-preview-backdrop" />
       <div className="dynamic-animation-preview-floor" />
@@ -43,7 +45,7 @@ const DynamicAnimationPreview = ({ animationId }: DynamicAnimationPreviewProps) 
           <WalkAnimationCanvas
             src="/AnimationPreview/user_landscape.png"
             className="dynamic-animation-preview-walk-canvas"
-            ariaLabel="行走動畫預覽"
+            ariaLabel={t('animation.walkPreview')}
             replayKey={preview.id}
           />
         ) : (

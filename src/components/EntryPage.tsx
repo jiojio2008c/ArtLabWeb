@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Settings } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import type { DynamicGroup, DynamicMedia } from '../services/dynamicArtStorage.ts'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
@@ -41,6 +42,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
   transitioning = false,
   transitionType
 }) => {
+  const { t } = useTranslation()
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
   const [dynamicPeekOpen, setDynamicPeekOpen] = useState(false)
@@ -135,7 +137,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
           className="settings-icon-button"
           onClick={onOpenSettings}
           disabled={transitioning}
-          aria-label="設定"
+          aria-label={t('home.settings')}
         >
           <Settings aria-hidden="true" />
         </button>
@@ -158,13 +160,13 @@ const EntryPage: React.FC<EntryPageProps> = ({
             <span className="entry-choice-image-shell">
               <img src="/MainIcon/8080.png" alt="" className="entry-choice-icon" draggable={false} />
             </span>
-            <span>動態藝術</span>
+            <span>{t('home.dynamicArt')}</span>
             <i className="dynamic-portal-card-grid" aria-hidden="true" />
             <i className="dynamic-portal-card-corners" aria-hidden="true" />
           </button>
 
           {dynamicPeekOpen && (
-            <div className="entry-dynamic-peek" aria-label="作品檔案預覽">
+            <div className="entry-dynamic-peek" aria-label={t('home.archivePreview')}>
               {previewGroups.length > 0 ? (
                 previewGroups.map((group, groupIndex) => {
                   const media = getGroupPreviewMedia(group)
@@ -176,7 +178,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
                       className="entry-group-bubble"
                       style={{ '--bubble-index': groupIndex } as React.CSSProperties}
                       onClick={(event) => handleGroupBubbleClick(group, event.currentTarget)}
-                      aria-label={`開啟 ${group.name}`}
+                      aria-label={t('home.openArchive', { name: group.name })}
                     >
                       <div className="entry-group-thumb">
                         {media ? (
@@ -212,7 +214,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
                   <div className="entry-group-thumb">
                     <span>+</span>
                   </div>
-                  <strong>新作品檔案</strong>
+                  <strong>{t('home.newArchive')}</strong>
                   <div className="entry-item-bubbles">
                     <span className="entry-item-bubble empty" />
                     <span className="entry-item-bubble empty" />
@@ -237,7 +239,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
           <span className="entry-choice-image-shell">
             <img src="/MainIcon/Magic_floor_UI_art.png" alt="" className="entry-choice-icon" draggable={false} />
           </span>
-          <span>互動藝術</span>
+          <span>{t('home.interactiveArt')}</span>
           <i className="interactive-magic-card-aura" aria-hidden="true" />
         </button>
       </section>
