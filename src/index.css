@@ -11504,14 +11504,29 @@ button.ui-pressed {
   transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 220ms ease;
 }
 
-.entry-screen .entry-choice-card > span:not(.entry-choice-image-shell) {
+.entry-screen .entry-choice-card > .entry-choice-title {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.24em;
+  padding: 0 2px;
+  display: grid;
+  place-items: center;
   color: #fff;
-  font-size: clamp(27px, 2.5vw, 34px);
+  font-size: 32px;
   font-weight: 900;
-  line-height: 1.18;
+  line-height: 1.12;
   text-align: center;
   text-shadow: 0 2px 3px rgba(6, 12, 29, 0.76), 0 0 14px rgba(181, 170, 255, 0.22);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+@media (max-width: 1100px) {
+  .entry-screen .entry-choice-card > .entry-choice-title {
+    font-size: 28px;
+  }
 }
 
 .entry-screen .entry-choice-card:hover,
@@ -12245,5 +12260,81 @@ button.ui-pressed {
 
   .direct-theme-upload-trace {
     display: none;
+  }
+}
+
+/* Keep translated Dynamic Art library controls inside the iPad top bar. */
+.dynamic-library-topbar {
+  min-width: 0;
+  gap: 16px;
+}
+
+.dynamic-library-topbar .topbar-title-row {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dynamic-library-topbar .topbar-title-row > .min-w-0 {
+  min-width: 0;
+}
+
+:is(.dynamic-screen, .dynamic-control-screen)
+  > .dynamic-library-topbar
+  .topbar-title-row
+  > .dynamic-library-back {
+  width: auto;
+  min-width: var(--dynamic-nav-width);
+  max-width: 190px;
+  flex: 0 1 auto;
+}
+
+.dynamic-library-topbar .dynamic-library-back span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-toolbar-actions,
+.dynamic-library-sort,
+.dynamic-library-sort select {
+  min-width: 0;
+}
+
+.dynamic-library-toolbar-actions {
+  flex: 0 1 auto;
+}
+
+.dynamic-library-sort select {
+  max-width: 170px;
+  text-overflow: ellipsis;
+}
+
+.dynamic-library-create-action span {
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  :is(.dynamic-screen, .dynamic-control-screen)
+    > .dynamic-library-topbar
+    .topbar-title-row
+    > .dynamic-library-back {
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    padding: 0;
+  }
+
+  .dynamic-library-topbar .dynamic-library-back span,
+  .dynamic-library-topbar .dynamic-library-sort > span {
+    display: none;
+  }
+
+  .dynamic-library-topbar .dynamic-library-sort select {
+    max-width: 140px;
+  }
+
+  .dynamic-library-topbar .dynamic-library-create-action {
+    padding-inline: 11px;
   }
 }

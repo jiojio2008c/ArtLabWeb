@@ -160,7 +160,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
             <span className="entry-choice-image-shell">
               <img src="/MainIcon/8080.png" alt="" className="entry-choice-icon" draggable={false} />
             </span>
-            <span>{t('home.dynamicArt')}</span>
+            <span className="entry-choice-title">{t('home.dynamicArt')}</span>
             <i className="dynamic-portal-card-grid" aria-hidden="true" />
             <i className="dynamic-portal-card-corners" aria-hidden="true" />
           </button>
@@ -239,7 +239,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
           <span className="entry-choice-image-shell">
             <img src="/MainIcon/Magic_floor_UI_art.png" alt="" className="entry-choice-icon" draggable={false} />
           </span>
-          <span>{t('home.interactiveArt')}</span>
+          <span className="entry-choice-title">{t('home.interactiveArt')}</span>
           <i className="interactive-magic-card-aura" aria-hidden="true" />
         </button>
       </section>
