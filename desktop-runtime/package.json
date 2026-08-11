@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "pack:dir": "electron-builder --win dir",
-    "pack:portable": "electron-builder --win portable"
+    "pack:portable": "electron-builder --win portable",
+    "pack:vertical-flip": "electron-builder --config electron-builder.vertical-flip.json --win"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -21,6 +22,7 @@
     },
     "files": [
       "main.js",
+      "main.vertical-flip.js",
       "preload.js",
       "renderer/**/*",
       "package.json"

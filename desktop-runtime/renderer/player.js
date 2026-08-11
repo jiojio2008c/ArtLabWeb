@@ -3,15 +3,47 @@ import {
   drawWalkImage
 } from './walk-animation-core.js'
 import { sampleItemAnimation } from './item-animation-core.js'
+import {
+  RIPPLE_DURATION_MS,
+  createAnimationOverrideStore,
+  mapClientPointToStage,
+  sampleRipple
+} from './interaction-core.js'
+import { createInteractionAudio } from './interaction-audio.js'
+import {
+  MAX_WATER_RIPPLES,
+  createWaterRippleRenderer
+} from './water-ripple-renderer.js'
 
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
+const REFERENCE_PREVIEW_STAGE_HEIGHT = 540
+const VERTICAL_TRACK_EDGE_PADDING_RATIO = 28 / REFERENCE_PREVIEW_STAGE_HEIGHT
+const VERTICAL_OUT_PADDING_RATIO = Math.max(0.22, 120 / REFERENCE_PREVIEW_STAGE_HEIGHT)
 
+const pageParams = new URLSearchParams(window.location.search)
+const displayFlipMode = pageParams.get('displayFlip')
+const pointerFlipMode = pageParams.get('pointerFlip') ?? displayFlipMode
+const isHorizontalDisplayFlip = displayFlipMode === 'horizontal' || displayFlipMode === 'both'
+const isVerticalDisplayFlip = displayFlipMode === 'vertical' || displayFlipMode === 'both'
+const isHorizontalPointerFlip = pointerFlipMode === 'horizontal' || pointerFlipMode === 'both'
+const isVerticalPointerFlip = pointerFlipMode === 'vertical' || pointerFlipMode === 'both'
+const displayRoot = document.getElementById('displayRoot')
 const canvas = document.getElementById('stage')
 const context = canvas.getContext('2d')
+const backgroundCanvas = document.getElementById('backgroundStage')
+const backgroundSourceCanvas = document.createElement('canvas')
+const backgroundSourceContext = backgroundSourceCanvas.getContext('2d')
 const statusPanel = document.getElementById('statusPanel')
 const statusText = document.getElementById('statusText')
 const groupText = document.getElementById('groupText')
+
+displayRoot?.classList.toggle('is-horizontal-flipped', isHorizontalDisplayFlip)
+displayRoot?.classList.toggle('is-vertical-flipped', isVerticalDisplayFlip)
+
+backgroundSourceCanvas.width = STAGE_WIDTH
+backgroundSourceCanvas.height = STAGE_HEIGHT
+const waterRippleRenderer = createWaterRippleRenderer(backgroundCanvas)
 
 let runtimeState = {
   activeGroupId: null,
@@ -30,7 +62,8 @@ let runtimeState = {
     status: 'starting',
     port: 8080,
     addresses: []
-  }
+  },
+  lastEvent: null
 }
 
 let serverStatus = runtimeState.server
@@ -41,10 +74,22 @@ let lastPreviewKey = ''
 let previewStartTime = performance.now()
 let lastDrawnBackgroundAssetId = ''
 let randomBackgroundState = { key: '', cycle: 0, index: 0 }
+let lastStateEventSequence = 0
+let ripples = []
+let alphaHitWarningShown = false
 
 const imageCache = new Map()
 const videoCache = new Map()
 const RANDOM_PREVIEW_MOTION_MODES = ['verticalWave', 'left', 'right', 'orbit']
+const HIT_SAMPLE_SIZE = 9
+const HIT_ALPHA_THRESHOLD = 18
+const hitCanvas = document.createElement('canvas')
+const hitContext = hitCanvas.getContext('2d', { willReadFrequently: true })
+const animationOverrides = createAnimationOverrideStore()
+const interactionAudio = createInteractionAudio()
+
+hitCanvas.width = HIT_SAMPLE_SIZE
+hitCanvas.height = HIT_SAMPLE_SIZE
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const lerp = (a, b, t) => a + (b - a) * t
@@ -80,6 +125,10 @@ const resizeCanvas = () => {
   canvas.height = Math.round(height * dpr)
   canvas.style.width = `${width}px`
   canvas.style.height = `${height}px`
+  backgroundCanvas.width = Math.round(width * dpr)
+  backgroundCanvas.height = Math.round(height * dpr)
+  backgroundCanvas.style.width = `${width}px`
+  backgroundCanvas.style.height = `${height}px`
 
   const scaleX = width / STAGE_WIDTH
   const scaleY = height / STAGE_HEIGHT
@@ -140,6 +189,7 @@ const getImage = (asset) => {
   image.onerror = () => {
     entry.failed = true
   }
+  image.crossOrigin = 'anonymous'
   image.src = asset.url
   imageCache.set(asset.url, entry)
   return entry
@@ -151,6 +201,7 @@ const getVideo = (asset) => {
   if (cached) return cached
 
   const video = document.createElement('video')
+  video.crossOrigin = 'anonymous'
   video.src = asset.url
   video.muted = true
   video.loop = true
@@ -181,7 +232,7 @@ const getVideo = (asset) => {
   return entry
 }
 
-const drawCover = (source, sourceWidth, sourceHeight) => {
+const drawCover = (renderContext, source, sourceWidth, sourceHeight) => {
   if (!source || !sourceWidth || !sourceHeight) return
 
   const scale = Math.max(STAGE_WIDTH / sourceWidth, STAGE_HEIGHT / sourceHeight)
@@ -189,29 +240,29 @@ const drawCover = (source, sourceWidth, sourceHeight) => {
   const height = sourceHeight * scale
   const x = (STAGE_WIDTH - width) / 2
   const y = (STAGE_HEIGHT - height) / 2
-  context.drawImage(source, x, y, width, height)
+  renderContext.drawImage(source, x, y, width, height)
 }
 
-const drawPlaceholderBackground = (time) => {
-  const gradient = context.createLinearGradient(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+const drawPlaceholderBackground = (renderContext, time) => {
+  const gradient = renderContext.createLinearGradient(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
   gradient.addColorStop(0, '#07111d')
   gradient.addColorStop(0.48, '#0f1a24')
   gradient.addColorStop(1, '#04070b')
-  context.fillStyle = gradient
-  context.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+  renderContext.fillStyle = gradient
+  renderContext.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
 
-  context.save()
-  context.globalAlpha = 0.14
-  context.strokeStyle = '#9cc9ff'
-  context.lineWidth = 1
+  renderContext.save()
+  renderContext.globalAlpha = 0.14
+  renderContext.strokeStyle = '#9cc9ff'
+  renderContext.lineWidth = 1
   const drift = (time * 0.02) % 80
   for (let x = -80 + drift; x < STAGE_WIDTH + 80; x += 80) {
-    context.beginPath()
-    context.moveTo(x, 0)
-    context.lineTo(x + 160, STAGE_HEIGHT)
-    context.stroke()
+    renderContext.beginPath()
+    renderContext.moveTo(x, 0)
+    renderContext.lineTo(x + 160, STAGE_HEIGHT)
+    renderContext.stroke()
   }
-  context.restore()
+  renderContext.restore()
 }
 
 const getPreviewBackground = (group, now) => {
@@ -248,13 +299,16 @@ const getPreviewBackground = (group, now) => {
   return backgrounds[randomBackgroundState.index]
 }
 
-const drawBackground = (group, time) => {
+const drawBackground = (renderContext, group, time) => {
   const activeBackground = getPreviewBackground(group, time)
   const asset = getAsset(activeBackground?.assetId)
 
   if (!asset?.url) {
-    drawPlaceholderBackground(time)
-    return
+    drawPlaceholderBackground(renderContext, time)
+    return {
+      textureKey: `placeholder:${activeBackground?.assetId ?? 'none'}`,
+      textureIsDynamic: true
+    }
   }
 
   if (asset.mediaType === 'video') {
@@ -265,19 +319,78 @@ const drawBackground = (group, time) => {
         video.element.play().catch(() => {})
       }
       lastDrawnBackgroundAssetId = activeBackground.assetId
-      drawCover(video.element, video.width, video.height)
-      return
+      drawCover(renderContext, video.element, video.width, video.height)
+      return {
+        textureKey: `video:${asset.assetId}:${asset.updatedAt ?? 0}`,
+        textureIsDynamic: true
+      }
     }
   } else {
     const image = getImage(asset)
     if (image?.loaded) {
       lastDrawnBackgroundAssetId = activeBackground.assetId
-      drawCover(image.element, image.width, image.height)
-      return
+      drawCover(renderContext, image.element, image.width, image.height)
+      return {
+        textureKey: `image:${asset.assetId}:${asset.updatedAt ?? 0}`,
+        textureIsDynamic: false
+      }
     }
   }
 
-  drawPlaceholderBackground(time)
+  drawPlaceholderBackground(renderContext, time)
+  return {
+    textureKey: `loading:${asset.assetId}:${asset.updatedAt ?? 0}`,
+    textureIsDynamic: true
+  }
+}
+
+const addBackgroundRipple = (x, y, startedAt) => {
+  ripples = [
+    ...ripples.slice(-(MAX_WATER_RIPPLES - 1)),
+    { x, y, startedAt }
+  ]
+}
+
+const drawBackgroundRipples = (now) => {
+  if (ripples.length === 0) return
+
+  context.save()
+  context.globalCompositeOperation = 'screen'
+
+  ripples.forEach((ripple) => {
+    const sample = sampleRipple(ripple, now)
+    if (!sample) return
+
+    if (sample.centerAlpha > 0) {
+      context.globalAlpha = 1
+      const gradient = context.createRadialGradient(
+        sample.x,
+        sample.y,
+        0,
+        sample.x,
+        sample.y,
+        sample.centerRadius
+      )
+      gradient.addColorStop(0, `rgba(220, 250, 255, ${sample.centerAlpha})`)
+      gradient.addColorStop(0.46, `rgba(118, 213, 255, ${sample.centerAlpha * 0.48})`)
+      gradient.addColorStop(1, 'rgba(84, 170, 255, 0)')
+      context.fillStyle = gradient
+      context.beginPath()
+      context.arc(sample.x, sample.y, sample.centerRadius, 0, Math.PI * 2)
+      context.fill()
+    }
+
+    sample.rings.forEach((ring, index) => {
+      context.globalAlpha = ring.alpha
+      context.strokeStyle = index === 0 ? '#d8fbff' : '#75c9ff'
+      context.lineWidth = ring.lineWidth
+      context.beginPath()
+      context.arc(sample.x, sample.y, ring.radius, 0, Math.PI * 2)
+      context.stroke()
+    })
+  })
+
+  context.restore()
 }
 
 const getPreviewAppearAlpha = (item, itemIndex, now) => {
@@ -302,6 +415,56 @@ const speedToCycleSeconds = (speed, baseSeconds = 5.5) => {
   return lerp(baseSeconds * 1.55, baseSeconds * 0.46, normalized)
 }
 
+const getMoveTrack = (item) => {
+  if (item.moveTrack === 'top' || item.moveTrack === 'middle' || item.moveTrack === 'bottom') {
+    return item.moveTrack
+  }
+
+  const positionY = Number(item.position?.y ?? 0.5)
+  if (positionY < 1 / 3) return 'top'
+  if (positionY > 2 / 3) return 'bottom'
+  return 'middle'
+}
+
+const getMoveTrackBounds = (track) => {
+  if (track === 'top') return { start: 0, end: 1 / 3 }
+  if (track === 'bottom') return { start: 2 / 3, end: 1 }
+  return { start: 1 / 3, end: 2 / 3 }
+}
+
+const getVerticalWaveOffsets = (item) => {
+  const percent = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
+  const localRatio = Math.min(percent / 0.5, 1)
+  const fullRatio = Math.max((percent - 0.5) / 0.5, 0)
+  const positionYValue = Number(item.position?.y ?? 0.5)
+  const positionY = Number.isFinite(positionYValue) ? positionYValue : 0.5
+  const { start: trackStart, end: trackEnd } = getMoveTrackBounds(getMoveTrack(item))
+  const trackEdgePadding = STAGE_HEIGHT * VERTICAL_TRACK_EDGE_PADDING_RATIO
+  const outPadding = STAGE_HEIGHT * VERTICAL_OUT_PADDING_RATIO
+  const localUpLimit = Math.max((positionY - trackStart) * STAGE_HEIGHT - trackEdgePadding, 0)
+  const localDownLimit = Math.max((trackEnd - positionY) * STAGE_HEIGHT - trackEdgePadding, 0)
+  const localWaveUp = -localUpLimit * localRatio
+  const localWaveDown = localDownLimit * localRatio
+  const fullWaveUp = -(positionY * STAGE_HEIGHT + outPadding)
+  const fullWaveDown = (1 - positionY) * STAGE_HEIGHT + outPadding
+
+  return {
+    waveUp: lerp(localWaveUp, fullWaveUp, fullRatio),
+    waveDown: lerp(localWaveDown, fullWaveDown, fullRatio)
+  }
+}
+
+const sampleVerticalWave = (progress, waveDown, waveUp) => {
+  const cycleProgress = ((progress % 1) + 1) % 1
+  if (cycleProgress < 0.35) {
+    return lerp(0, waveDown, smoothstep(cycleProgress / 0.35))
+  }
+  if (cycleProgress < 0.7) {
+    return lerp(waveDown, waveUp, smoothstep((cycleProgress - 0.35) / 0.35))
+  }
+  return lerp(waveUp, 0, smoothstep((cycleProgress - 0.7) / 0.3))
+}
+
 const resolvePreviewMotionMode = (item, preview) => {
   if (item.moveMode !== 'random') return item.moveMode
   const groupId = preview.groupId || runtimeState.activeGroupId || ''
@@ -309,7 +472,7 @@ const resolvePreviewMotionMode = (item, preview) => {
   return RANDOM_PREVIEW_MOTION_MODES[mixHash(hashString(key)) % RANDOM_PREVIEW_MOTION_MODES.length]
 }
 
-const getMotionTransform = (item, now) => {
+const getMotionTransform = (item, itemIndex, now) => {
   const preview = runtimeState.preview ?? {}
   const motionMode = resolvePreviewMotionMode(item, preview)
   if (!preview.enabled || motionMode === 'none') {
@@ -321,24 +484,29 @@ const getMotionTransform = (item, now) => {
     }
   }
 
-  const seed = hashString(item.itemId) % 997
   const percent = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
   const cycleSeconds = speedToCycleSeconds(item.moveSpeed)
+  if (motionMode === 'verticalWave') {
+    const intervalMs = preview.intervalMs ?? getActiveGroup()?.appearIntervalMs ?? 800
+    const appearDelayMs = preview.appearMode === 'sequence' ? itemIndex * intervalMs : 0
+    const elapsedMs = now - previewStartTime - appearDelayMs
+    const { waveUp, waveDown } = getVerticalWaveOffsets(item)
+    const progress = elapsedMs <= 0 ? 0 : elapsedMs / 1000 / cycleSeconds
+
+    return {
+      x: 0,
+      y: sampleVerticalWave(progress, waveDown, waveUp),
+      scale: 1,
+      rotation: 0
+    }
+  }
+
+  const seed = hashString(item.itemId) % 997
   const phase = ((now / 1000) / cycleSeconds + seed * 0.0007) * Math.PI * 2
   const baseX = clamp(item.position?.x ?? 0.5, -0.2, 1.2) * STAGE_WIDTH
   const baseY = clamp(item.position?.y ?? 0.5, -0.2, 1.2) * STAGE_HEIGHT
 
   switch (motionMode) {
-    case 'verticalWave': {
-      const amplitude = percent * STAGE_HEIGHT * 0.58
-      return {
-        x: 0,
-        y: Math.sin(phase) * amplitude,
-        scale: 1,
-        rotation: 0
-      }
-    }
-
     case 'left':
     case 'right': {
       const margin = 260
@@ -418,78 +586,242 @@ const drawMissingItem = (item, x, y) => {
   context.restore()
 }
 
+const getEffectiveAnimation = (item, now) => {
+  const override = animationOverrides.get(runtimeState.activeGroupId, item)
+  if (!override) {
+    return {
+      animationId: Number(item.animationId ?? 0),
+      timeSeconds: now / 1000
+    }
+  }
+
+  return {
+    animationId: override.activeAnimationId,
+    timeSeconds: Math.max(0, now - override.startedAt) / 1000
+  }
+}
+
+const getItemRenderState = (item, itemIndex, now, image) => {
+  const effectiveAnimation = getEffectiveAnimation(item, now)
+  const animation = sampleItemAnimation(
+    effectiveAnimation.animationId,
+    item.itemId,
+    effectiveAnimation.timeSeconds
+  )
+  const motion = getMotionTransform(item, itemIndex, now)
+  const baseX = clamp(item.position?.x ?? 0.5, -0.5, 1.5) * STAGE_WIDTH
+  const baseY = clamp(item.position?.y ?? 0.5, -0.5, 1.5) * STAGE_HEIGHT
+  const numericScale = Number(item.scale ?? 1)
+  const baseScale = Number.isFinite(numericScale) ? numericScale : 1
+  const flipX = item.flipX ? -1 : 1
+  const flipY = item.flipY ? -1 : 1
+  const appearAlpha = getPreviewAppearAlpha(item, itemIndex, now)
+
+  return {
+    x: baseX + motion.x + animation.offsetX,
+    y: baseY + motion.y + animation.offsetY,
+    rotation: degToRad(Number(item.rotation ?? 0) + motion.rotation + animation.rotation),
+    skewX: animation.skewX,
+    skewY: animation.skewY,
+    scaleX: flipX * baseScale * motion.scale * animation.scaleX,
+    scaleY: flipY * baseScale * motion.scale * animation.scaleY,
+    alpha: clamp(appearAlpha * animation.alpha, 0, 1),
+    appearAlpha,
+    animationId: effectiveAnimation.animationId,
+    animationTimeSeconds: effectiveAnimation.timeSeconds,
+    size: getBaseImageSize(image)
+  }
+}
+
+const applyItemRenderTransform = (renderContext, renderState) => {
+  renderContext.translate(renderState.x, renderState.y)
+  renderContext.rotate(renderState.rotation)
+  renderContext.transform(1, renderState.skewY, renderState.skewX, 1, 0, 0)
+  renderContext.scale(renderState.scaleX, renderState.scaleY)
+}
+
+const drawItemImage = (renderContext, image, renderState) => {
+  const { width, height } = renderState.size
+  if (renderState.animationId === WALK_ANIMATION_ID) {
+    drawWalkImage(
+      renderContext,
+      image.element,
+      -width / 2,
+      -height / 2,
+      width,
+      height,
+      renderState.animationTimeSeconds
+    )
+    return
+  }
+
+  renderContext.drawImage(
+    image.element,
+    -width / 2,
+    -height / 2,
+    width,
+    height
+  )
+}
+
 const drawItem = (item, itemIndex, now) => {
   if (item.isVisible === false) return
 
   const asset = getAsset(item.assetId)
   const image = getImage(asset)
-  const baseX = clamp(item.position?.x ?? 0.5, -0.5, 1.5) * STAGE_WIDTH
-  const baseY = clamp(item.position?.y ?? 0.5, -0.5, 1.5) * STAGE_HEIGHT
-  const motion = getMotionTransform(item, now)
-  const animation = sampleItemAnimation(item.animationId, item.itemId, now / 1000)
-  const appearAlpha = getPreviewAppearAlpha(item, itemIndex, now)
-  const x = baseX + motion.x + animation.offsetX
-  const y = baseY + motion.y + animation.offsetY
+  const renderState = getItemRenderState(item, itemIndex, now, image)
 
   if (!image?.loaded) {
-    drawMissingItem(item, x, y)
+    drawMissingItem(item, renderState.x, renderState.y)
     return
   }
 
-  const size = getBaseImageSize(image)
-  const baseScale = Number(item.scale ?? 1)
-  const flipX = item.flipX ? -1 : 1
-  const flipY = item.flipY ? -1 : 1
-
   context.save()
-  context.globalAlpha = clamp(appearAlpha * animation.alpha, 0, 1)
-  context.translate(x, y)
-  context.rotate(degToRad(Number(item.rotation ?? 0) + motion.rotation + animation.rotation))
-  context.transform(1, animation.skewY, animation.skewX, 1, 0, 0)
-  context.scale(
-    flipX * baseScale * motion.scale * animation.scaleX,
-    flipY * baseScale * motion.scale * animation.scaleY
-  )
-  if (Number(item.animationId ?? 0) === WALK_ANIMATION_ID) {
-    drawWalkImage(
-      context,
-      image.element,
-      -size.width / 2,
-      -size.height / 2,
-      size.width,
-      size.height,
-      now / 1000
-    )
-  } else {
-    context.drawImage(
-      image.element,
-      -size.width / 2,
-      -size.height / 2,
-      size.width,
-      size.height
-    )
-  }
+  context.globalAlpha = renderState.alpha
+  applyItemRenderTransform(context, renderState)
+  drawItemImage(context, image, renderState)
   context.restore()
+}
+
+const getOrderedItems = (group) => {
+  return (group?.items ?? [])
+    .slice()
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+}
+
+const isPointOverItem = (item, itemIndex, now, stagePoint) => {
+  if (item.isVisible === false || !hitContext) return false
+
+  const image = getImage(getAsset(item.assetId))
+  if (!image?.loaded) return false
+
+  const renderState = getItemRenderState(item, itemIndex, now, image)
+  if (renderState.appearAlpha <= 0.04) return false
+
+  const maxScale = Math.max(Math.abs(renderState.scaleX), Math.abs(renderState.scaleY))
+  const skewPadding = 1 + Math.abs(renderState.skewX) + Math.abs(renderState.skewY)
+  const hitRadius = Math.hypot(renderState.size.width, renderState.size.height)
+    * 0.58
+    * maxScale
+    * skewPadding
+    + HIT_SAMPLE_SIZE
+
+  if (Math.hypot(stagePoint.x - renderState.x, stagePoint.y - renderState.y) > hitRadius) {
+    return false
+  }
+
+  try {
+    hitContext.setTransform(1, 0, 0, 1, 0, 0)
+    hitContext.clearRect(0, 0, HIT_SAMPLE_SIZE, HIT_SAMPLE_SIZE)
+    hitContext.save()
+    try {
+      hitContext.translate(
+        HIT_SAMPLE_SIZE / 2 - stagePoint.x,
+        HIT_SAMPLE_SIZE / 2 - stagePoint.y
+      )
+      applyItemRenderTransform(hitContext, renderState)
+      drawItemImage(hitContext, image, renderState)
+    } finally {
+      hitContext.restore()
+    }
+
+    const pixels = hitContext.getImageData(0, 0, HIT_SAMPLE_SIZE, HIT_SAMPLE_SIZE).data
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] >= HIT_ALPHA_THRESHOLD) return true
+    }
+  } catch (error) {
+    if (!alphaHitWarningShown) {
+      alphaHitWarningShown = true
+      console.warn('Alpha hit testing is unavailable:', error)
+    }
+  }
+
+  return false
+}
+
+const findTopmostItemAtPoint = (group, now, stagePoint) => {
+  const items = getOrderedItems(group)
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (isPointOverItem(items[index], index, now, stagePoint)) {
+      return items[index]
+    }
+  }
+  return null
+}
+
+const handleStagePointerDown = (event) => {
+  if (event.button !== 0 || event.isPrimary === false) return
+  if (event.pointerType && event.pointerType !== 'mouse') return
+
+  interactionAudio.unlock()
+  const stagePoint = mapClientPointToStage({
+    clientX: isHorizontalPointerFlip ? window.innerWidth - event.clientX : event.clientX,
+    clientY: isVerticalPointerFlip ? window.innerHeight - event.clientY : event.clientY,
+    stageScale,
+    stageOffsetX,
+    stageOffsetY,
+    stageWidth: STAGE_WIDTH,
+    stageHeight: STAGE_HEIGHT
+  })
+  if (!stagePoint) return
+
+  event.preventDefault()
+  const now = performance.now()
+  const group = getActiveGroup()
+  const hitItem = findTopmostItemAtPoint(group, now, stagePoint)
+  if (!hitItem) {
+    addBackgroundRipple(stagePoint.x, stagePoint.y, now)
+    return
+  }
+
+  const override = animationOverrides.cycle(runtimeState.activeGroupId, hitItem, now)
+  if (override) interactionAudio.playImageClick(override.activeAnimationId)
 }
 
 const drawFrame = (now) => {
   const dpr = window.devicePixelRatio || 1
-  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const group = getActiveGroup()
+  backgroundSourceContext.setTransform(1, 0, 0, 1, 0, 0)
+  backgroundSourceContext.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+  const backgroundFrame = drawBackground(backgroundSourceContext, group, now)
+  ripples = ripples.filter((ripple) => now - ripple.startedAt < RIPPLE_DURATION_MS)
+
+  const backgroundRendered = waterRippleRenderer.render({
+    sourceCanvas: backgroundSourceCanvas,
+    textureKey: backgroundFrame.textureKey,
+    textureIsDynamic: backgroundFrame.textureIsDynamic,
+    ripples,
+    now,
+    stageWidth: STAGE_WIDTH,
+    stageHeight: STAGE_HEIGHT,
+    viewport: {
+      x: stageOffsetX * dpr,
+      y: stageOffsetY * dpr,
+      width: STAGE_WIDTH * stageScale * dpr,
+      height: STAGE_HEIGHT * stageScale * dpr
+    }
+  })
+  backgroundCanvas.classList.toggle('is-hidden', !backgroundRendered)
+
+  context.setTransform(1, 0, 0, 1, 0, 0)
   context.clearRect(0, 0, canvas.width, canvas.height)
-  context.fillStyle = '#05070a'
-  context.fillRect(0, 0, window.innerWidth, window.innerHeight)
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  if (!backgroundRendered) {
+    context.fillStyle = '#05070a'
+    context.fillRect(0, 0, window.innerWidth, window.innerHeight)
+  }
 
   context.save()
   context.translate(stageOffsetX, stageOffsetY)
   context.scale(stageScale, stageScale)
 
-  const group = getActiveGroup()
-  drawBackground(group, now)
+  if (!backgroundRendered) {
+    context.drawImage(backgroundSourceCanvas, 0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+    drawBackgroundRipples(now)
+  }
 
   if (group?.items?.length) {
-    group.items
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    getOrderedItems(group)
       .forEach((item, index) => drawItem(item, index, now))
   }
 
@@ -525,8 +857,51 @@ const updateStatusPanel = () => {
   }
 }
 
+const applyStateEventToInteractions = (state) => {
+  const event = state.lastEvent
+  const sequence = Number(event?.sequence ?? 0)
+  if (!Number.isFinite(sequence) || sequence <= lastStateEventSequence) return
+
+  lastStateEventSequence = sequence
+  switch (event.eventName) {
+    case 'GroupSelectAndSync':
+    case 'GroupStateSync':
+      animationOverrides.clearGroup(event.groupId)
+      break
+
+    case 'PreviewMode':
+      if (event.enabled) animationOverrides.clearAll()
+      break
+
+    case 'ItemAnimation':
+    case 'ItemDelete':
+      animationOverrides.clearItem(event.groupId, event.itemId)
+      break
+
+    case 'GroupDelete':
+      animationOverrides.clearGroup(event.groupId)
+      break
+
+    default:
+      break
+  }
+}
+
 const receiveState = (state) => {
+  const previousState = runtimeState
+  const previousPreview = previousState.preview ?? {}
+  const nextPreview = state.preview ?? {}
+  const activeGroupChanged = previousState.activeGroupId !== state.activeGroupId
+  const previewRestarted = Boolean(nextPreview.enabled) && (
+    !previousPreview.enabled
+    || previousPreview.replayId !== nextPreview.replayId
+  )
+
   runtimeState = state
+  if (activeGroupChanged || previewRestarted) animationOverrides.clearAll()
+  if (activeGroupChanged) ripples = []
+  applyStateEventToInteractions(runtimeState)
+  animationOverrides.reconcile(runtimeState)
   clearUnusedMedia()
 
   const preview = runtimeState.preview ?? {}
@@ -545,6 +920,7 @@ const receiveServerStatus = (status) => {
 }
 
 window.addEventListener('resize', resizeCanvas)
+canvas.addEventListener('pointerdown', handleStagePointerDown)
 resizeCanvas()
 
 window.runtimeApi?.onState(receiveState)

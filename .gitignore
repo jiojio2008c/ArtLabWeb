@@ -1,5 +1,5 @@
 desktop-runtime/node_modules/
-desktop-runtime/release/
+desktop-runtime/release*/
 node_modules/
 .env.local
 .env.*.local

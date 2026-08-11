@@ -1,0 +1,36 @@
+{
+  "appId": "com.magicfloor.dynamicruntime",
+  "productName": "MagicFloor Dynamic Player",
+  "executableName": "MagicFloor Dynamic Player Vertical Flip",
+  "artifactName": "MagicFloor Dynamic Player Vertical Flip ${version}.${ext}",
+  "directories": {
+    "output": "release-vertical-flip"
+  },
+  "electronDist": "node_modules/electron/dist",
+  "extraMetadata": {
+    "main": "main.vertical-flip.js"
+  },
+  "files": [
+    "main.js",
+    "main.vertical-flip.js",
+    "preload.js",
+    "renderer/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "dir",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  }
+}

@@ -152,6 +152,8 @@ const DEFAULT_ITEM_NATURAL_WIDTH = 360
 const DEFAULT_ITEM_NATURAL_HEIGHT = 260
 const DEFAULT_STAGE_PREVIEW_WIDTH = 960
 const DEFAULT_STAGE_PREVIEW_HEIGHT = 540
+const VERTICAL_TRACK_EDGE_PADDING_RATIO = 28 / DEFAULT_STAGE_PREVIEW_HEIGHT
+const VERTICAL_OUT_PADDING_RATIO = Math.max(0.22, 120 / DEFAULT_STAGE_PREVIEW_HEIGHT)
 const HORIZONTAL_WAVE_CYCLES = 7
 const HORIZONTAL_STAGE_MARGIN = 260
 const HORIZONTAL_KEYFRAMES_PER_WAVE = 20
@@ -268,6 +270,31 @@ const getTrackBounds = (track: DynamicMoveTrack) => {
   if (track === 'top') return { start: 0, end: 1 / 3 }
   if (track === 'bottom') return { start: 2 / 3, end: 1 }
   return { start: 1 / 3, end: 2 / 3 }
+}
+
+const getVerticalWaveOffsets = (item: DynamicItem, stageHeight: number) => {
+  const safeStageHeight = stageHeight || DEFAULT_STAGE_PREVIEW_HEIGHT
+  const amplitudeRatio = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
+  const localRatio = Math.min(amplitudeRatio / 0.5, 1)
+  const fullRatio = Math.max((amplitudeRatio - 0.5) / 0.5, 0)
+  const positionYValue = Number(item.position?.y ?? 0.5)
+  const positionY = Number.isFinite(positionYValue) ? positionYValue : 0.5
+  const { start: trackStart, end: trackEnd } = getTrackBounds(getItemTrack(item))
+  const trackEdgePadding = safeStageHeight * VERTICAL_TRACK_EDGE_PADDING_RATIO
+  const outPadding = safeStageHeight * VERTICAL_OUT_PADDING_RATIO
+  const localUpLimit = Math.max((positionY - trackStart) * safeStageHeight - trackEdgePadding, 0)
+  const localDownLimit = Math.max((trackEnd - positionY) * safeStageHeight - trackEdgePadding, 0)
+  const localWaveUp = -localUpLimit * localRatio
+  const localWaveDown = localDownLimit * localRatio
+  const fullWaveUp = -(positionY * safeStageHeight + outPadding)
+  const fullWaveDown = (1 - positionY) * safeStageHeight + outPadding
+
+  return {
+    localUpLimit,
+    localDownLimit,
+    waveUp: Math.round(lerp(localWaveUp, fullWaveUp, fullRatio)),
+    waveDown: Math.round(lerp(localWaveDown, fullWaveDown, fullRatio))
+  }
 }
 
 const getMoveDuration = (speed: number, baseSeconds = 5.5) => {
@@ -607,21 +634,11 @@ const getMotionPreviewStyle = (
 ): React.CSSProperties => {
   const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
   const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
-  const moveTrack = getItemTrack(item)
   const isLoopMove = !isManipulating && (motionMode === 'left' || motionMode === 'right')
-  const amplitudeRatio = clamp(item.movePercent, 0, 100) / 100
+  const amplitudeRatio = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
   const localRatio = Math.min(amplitudeRatio / 0.5, 1)
   const fullRatio = Math.max((amplitudeRatio - 0.5) / 0.5, 0)
-  const { start: trackStart, end: trackEnd } = getTrackBounds(moveTrack)
-  const localUpLimit = Math.max((item.position.y - trackStart) * stageHeight - 28, 0)
-  const localDownLimit = Math.max((trackEnd - item.position.y) * stageHeight - 28, 0)
-  const outPadding = Math.max(stageHeight * 0.22, 120)
-  const localWaveUp = -localUpLimit * localRatio
-  const localWaveDown = localDownLimit * localRatio
-  const fullWaveUp = -(item.position.y * stageHeight + outPadding)
-  const fullWaveDown = (1 - item.position.y) * stageHeight + outPadding
-  const waveUp = Math.round(lerp(localWaveUp, fullWaveUp, fullRatio))
-  const waveDown = Math.round(lerp(localWaveDown, fullWaveDown, fullRatio))
+  const { localUpLimit, localDownLimit, waveUp, waveDown } = getVerticalWaveOffsets(item, stageHeight)
   const randomX = Math.round(amplitudeRatio * stageWidth * 0.18)
   const randomY = Math.round(amplitudeRatio * stageHeight * 0.24)
   const horizontalStartPoint = isLoopMove
@@ -3588,13 +3605,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           </aside>
         )}
 
-        {layerDragPreview && (() => {
+        {layerDragPreview && createPortal((() => {
           const draggedItem = group.items.find((item) => item.id === layerDragPreview.itemId)
           if (!draggedItem) return null
           const motionLabel = getTranslatedMotionLabel(draggedItem.moveMode)
           return (
             <div
-              className="dynamic-layer-drag-preview"
+              className="dynamic-layer-drag-preview dynamic-control-layer-drag-preview"
               style={{
                 left: `${layerDragPreview.x}px`,
                 top: `${layerDragPreview.y}px`,
@@ -3610,7 +3627,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </span>
             </div>
           )
-        })()}
+        })(), document.body)}
 
         {backgroundDragPreview && createPortal((() => {
           const draggedBackground = backgrounds.find((background) => background.id === backgroundDragPreview.backgroundId)

@@ -14,6 +14,7 @@ import DynamicPortalTransition from './components/dynamicTransitions/DynamicPort
 import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
 import InteractiveMagicTransition from './components/interactiveTransitions/InteractiveMagicTransition.tsx'
 import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
+import DirectThemeUploadReturnTransition from './components/interactiveTransitions/DirectThemeUploadReturnTransition.tsx'
 import type {
   DynamicArtworkTransitionRequest,
   DynamicTransitionOrigin
@@ -80,6 +81,7 @@ function App() {
   const [selectedDirectTheme, setSelectedDirectTheme] = useState<DirectUploadTheme>(() => DIRECT_UPLOAD_THEMES[0])
   const [directUploadOpenMaskSelector, setDirectUploadOpenMaskSelector] = useState(false)
   const [directThemeUploadTransition, setDirectThemeUploadTransition] = useState<DirectThemeUploadTransitionRequest | null>(null)
+  const [directThemeUploadReturnTransition, setDirectThemeUploadReturnTransition] = useState(false)
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
@@ -87,10 +89,13 @@ function App() {
   const [dynamicPortalOrigin, setDynamicPortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [interactivePortalOrigin, setInteractivePortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
+  const [dynamicArchiveReturnActive, setDynamicArchiveReturnActive] = useState(false)
+  const dynamicArchiveReturnTimerRef = useRef<number | null>(null)
   const entryRootRef = useRef<HTMLElement>(null)
   const dynamicEntryCardRef = useRef<HTMLButtonElement>(null)
   const interactiveEntryCardRef = useRef<HTMLButtonElement>(null)
   const directSelectRootRef = useRef<HTMLElement>(null)
+  const directUploadRootRef = useRef<HTMLElement>(null)
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
 
@@ -104,6 +109,12 @@ function App() {
     setTransitionDirection(nextDirection)
     setCurrentPage(nextPage)
   }
+
+  useEffect(() => () => {
+    if (dynamicArchiveReturnTimerRef.current !== null) {
+      window.clearTimeout(dynamicArchiveReturnTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -128,6 +139,7 @@ function App() {
         setDynamicPortalOrigin(null)
         setInteractivePortalOrigin(null)
         setDirectThemeUploadTransition(null)
+        setDirectThemeUploadReturnTransition(false)
         setDynamicArtworkTransition(null)
         setCurrentAccount(null)
         setAccountLoading(false)
@@ -299,6 +311,11 @@ function App() {
     navigateTo('directComplete')
   }
 
+  const handleReturnFromDirectUpload = () => {
+    if (directThemeUploadTransition || directThemeUploadReturnTransition) return
+    setDirectThemeUploadReturnTransition(true)
+  }
+
   const handleResetDirectUpload = () => {
     setDirectUploadResult(null)
     setDirectUploadOpenMaskSelector(true)
@@ -327,6 +344,19 @@ function App() {
     setDynamicGroups((currentGroups) => currentGroups.filter((group) => group.id !== groupId))
     setSelectedDynamicGroupId((currentGroupId) => currentGroupId === groupId ? '' : currentGroupId)
     setSelectedDynamicItemId('')
+  }
+
+  const handleReturnFromDynamicGroups = () => {
+    if (dynamicArchiveReturnTimerRef.current !== null) {
+      window.clearTimeout(dynamicArchiveReturnTimerRef.current)
+    }
+
+    setDynamicArchiveReturnActive(true)
+    navigateTo('entry')
+    dynamicArchiveReturnTimerRef.current = window.setTimeout(() => {
+      dynamicArchiveReturnTimerRef.current = null
+      setDynamicArchiveReturnActive(false)
+    }, 420)
   }
 
   const handleSelectDynamicGroup = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
@@ -365,6 +395,8 @@ function App() {
     setSelectedDynamicItemId('')
     setDynamicPortalOrigin(null)
     setInteractivePortalOrigin(null)
+    setDirectThemeUploadTransition(null)
+    setDirectThemeUploadReturnTransition(false)
     setDynamicArtworkTransition(null)
     setAuthStatus('authenticated')
   }
@@ -378,6 +410,8 @@ function App() {
     setSelectedDynamicItemId('')
     setDynamicPortalOrigin(null)
     setInteractivePortalOrigin(null)
+    setDirectThemeUploadTransition(null)
+    setDirectThemeUploadReturnTransition(false)
     setDynamicArtworkTransition(null)
     setCurrentAccount(null)
     setAccountLoading(false)
@@ -413,12 +447,14 @@ function App() {
       ? 'dynamic-portal-route-active'
       : interactivePortalOrigin
         ? 'interactive-magic-route-active'
+        : directThemeUploadReturnTransition
+          ? 'direct-theme-upload-return-route-active'
         : directThemeUploadTransition
           ? 'direct-theme-upload-route-active'
         : ''
 
   return (
-    <div className={`min-h-screen bg-white ${dynamicTransitionClass}`} onPointerDown={handleGlobalButtonPointerDown}>
+    <div className={`min-h-screen bg-white ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
       {portraitLock}
 
       <div key={currentPage} className={`page-frame page-${transitionDirection} page-view-${currentPage}`}>
@@ -450,7 +486,7 @@ function App() {
             groups={dynamicGroups}
             wsIp={networkSettings.wsIp}
             dynamicPort={networkSettings.dynamicPort}
-            onBack={() => navigateTo('entry')}
+            onBack={handleReturnFromDynamicGroups}
             onCreateGroup={handleCreateDynamicGroup}
             onUpdateGroup={updateDynamicGroupState}
             onDeleteGroup={handleDeleteDynamicGroup}
@@ -479,18 +515,19 @@ function App() {
           <DirectUploadSelectPage
             rootRef={directSelectRootRef}
             selectedThemeId={selectedDirectTheme.id}
-            transitioning={Boolean(directThemeUploadTransition)}
+            transitioning={Boolean(directThemeUploadTransition || directThemeUploadReturnTransition)}
             onBackToEntry={() => navigateTo('entry')}
             onSelectTheme={handleSelectDirectTheme}
           />
         ) : currentPage === 'directUpload' ? (
           <UploadPage
+            rootRef={directUploadRootRef}
             mode="direct"
             onUploadSuccess={handleDirectUploadSuccess}
             wsIp={networkSettings.wsIp}
             onWsIpChange={updateWsIp}
             selectedName="fish"
-            onBackToHome={() => navigateTo('directSelect')}
+            onBackToHome={handleReturnFromDirectUpload}
             enableSupabaseUpload={false}
             selectedObjectIndex={0}
             uploadPort={networkSettings.interactivePort}
@@ -559,6 +596,20 @@ function App() {
             setCurrentPage('directUpload')
           }}
           onComplete={() => setDirectThemeUploadTransition(null)}
+        />
+      )}
+
+      {directThemeUploadReturnTransition && (
+        <DirectThemeUploadReturnTransition
+          key={`direct-theme-upload-return-${selectedDirectTheme.id}`}
+          theme={selectedDirectTheme}
+          sourceRootRef={directUploadRootRef}
+          targetRootRef={directSelectRootRef}
+          onSceneSwitch={() => {
+            setTransitionDirection('portal')
+            setCurrentPage('directSelect')
+          }}
+          onComplete={() => setDirectThemeUploadReturnTransition(false)}
         />
       )}
 

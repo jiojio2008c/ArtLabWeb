@@ -13,15 +13,55 @@ body {
   font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
 }
 
+.display-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  transform-origin: center;
+}
+
+.display-root.is-horizontal-flipped {
+  transform: scaleX(-1);
+}
+
+.display-root.is-vertical-flipped {
+  transform: scaleY(-1);
+}
+
+.display-root.is-horizontal-flipped.is-vertical-flipped {
+  transform: scale(-1, -1);
+}
+
+.stage-canvas,
 #stage {
+  position: fixed;
+  inset: 0;
   display: block;
   width: 100vw;
   height: 100vh;
+}
+
+.background-stage {
+  z-index: 0;
   background: #05070a;
+  pointer-events: none;
+}
+
+.background-stage.is-hidden {
+  display: none;
+}
+
+#stage {
+  z-index: 1;
+  background: transparent;
+  cursor: default;
+  touch-action: none;
+  user-select: none;
 }
 
 .status-panel {
   position: fixed;
+  z-index: 2;
   left: 32px;
   bottom: 28px;
   min-width: 380px;

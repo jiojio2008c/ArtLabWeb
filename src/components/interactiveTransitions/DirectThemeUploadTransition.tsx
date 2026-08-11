@@ -88,6 +88,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
     const stagingTitleLeft = Math.max(42, restingLeft - Math.min(330, viewportWidth * 0.28))
     const traces = Array.from(root.querySelectorAll<HTMLElement>('.direct-theme-upload-trace'))
     const timelines: gsap.core.Timeline[] = []
+    let destinationElements: HTMLElement[] = []
     let cancelled = false
 
     const waitForCloneImage = async () => {
@@ -228,23 +229,28 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
       const { dropzone, plus, title, topbar } = destination
       const backButton = topbar.querySelector<HTMLElement>('button')
       const heading = topbar.querySelector<HTMLElement>('.min-w-0')
+      const eyebrow = heading?.querySelector<HTMLElement>('.eyebrow')
       const targetPlusRect = plus.getBoundingClientRect()
       const targetTitleRect = title.getBoundingClientRect()
       const targetTitleStyle = window.getComputedStyle(title)
 
-      gsap.set([backButton, heading].filter(Boolean), { opacity: 0, y: 10 })
+      destinationElements = [backButton, heading, eyebrow, title, dropzone].filter((element): element is HTMLElement => Boolean(element))
+      gsap.set(backButton ?? [], { opacity: 0, y: 10 })
+      gsap.set(heading ?? [], { opacity: 1, y: 0 })
+      gsap.set([eyebrow, title].filter(Boolean), { opacity: 0 })
       gsap.set(dropzone, { opacity: 0, y: 10, scale: 0.985 })
 
       if (reducedMotion) {
         const reducedEntry = gsap.timeline({ paused: true })
-          .to([backButton, heading, dropzone].filter(Boolean), {
+          .to([backButton, dropzone].filter(Boolean), {
             opacity: 1,
             y: 0,
             scale: 1,
             duration: 0.2
           }, 0)
+          .to(title, { opacity: 1, duration: 0.14 }, 0.04)
+          .to(eyebrow ?? [], { opacity: 1, duration: 0.14 }, 0.08)
           .to(wash, { opacity: 0, duration: 0.2 }, 0.08)
-          .set([backButton, heading, dropzone].filter(Boolean), { clearProps: 'opacity,transform' })
         timelines.push(reducedEntry)
         await playTimeline(reducedEntry)
       } else {
@@ -256,7 +262,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
             height: targetTitleRect.height,
             color: targetTitleStyle.color,
             fontSize: targetTitleStyle.fontSize,
-            duration: 0.48,
+            duration: 0.46,
             ease: 'power3.inOut'
           }, 0)
           .to(clone, {
@@ -282,12 +288,12 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
           .to(cloneScan, { opacity: 0.62, xPercent: 190, duration: 0.32, ease: 'power1.inOut' }, 0.02)
           .to(clonePlus, { opacity: 1, scale: 1, rotation: 0, duration: 0.25, ease: 'back.out(1.35)' }, 0.22)
           .to(backButton ?? [], { opacity: 1, y: 0, duration: 0.28, ease: 'power3.out' }, 0.14)
-          .to(heading ?? [], { opacity: 1, y: 0, duration: 0.22, ease: 'power2.out' }, 0.34)
-          .to(movingTitle, { opacity: 0, duration: 0.13, ease: 'power1.out' }, 0.36)
+          .to(title, { opacity: 1, duration: 0.1, ease: 'power1.inOut' }, 0.46)
+          .to(movingTitle, { opacity: 0, duration: 0.1, ease: 'power1.inOut' }, 0.46)
+          .to(eyebrow ?? [], { opacity: 1, duration: 0.14, ease: 'power2.out' }, 0.5)
           .to(dropzone, { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'power2.out' }, 0.32)
           .to(clone, { opacity: 0, duration: 0.18, ease: 'power1.out' }, 0.44)
           .to(wash, { opacity: 0, duration: 0.2, ease: 'power1.out' }, 0.42)
-          .set([backButton, heading, dropzone].filter(Boolean), { clearProps: 'opacity,transform' })
         timelines.push(entryTimeline)
         await playTimeline(entryTimeline)
       }
@@ -313,8 +319,10 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
         movingTitle,
         ...traces,
         ...cards,
-        sourceHeader
+        sourceHeader,
+        ...destinationElements
       ].filter(Boolean))
+      gsap.set(destinationElements, { clearProps: 'opacity,transform,filter' })
     }
   }, [origin, sourceRootRef, theme])
 

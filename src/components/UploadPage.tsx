@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import axios from 'axios'
 import { Image as ImageIcon, Plus, Zap, ZapOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -12,6 +12,7 @@ type UploadMode = 'control' | 'direct'
 type ImageGestureMode = 'none' | 'drag' | 'pinch'
 type DirectMediaSource = 'camera' | 'file'
 type DirectUploadPhase = 'idle' | 'focusing' | 'departing' | 'returning'
+type DirectInternalReturnPhase = 'idle' | 'exiting' | 'entering'
 
 type TorchCapabilities = MediaTrackCapabilities & { torch?: boolean }
 type TorchConstraintSet = MediaTrackConstraintSet & { torch: boolean }
@@ -51,6 +52,7 @@ const DIRECT_FALLBACK_MASK_OPTIONS: UploadMaskOption[] = [
 ]
 
 interface UploadPageProps {
+  rootRef?: RefObject<HTMLElement>
   mode?: UploadMode
   onUploadSuccess: (data: { name: string; url: string }) => void
   wsIp: string
@@ -114,6 +116,7 @@ const saveThumbnailForObject = async (ip: string, index: number, imageUrl: strin
 }
 
 const UploadPage: React.FC<UploadPageProps> = ({
+  rootRef,
   mode = 'control',
   onUploadSuccess,
   wsIp,
@@ -160,6 +163,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [cameraFlashVisible, setCameraFlashVisible] = useState(false)
   const [directMediaSource, setDirectMediaSource] = useState<DirectMediaSource>('file')
   const [directUploadPhase, setDirectUploadPhase] = useState<DirectUploadPhase>('idle')
+  const [directInternalReturnPhase, setDirectInternalReturnPhase] = useState<DirectInternalReturnPhase>('idle')
   const [directSendPreviewUrl, setDirectSendPreviewUrl] = useState<string | null>(null)
   const [directSendGeometry, setDirectSendGeometry] = useState<DirectSendGeometry | null>(null)
 
@@ -181,6 +185,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const audioChunksRef = useRef<Blob[]>([])
   const cameraFlashTimerRef = useRef<number | null>(null)
   const directTransitionTimerRef = useRef<number | null>(null)
+  const directInternalReturnTimerRef = useRef<number | null>(null)
   const directTransitionStartedAtRef = useRef(0)
   const directSendPreviewUrlRef = useRef<string | null>(null)
 
@@ -394,6 +399,9 @@ const UploadPage: React.FC<UploadPageProps> = ({
       }
       if (directTransitionTimerRef.current !== null) {
         window.clearTimeout(directTransitionTimerRef.current)
+      }
+      if (directInternalReturnTimerRef.current !== null) {
+        window.clearTimeout(directInternalReturnTimerRef.current)
       }
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = null
@@ -679,6 +687,80 @@ const UploadPage: React.FC<UploadPageProps> = ({
     setTorchEnabled(false)
     setIsTakingPhoto(false)
     setCameraFlashVisible(false)
+  }
+
+  const resetDirectUploadDraft = () => {
+    if (showCamera || cameraStreamRef.current) {
+      handleCloseCamera()
+    }
+
+    setPreviewUrl(null)
+    setSelectedFile(null)
+    setShowMaskPanel(false)
+    setShowImportMenu(false)
+    setSelectedMask(defaultMaskId)
+    setDirectStageSize(null)
+    setImageDimensions({ width: 0, height: 0 })
+    setImagePosition({ x: 0, y: 0 })
+    positionRef.current = { x: 0, y: 0 }
+    setImageScale(1)
+    imageScaleRef.current = 1
+    pointersRef.current.clear()
+    gestureModeRef.current = 'none'
+    dragStartRef.current = null
+    pinchStartRef.current = null
+    setDirectMediaSource('file')
+    setUploadError(null)
+    setUploadSuccess(null)
+    setIsDragging(false)
+    replaceDirectSendPreview(null)
+    setDirectSendGeometry(null)
+    setDirectUploadPhase('idle')
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const startDirectDraftReturn = () => {
+    if (directInternalReturnPhase !== 'idle' || isUploading) return
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const exitDuration = reducedMotion ? 0 : 140
+    const enterDuration = reducedMotion ? 0 : 190
+
+    setDirectInternalReturnPhase('exiting')
+    directInternalReturnTimerRef.current = window.setTimeout(() => {
+      directInternalReturnTimerRef.current = null
+      resetDirectUploadDraft()
+      setDirectInternalReturnPhase('entering')
+
+      directInternalReturnTimerRef.current = window.setTimeout(() => {
+        directInternalReturnTimerRef.current = null
+        setDirectInternalReturnPhase('idle')
+      }, enterDuration)
+    }, exitDuration)
+  }
+
+  const handleHeaderBack = () => {
+    if (!isDirectMode) {
+      onBackToHome()
+      return
+    }
+
+    if (isUploading || directInternalReturnPhase !== 'idle') return
+
+    if (showImportMenu) {
+      setShowImportMenu(false)
+      return
+    }
+
+    if (showCamera || showMaskPanel || previewUrl || selectedFile) {
+      startDirectDraftReturn()
+      return
+    }
+
+    onBackToHome()
   }
 
   const handleCameraReady = () => {
@@ -1197,10 +1279,18 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   return (
-    <main className={`ipad-screen upload-screen apple-container ${showCamera && isDirectMode ? 'direct-camera-screen' : ''}`}>
+    <main
+      ref={rootRef}
+      className={`ipad-screen upload-screen apple-container ${showCamera && isDirectMode ? 'direct-camera-screen' : ''} ${directInternalReturnPhase !== 'idle' ? `direct-internal-return-${directInternalReturnPhase}` : ''}`}
+    >
       <header className="ipad-topbar">
         <div className="topbar-title-row">
-          <button type="button" onClick={onBackToHome} className="ipad-button ghost-button">
+          <button
+            type="button"
+            onClick={handleHeaderBack}
+            aria-disabled={isUploading || directInternalReturnPhase !== 'idle'}
+            className="ipad-button ghost-button"
+          >
             {t('common.back')}
           </button>
           <div className="min-w-0">

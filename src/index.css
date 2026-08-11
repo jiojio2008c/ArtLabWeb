@@ -798,6 +798,54 @@ code {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Direct upload editor -> initial import step. Remove this block with the
+   UploadPage internal return phase to restore an immediate state change. */
+.upload-screen.direct-internal-return-exiting,
+.upload-screen.direct-internal-return-entering {
+  pointer-events: none;
+}
+
+.upload-screen.direct-internal-return-exiting > .upload-workspace,
+.upload-screen.direct-internal-return-exiting > .camera-workspace {
+  animation: direct-internal-workspace-exit 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.upload-screen.direct-internal-return-entering > .direct-import-workspace .import-dropzone {
+  animation: direct-internal-import-enter 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes direct-internal-workspace-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes direct-internal-import-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-screen.direct-internal-return-exiting > .upload-workspace,
+  .upload-screen.direct-internal-return-exiting > .camera-workspace,
+  .upload-screen.direct-internal-return-entering > .direct-import-workspace .import-dropzone {
+    animation: none;
+  }
+}
+
 .import-dropzone {
   border: 2px dashed rgba(23, 23, 23, 0.2);
   border-radius: 8px;
@@ -5945,7 +5993,7 @@ code {
 }
 
 .dynamic-stage-item-motion.move-verticalWave {
-  animation: dynamic-preview-wave var(--move-duration) ease-in-out var(--motion-delay) infinite both;
+  animation: dynamic-preview-wave var(--move-duration) cubic-bezier(0.333333, 0, 0.666667, 1) var(--motion-delay) infinite both;
 }
 
 .dynamic-stage-item-motion.composed-horizontal-motion,
@@ -8859,6 +8907,51 @@ button.ui-pressed {
   animation: dynamic-property-panel-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* Keep translated object-property controls inside the compact iPad panel. */
+.dynamic-property-overlay-panel .dynamic-tool-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dynamic-property-overlay-panel .dynamic-tool-tabs .tool-tab {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 48px;
+  padding: 5px 3px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.dynamic-property-overlay-panel .motion-mode-button strong,
+.dynamic-property-overlay-panel .animation-tile > span:last-child {
+  min-width: 0;
+  width: 100%;
+  line-height: 1.12;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.dynamic-property-overlay-panel .dynamic-animation-grid .animation-tile {
+  min-width: 0;
+  min-height: 68px;
+  grid-template-rows: 24px minmax(24px, auto);
+  align-content: center;
+}
+
+.dynamic-property-overlay-panel .animation-tile > span:last-child {
+  min-height: 2.24em;
+  display: grid;
+  place-items: center;
+}
+
 @keyframes dynamic-modal-backdrop-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -9094,18 +9187,18 @@ button.ui-pressed {
   background: rgba(233, 85, 69, 0.08);
 }
 
-.dynamic-control-screen .dynamic-layer-drag-preview {
+.dynamic-control-layer-drag-preview {
   border-color: rgba(5, 125, 152, 0.54);
   color: var(--ink);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 20px 42px rgba(30, 45, 52, 0.24), 0 0 0 2px rgba(18, 169, 201, 0.1);
 }
 
-.dynamic-control-screen .dynamic-layer-drag-preview img {
+.dynamic-control-layer-drag-preview img {
   background: #f2f5f5;
 }
 
-.dynamic-control-screen .dynamic-layer-drag-preview small {
+.dynamic-control-layer-drag-preview small {
   color: var(--muted);
 }
 
@@ -10413,6 +10506,14 @@ button.ui-pressed {
   background-size: cover;
 }
 
+.dynamic-archive-return-active {
+  background-color: #69bbd6 !important;
+  background-image: url("./assets/magic-floor-background.webp") !important;
+  background-position: center bottom !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+}
+
 .dynamic-library-screen > .dynamic-library-topbar {
   background: rgba(248, 250, 248, 0.9);
 }
@@ -11573,12 +11674,91 @@ button.ui-pressed {
   z-index: 4;
 }
 
-.entry-screen .settings-icon-button {
-  border-color: rgba(255, 255, 255, 0.72);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.52));
-  box-shadow: inset 0 1px 0 #fff, 0 10px 24px rgba(9, 42, 45, 0.2);
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+.entry-screen .entry-topbar .settings-icon-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-color: rgba(224, 221, 255, 0.7);
+  color: #fff;
+  background:
+    linear-gradient(148deg, rgba(235, 232, 255, 0.22), rgba(101, 96, 164, 0.15) 38%, rgba(28, 57, 72, 0.2)),
+    rgba(45, 48, 91, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(110, 102, 177, 0.22),
+    inset 0 0 22px rgba(211, 202, 255, 0.09),
+    0 0 0 1px rgba(149, 165, 236, 0.1),
+    0 0 16px rgba(126, 110, 255, 0.16),
+    0 12px 28px rgba(10, 18, 39, 0.18);
+  backdrop-filter: blur(32px) saturate(1.32) brightness(1.06);
+  -webkit-backdrop-filter: blur(32px) saturate(1.32) brightness(1.06);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.entry-screen .entry-topbar .settings-icon-button::before,
+.entry-screen .entry-topbar .settings-icon-button::after {
+  content: "";
+  position: absolute;
+  display: block;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.entry-screen .entry-topbar .settings-icon-button::before {
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(132deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.1) 30%, transparent 52%),
+    linear-gradient(318deg, rgba(83, 230, 255, 0.09), transparent 42%),
+    linear-gradient(24deg, rgba(177, 116, 255, 0.11), transparent 48%);
+  opacity: 0.74;
+}
+
+.entry-screen .entry-topbar .settings-icon-button::after {
+  inset: 3px;
+  z-index: 1;
+  border: 1px solid rgba(244, 242, 255, 0.38);
+  border-right-color: rgba(149, 151, 209, 0.18);
+  border-bottom-color: rgba(104, 111, 172, 0.22);
+  border-radius: 6px;
+  box-shadow: inset 0 0 14px rgba(180, 164, 255, 0.08);
+}
+
+.entry-screen .entry-topbar .settings-icon-button > svg {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 2px 4px rgba(7, 12, 29, 0.48));
+}
+
+.entry-screen .entry-topbar .settings-icon-button:hover,
+.entry-screen .entry-topbar .settings-icon-button:focus-visible {
+  border-color: rgba(240, 238, 255, 0.94);
+  color: #fff;
+  background:
+    linear-gradient(148deg, rgba(240, 237, 255, 0.27), rgba(111, 103, 181, 0.18) 38%, rgba(31, 64, 80, 0.22)),
+    rgba(45, 48, 91, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(128, 115, 207, 0.34),
+    inset 0 0 24px rgba(177, 155, 255, 0.15),
+    0 0 0 2px rgba(176, 185, 255, 0.16),
+    0 0 24px rgba(136, 115, 255, 0.32),
+    0 15px 32px rgba(9, 17, 40, 0.24);
+  outline: none;
+  transform: translateY(-2px) scale(1.02) translateZ(0);
+}
+
+.entry-screen .entry-topbar .settings-icon-button:active {
+  border-color: rgba(222, 217, 255, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 0 22px rgba(155, 135, 255, 0.22),
+    0 0 18px rgba(126, 108, 255, 0.38),
+    0 9px 20px rgba(8, 15, 34, 0.3);
+  transform: scale(0.96) translateZ(0);
 }
 
 /* Interactive-art paper tear and magic portal transition. */
@@ -12096,7 +12276,9 @@ button.ui-pressed {
 }
 
 .direct-theme-upload-route-active .page-view-directUpload .upload-screen {
-  background: #f2f0eb;
+  background:
+    linear-gradient(180deg, rgba(233, 85, 69, 0.08), transparent 40%),
+    var(--surface);
 }
 
 .direct-theme-upload-transition {
@@ -12125,7 +12307,9 @@ button.ui-pressed {
 
 .direct-theme-upload-wash {
   z-index: 1;
-  background: #f2f0eb;
+  background:
+    linear-gradient(180deg, rgba(233, 85, 69, 0.08), transparent 40%),
+    var(--surface);
   box-shadow: 0 -18px 54px rgba(255, 255, 255, 0.4);
   will-change: clip-path, opacity;
 }
@@ -12263,6 +12447,137 @@ button.ui-pressed {
   }
 
   .direct-theme-upload-trace {
+    display: none;
+  }
+}
+
+/* Quick upload -> selected theme card return transition. Remove this block with
+   DirectThemeUploadReturnTransition.tsx to restore direct back navigation. */
+.direct-theme-upload-return-route-active {
+  overflow: hidden;
+  touch-action: none;
+}
+
+.direct-theme-upload-return-route-active .page-frame,
+.direct-theme-upload-return-route-active .apple-container {
+  animation: none !important;
+}
+
+.direct-theme-upload-return-route-active .page-frame {
+  pointer-events: none;
+}
+
+.direct-theme-upload-return-route-active .page-view-directSelect .direct-magic-header,
+.direct-theme-upload-return-route-active .page-view-directSelect .direct-theme-card {
+  opacity: 0;
+}
+
+.direct-theme-upload-return-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 821;
+  overflow: hidden;
+  pointer-events: none;
+  --direct-return-accent: #76efff;
+  --direct-return-secondary: #3b75ff;
+}
+
+.direct-theme-upload-return-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #f2f0eb;
+  box-shadow: 0 -18px 54px rgba(255, 255, 255, 0.4);
+  will-change: clip-path, opacity;
+}
+
+.direct-theme-upload-return-clone {
+  position: fixed;
+  z-index: 3;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(236, 255, 252, 0.72);
+  background: #171717;
+  box-shadow: 0 9px 22px rgba(17, 19, 22, 0.2);
+  will-change: left, top, width, height, opacity, border-radius, box-shadow;
+}
+
+.direct-theme-upload-return-image,
+.direct-theme-upload-return-shade,
+.direct-theme-upload-return-edge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.direct-theme-upload-return-image {
+  z-index: 0;
+  display: block;
+  object-fit: cover;
+  will-change: transform, opacity;
+}
+
+.direct-theme-upload-return-shade {
+  z-index: 1;
+  background: linear-gradient(180deg, transparent 48%, rgba(2, 9, 14, 0.86));
+}
+
+.direct-theme-upload-return-copy {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direct-theme-upload-return-plus {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #171717;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.direct-theme-upload-return-plus svg {
+  width: 46%;
+  height: 46%;
+  stroke-width: 1.8;
+}
+
+.direct-theme-upload-return-edge {
+  inset: 5px;
+  z-index: 5;
+  width: auto;
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--direct-return-accent) 68%, white);
+  border-radius: 4px;
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--direct-return-secondary) 16%, transparent);
+}
+
+@media (max-width: 1080px) {
+  .direct-theme-upload-return-copy {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .direct-theme-upload-return-clone {
     display: none;
   }
 }

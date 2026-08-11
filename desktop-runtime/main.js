@@ -8,12 +8,15 @@ const path = require('path')
 const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
 const DEFAULT_GROUP_ID = 'default_group'
+const VERTICAL_DISPLAY_FLIP = process.env.MAGICFLOOR_VERTICAL_FLIP === '1'
 
 let mainWindow = null
 let server = null
 let dataDir = ''
 let assetsDir = ''
 let stateFile = ''
+let dynamicEventSequence = 0
+let lastDynamicEvent = null
 
 const runtimeState = {
   activeGroupId: null,
@@ -147,7 +150,8 @@ const getPublicState = () => {
     groups: runtimeState.groups,
     assets,
     preview: runtimeState.preview,
-    server: runtimeState.server
+    server: runtimeState.server,
+    lastEvent: lastDynamicEvent
   }
 }
 
@@ -540,6 +544,15 @@ const applyDynamicEvent = (eventName, payload) => {
       console.log('Unhandled dynamic event:', eventName, payload)
   }
 
+  lastDynamicEvent = {
+    sequence: ++dynamicEventSequence,
+    eventName,
+    groupId: payload.groupId ?? runtimeState.activeGroupId ?? null,
+    itemId: payload.itemId ?? null,
+    enabled: eventName === 'PreviewMode' ? Boolean(payload.enabled) : undefined,
+    replayId: eventName === 'PreviewMode' ? payload.replayId ?? runtimeState.preview.replayId : undefined
+  }
+
   saveState()
   broadcastState()
 }
@@ -792,6 +805,8 @@ const createWindow = () => {
     width: 1920,
     height: 1080,
     fullscreen: !windowedForTesting,
+    frame: windowedForTesting,
+    show: false,
     backgroundColor: '#05070a',
     autoHideMenuBar: true,
     webPreferences: {
@@ -802,7 +817,19 @@ const createWindow = () => {
     }
   })
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  mainWindow.setMenuBarVisibility(false)
+  mainWindow.loadFile(
+    path.join(__dirname, 'renderer', 'index.html'),
+    VERTICAL_DISPLAY_FLIP
+      ? { query: { displayFlip: 'both', pointerFlip: 'none' } }
+      : undefined
+  )
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (!windowedForTesting) mainWindow.setFullScreen(true)
+    mainWindow.show()
+    mainWindow.focus()
+  })
   mainWindow.webContents.once('did-finish-load', () => {
     broadcastServerStatus()
     broadcastState()
