@@ -401,17 +401,19 @@ const InteractiveMagicTransition: React.FC<InteractiveMagicTransitionProps> = ({
       if (cancelled) return
 
       const header = scene.querySelector<HTMLElement>('.direct-magic-header')
-      const themeCards = Array.from(scene.querySelectorAll<HTMLElement>('.direct-theme-card'))
+      const themeCardMotions = Array.from(scene.querySelectorAll<HTMLElement>('.direct-theme-card-motion'))
       const maskBadges = Array.from(scene.querySelectorAll<HTMLElement>('.direct-theme-mask'))
-      remember(scene, header, ...themeCards, ...maskBadges)
+      remember(scene, header, ...themeCardMotions, ...maskBadges)
 
       gsap.set(scene, { opacity: 1 })
       gsap.set(header ? [header] : [], { opacity: 0, y: -24 })
       gsap.set(maskBadges, { opacity: 0, y: 12, scale: 0.9 })
+      gsap.killTweensOf(themeCardMotions)
+      gsap.set(themeCardMotions, { clearProps: 'opacity,transform,filter' })
 
-      themeCards.forEach((themeCard, index) => {
-        const rect = themeCard.getBoundingClientRect()
-        gsap.set(themeCard, reducedMotion
+      themeCardMotions.forEach((themeCardMotion, index) => {
+        const rect = themeCardMotion.getBoundingClientRect()
+        gsap.set(themeCardMotion, reducedMotion
           ? { opacity: 0, y: 16 }
           : {
               opacity: 0,
@@ -426,7 +428,7 @@ const InteractiveMagicTransition: React.FC<InteractiveMagicTransitionProps> = ({
       })
 
       const reveal = gsap.timeline({ onComplete: finish })
-        .to(themeCards, {
+        .to(themeCardMotions, {
           opacity: 1,
           x: 0,
           y: 0,

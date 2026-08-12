@@ -1,12 +1,15 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { gsap } from 'gsap'
 import { createDynamicPortalWorld } from './DynamicPortalWorld.ts'
-import type { DynamicTransitionOrigin } from './types.ts'
+import type { DynamicPortalVariant, DynamicTransitionOrigin } from './types.ts'
 
 interface DynamicPortalTransitionProps {
   origin: DynamicTransitionOrigin
   sourceRootRef: RefObject<HTMLElement>
   sourceCardRef: RefObject<HTMLButtonElement>
+  targetRootRef?: RefObject<HTMLElement>
+  targetRevealSelector?: string
+  variant?: DynamicPortalVariant
   onSceneSwitch: () => void
   onComplete: () => void
 }
@@ -37,6 +40,9 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
   origin,
   sourceRootRef,
   sourceCardRef,
+  targetRootRef,
+  targetRevealSelector,
+  variant = 'dynamic',
   onSceneSwitch,
   onComplete
 }) => {
@@ -64,12 +70,14 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
     if (!canvas || !backdrop || !binary || !matrix || !shardsContainer || !sourceRoot || !sourceCard) return
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const sourceFadeElements = Array.from(sourceRoot.querySelectorAll('.dynamic-home-fade'))
+    const sourceFadeElements = Array.from(
+      sourceRoot.querySelectorAll<HTMLElement>('.dynamic-home-fade, .entry-choice-card')
+    ).filter((element) => element !== sourceCard)
     const paperShards = Array.from(shardsContainer.querySelectorAll<HTMLElement>('.dynamic-portal-paper-shard'))
     let world: ReturnType<typeof createDynamicPortalWorld> | null = null
     if (!reducedMotion) {
       try {
-        world = createDynamicPortalWorld(canvas, origin)
+        world = createDynamicPortalWorld(canvas, origin, variant)
       } catch (error) {
         console.warn('Dynamic portal WebGL fallback enabled:', error)
         gsap.set(canvas, { display: 'none' })
@@ -80,11 +88,55 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
     let cancelled = false
     let firstStableFrame = 0
     let secondStableFrame = 0
+    let targetRevealFrame = 0
+    let targetRevealTimeline: gsap.core.Timeline | null = null
+    let revealedTargetRoot: HTMLElement | null = null
+    let revealedTargetElements: HTMLElement[] = []
 
     const switchScene = () => {
       if (sceneSwitched) return
       sceneSwitched = true
       sceneSwitchRef.current()
+    }
+
+    const revealTarget = () => {
+      switchScene()
+      if (!targetRootRef || !targetRevealSelector) return
+
+      const prepareTarget = (attempt = 0) => {
+        targetRevealFrame = window.requestAnimationFrame(() => {
+          if (cancelled) return
+          const targetRoot = targetRootRef.current
+          if (!targetRoot) {
+            if (attempt < 8) prepareTarget(attempt + 1)
+            return
+          }
+
+          const targetElements = Array.from(targetRoot.querySelectorAll<HTMLElement>(targetRevealSelector))
+          revealedTargetRoot = targetRoot
+          revealedTargetElements = targetElements
+          gsap.killTweensOf([targetRoot, ...targetElements])
+          gsap.set(targetRoot, { opacity: 0 })
+          gsap.set(targetElements, { opacity: 0, y: 24, scale: 0.975 })
+
+          targetRevealTimeline = gsap.timeline()
+            .to(targetRoot, {
+              opacity: 1,
+              duration: reducedMotion ? 0.28 : 0.66,
+              ease: 'power2.out'
+            }, 0)
+            .to(targetElements, {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              duration: reducedMotion ? 0.24 : 0.5,
+              stagger: reducedMotion ? 0.025 : 0.055,
+              ease: 'power2.out'
+            }, reducedMotion ? 0.04 : 0.14)
+        })
+      }
+
+      prepareTarget()
     }
 
     const finishAfterStablePaint = () => {
@@ -102,15 +154,20 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       gsap.set([canvas, binary, matrix, shardsContainer], { display: 'none' })
       const reducedTimeline = gsap.timeline({ onComplete: finishAfterStablePaint })
         .to(sourceRoot, { opacity: 0, duration: 0.18, ease: 'power1.out' }, 0)
-        .call(switchScene, [], 0.14)
+        .call(revealTarget, [], 0.14)
         .to(backdrop, { opacity: 0, duration: 0.18 }, 0.18)
+        .to({}, { duration: 0.18 }, 0.36)
 
       return () => {
         cancelled = true
         window.cancelAnimationFrame(firstStableFrame)
         window.cancelAnimationFrame(secondStableFrame)
+        window.cancelAnimationFrame(targetRevealFrame)
         reducedTimeline.kill()
+        targetRevealTimeline?.kill()
         gsap.set([sourceRoot, sourceCard, ...sourceFadeElements], { clearProps: 'all' })
+        if (revealedTargetRoot) gsap.set(revealedTargetRoot, { clearProps: 'opacity,transform,filter' })
+        gsap.set(revealedTargetElements, { clearProps: 'opacity,transform,filter,transformOrigin' })
       }
     }
 
@@ -158,7 +215,7 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
         ease: 'power2.inOut'
       }, 0.4)
       .to(sourceRoot, { opacity: 0, duration: 0.48, ease: 'power2.in' }, 1.02)
-      .call(switchScene, [], 1.08)
+      .call(revealTarget, [], 1.08)
       .to(worldState, { progress: 0.92, duration: 0.66, ease: 'power2.inOut' }, 1.18)
       .to([binary, matrix], { opacity: 0, duration: 0.42, ease: 'power1.out' }, 1.72)
       .to(canvas, { opacity: 0, duration: 0.42, ease: 'power1.out' }, 1.78)
@@ -170,11 +227,15 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       cancelled = true
       window.cancelAnimationFrame(firstStableFrame)
       window.cancelAnimationFrame(secondStableFrame)
+      window.cancelAnimationFrame(targetRevealFrame)
       timeline.kill()
+      targetRevealTimeline?.kill()
       world?.destroy()
       gsap.set([sourceRoot, sourceCard, ...sourceFadeElements], { clearProps: 'all' })
+      if (revealedTargetRoot) gsap.set(revealedTargetRoot, { clearProps: 'opacity,transform,filter' })
+      gsap.set(revealedTargetElements, { clearProps: 'opacity,transform,filter,transformOrigin' })
     }
-  }, [origin, sourceCardRef, sourceRootRef])
+  }, [origin, sourceCardRef, sourceRootRef, targetRevealSelector, targetRootRef, variant])
 
   return (
     <div className="dynamic-portal-transition-layer" aria-hidden="true">

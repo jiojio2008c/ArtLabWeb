@@ -99,6 +99,7 @@ const loadState = () => {
       enabled: false,
       startedAt: Date.now()
     }
+    normalizeStoredRuntimeState()
   } catch (error) {
     console.error('Failed to load runtime state:', error)
   }
@@ -196,7 +197,13 @@ const defaultItem = (payload, order = 0) => {
     rotation: payload.rotation ?? 0,
     flipX: payload.flipX ?? false,
     flipY: payload.flipY ?? false,
+    animationMode: payload.animationMode ?? (
+      Number(payload.animationId ?? 0) === 0 ? 'none' : 'fixed'
+    ),
     animationId: payload.animationId ?? 0,
+    clickAnimationIds: Array.isArray(payload.clickAnimationIds)
+      ? payload.clickAnimationIds
+      : [1, 2, 3, 4, 5, 6, 7, 8, 9],
     moveMode: payload.moveMode ?? 'none',
     movePercent: payload.movePercent ?? 50,
     moveSpeed: payload.moveSpeed ?? 50,
@@ -205,6 +212,14 @@ const defaultItem = (payload, order = 0) => {
     order: payload.order ?? order,
     updatedAt: Date.now()
   }
+}
+
+const normalizeStoredRuntimeState = () => {
+  Object.values(runtimeState.groups).forEach((group) => {
+    group.items = (group.items ?? []).map((item, index) => (
+      defaultItem(item, item.order ?? index)
+    ))
+  })
 }
 
 const findItem = (group, itemId) => {
@@ -381,6 +396,7 @@ const applyDynamicEvent = (eventName, payload) => {
         backgroundPlayMode: payload.backgroundPlayMode ?? ensureGroup(groupId).backgroundPlayMode ?? 'fixed',
         backgroundIntervalMs: payload.backgroundIntervalMs ?? ensureGroup(groupId).backgroundIntervalMs ?? 5000,
         replayId: payload.replayId ?? runtimeState.preview.replayId + 1,
+        resolvedAnimationIds: payload.resolvedAnimationIds ?? {},
         startedAt: Date.now()
       }
       break
@@ -497,7 +513,13 @@ const applyDynamicEvent = (eventName, payload) => {
       const group = ensureGroup(payload.groupId)
       const item = findItem(group, payload.itemId)
       if (item) {
+        item.animationMode = payload.animationMode ?? item.animationMode ?? (
+          Number(payload.animationId ?? item.animationId ?? 0) === 0 ? 'none' : 'fixed'
+        )
         item.animationId = payload.animationId ?? item.animationId
+        if (Array.isArray(payload.clickAnimationIds)) {
+          item.clickAnimationIds = payload.clickAnimationIds
+        }
         item.updatedAt = Date.now()
       }
       break
@@ -526,7 +548,9 @@ const applyDynamicEvent = (eventName, payload) => {
           'rotation',
           'flipX',
           'flipY',
+          'animationMode',
           'animationId',
+          'clickAnimationIds',
           'moveMode',
           'movePercent',
           'moveSpeed',

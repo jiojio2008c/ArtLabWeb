@@ -48,29 +48,30 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
 
       <section className="direct-select-workspace">
         {DIRECT_UPLOAD_THEMES.map((theme) => (
-          <button
-            key={theme.id}
-            type="button"
-            className={`direct-theme-card direct-theme-${theme.id} ${selectedThemeId === theme.id ? 'active' : ''}`}
-            data-theme-id={theme.id}
-            disabled={transitioning}
-            onClick={(event) => onSelectTheme(theme, event.currentTarget)}
-          >
-            <span className="direct-theme-media">
-              <img src={theme.cover} alt={t(theme.labelKey)} className="direct-theme-image" />
-              <span className="direct-theme-effect" aria-hidden="true">
-                {theme.id.startsWith('forest') && Array.from({ length: 8 }, (_, index) => (
-                  <i key={index} style={{ '--mote-index': index } as React.CSSProperties} />
-                ))}
+          <div key={theme.id} className="direct-theme-card-motion" data-theme-motion-id={theme.id}>
+            <button
+              type="button"
+              className={`direct-theme-card direct-theme-${theme.id} ${selectedThemeId === theme.id ? 'active' : ''}`}
+              data-theme-id={theme.id}
+              disabled={transitioning}
+              onClick={(event) => onSelectTheme(theme, event.currentTarget)}
+            >
+              <span className="direct-theme-media">
+                <img src={theme.cover} alt={t(theme.labelKey)} className="direct-theme-image" />
+                <span className="direct-theme-effect" aria-hidden="true">
+                  {theme.id.startsWith('forest') && Array.from({ length: 8 }, (_, index) => (
+                    <i key={index} style={{ '--mote-index': index } as React.CSSProperties} />
+                  ))}
+                </span>
+                <span className="direct-theme-shade" />
               </span>
-              <span className="direct-theme-shade" />
-            </span>
-            <span className="direct-theme-content">
-              <strong>{t(theme.labelKey)}</strong>
-              <span className="direct-theme-mask">{t(MASK_CATEGORY_LABEL_KEYS[theme.maskPrefix])}</span>
-            </span>
-            <span className="direct-theme-edge" aria-hidden="true" />
-          </button>
+              <span className="direct-theme-content">
+                <strong>{t(theme.labelKey)}</strong>
+                <span className="direct-theme-mask">{t(MASK_CATEGORY_LABEL_KEYS[theme.maskPrefix])}</span>
+              </span>
+              <span className="direct-theme-edge" aria-hidden="true" />
+            </button>
+          </div>
         ))}
       </section>
     </main>

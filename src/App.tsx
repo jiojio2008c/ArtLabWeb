@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import LoginPage from './components/LoginPage.tsx'
 import EntryPage from './components/EntryPage.tsx'
@@ -12,7 +13,6 @@ import DynamicItemsPage from './components/DynamicItemsPage.tsx'
 import DynamicControlPage from './components/DynamicControlPage.tsx'
 import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
 import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
-import InteractiveMagicTransition from './components/interactiveTransitions/InteractiveMagicTransition.tsx'
 import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
 import DirectThemeUploadReturnTransition from './components/interactiveTransitions/DirectThemeUploadReturnTransition.tsx'
 import type {
@@ -322,6 +322,17 @@ function App() {
     navigateTo('directUpload')
   }
 
+  const handleReturnFromDirectComplete = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    setDirectUploadResult(null)
+    setDirectUploadOpenMaskSelector(false)
+    setDirectThemeUploadTransition(null)
+    setDirectThemeUploadReturnTransition(false)
+    navigateTo('directSelect')
+  }
+
   const beginDynamicArtworkTransition = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
@@ -453,12 +464,61 @@ function App() {
           ? 'direct-theme-upload-route-active'
         : ''
 
+  const backwardDynamicArtworkTransition = dynamicArtworkTransition?.direction === 'backward'
+  const shouldRenderDynamicGroups = currentPage === 'dynamicGroups' || backwardDynamicArtworkTransition
+  const shouldRenderDynamicControl = Boolean(
+    selectedDynamicGroup
+    && (currentPage === 'dynamicControl' || backwardDynamicArtworkTransition)
+  )
+  const dualDynamicArtworkRoute = Boolean(
+    backwardDynamicArtworkTransition
+    && shouldRenderDynamicGroups
+    && shouldRenderDynamicControl
+  )
+  const dynamicArtSurfaceActive = Boolean(
+    dynamicPortalOrigin
+    || dynamicArtworkTransition
+    || currentPage === 'dynamicGroups'
+    || currentPage === 'dynamicBackground'
+    || currentPage === 'dynamicItems'
+    || currentPage === 'dynamicControl'
+  )
+
   return (
-    <div className={`min-h-screen bg-white ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
+    <div className={`min-h-screen bg-white ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''} ${dynamicArtSurfaceActive ? 'dynamic-art-route-surface' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
       {portraitLock}
 
-      <div key={currentPage} className={`page-frame page-${transitionDirection} page-view-${currentPage}`}>
-        {currentPage === 'entry' ? (
+      <div className={`page-frame page-${transitionDirection} page-view-${currentPage} ${dualDynamicArtworkRoute ? 'dynamic-story-dual-route' : ''}`}>
+        {shouldRenderDynamicGroups || shouldRenderDynamicControl ? (
+          <>
+            {shouldRenderDynamicGroups && (
+              <DynamicGroupsPage
+                key="dynamic-groups-route"
+                groups={dynamicGroups}
+                wsIp={networkSettings.wsIp}
+                dynamicPort={networkSettings.dynamicPort}
+                onBack={handleReturnFromDynamicGroups}
+                onCreateGroup={handleCreateDynamicGroup}
+                onUpdateGroup={updateDynamicGroupState}
+                onDeleteGroup={handleDeleteDynamicGroup}
+                onSelectGroup={handleSelectDynamicGroup}
+                portalArrival={Boolean(dynamicPortalOrigin)}
+                transitionPrepared={Boolean(backwardDynamicArtworkTransition && currentPage !== 'dynamicGroups')}
+              />
+            )}
+            {shouldRenderDynamicControl && selectedDynamicGroup && (
+              <DynamicControlPage
+                key="dynamic-control-route"
+                group={selectedDynamicGroup}
+                wsIp={networkSettings.wsIp}
+                dynamicPort={networkSettings.dynamicPort}
+                onBack={handleReturnFromDynamicControl}
+                onGroupChange={updateDynamicGroupState}
+                initialItemId={selectedDynamicItemId}
+              />
+            )}
+          </>
+        ) : currentPage === 'entry' ? (
           <EntryPage
             wsIp={networkSettings.wsIp}
             dynamicGroups={dynamicGroups}
@@ -481,18 +541,6 @@ function App() {
             onGroupChange={updateDynamicGroupState}
             onContinue={handleDynamicBackgroundComplete}
           />
-        ) : currentPage === 'dynamicGroups' ? (
-          <DynamicGroupsPage
-            groups={dynamicGroups}
-            wsIp={networkSettings.wsIp}
-            dynamicPort={networkSettings.dynamicPort}
-            onBack={handleReturnFromDynamicGroups}
-            onCreateGroup={handleCreateDynamicGroup}
-            onUpdateGroup={updateDynamicGroupState}
-            onDeleteGroup={handleDeleteDynamicGroup}
-            onSelectGroup={handleSelectDynamicGroup}
-            portalArrival={Boolean(dynamicPortalOrigin)}
-          />
         ) : currentPage === 'dynamicItems' && selectedDynamicGroup ? (
           <DynamicItemsPage
             group={selectedDynamicGroup}
@@ -501,15 +549,6 @@ function App() {
             onBack={() => navigateTo('dynamicGroups')}
             onGroupChange={updateDynamicGroupState}
             onOpenControl={handleOpenDynamicControl}
-          />
-        ) : currentPage === 'dynamicControl' && selectedDynamicGroup ? (
-          <DynamicControlPage
-            group={selectedDynamicGroup}
-            wsIp={networkSettings.wsIp}
-            dynamicPort={networkSettings.dynamicPort}
-            onBack={handleReturnFromDynamicControl}
-            onGroupChange={updateDynamicGroupState}
-            initialItemId={selectedDynamicItemId}
           />
         ) : currentPage === 'directSelect' ? (
           <DirectUploadSelectPage
@@ -539,7 +578,7 @@ function App() {
         ) : currentPage === 'directComplete' ? (
           <DirectUploadCompletePage
             result={directUploadResult}
-            onBackToEntry={() => navigateTo('entry')}
+            onBackToThemes={handleReturnFromDirectComplete}
             onReupload={handleResetDirectUpload}
           />
         ) : (
@@ -564,6 +603,7 @@ function App() {
           origin={dynamicPortalOrigin}
           sourceRootRef={entryRootRef}
           sourceCardRef={dynamicEntryCardRef}
+          variant="dynamic"
           onSceneSwitch={() => {
             setTransitionDirection('portal')
             setCurrentPage('dynamicGroups')
@@ -573,10 +613,13 @@ function App() {
       )}
 
       {interactivePortalOrigin && (
-        <InteractiveMagicTransition
+        <DynamicPortalTransition
           origin={interactivePortalOrigin}
           sourceRootRef={entryRootRef}
           sourceCardRef={interactiveEntryCardRef}
+          targetRootRef={directSelectRootRef}
+          targetRevealSelector=".direct-magic-header, .direct-theme-card-motion"
+          variant="interactive"
           onSceneSwitch={() => {
             setTransitionDirection('portal')
             setCurrentPage('directSelect')
@@ -617,10 +660,17 @@ function App() {
         <DynamicArtworkTransition
           request={dynamicArtworkTransition}
           onSceneSwitch={() => {
-            setTransitionDirection(dynamicArtworkTransition.direction === 'forward' ? 'forward' : 'backward')
-            setCurrentPage(dynamicArtworkTransition.direction === 'forward' ? 'dynamicControl' : 'dynamicGroups')
+            flushSync(() => {
+              setTransitionDirection(dynamicArtworkTransition.direction === 'forward' ? 'forward' : 'backward')
+              setCurrentPage(dynamicArtworkTransition.direction === 'forward' ? 'dynamicControl' : 'dynamicGroups')
+            })
           }}
-          onComplete={() => setDynamicArtworkTransition(null)}
+          onComplete={() => {
+            flushSync(() => {
+              setTransitionDirection('portal')
+              setDynamicArtworkTransition(null)
+            })
+          }}
         />
       )}
 

@@ -5,7 +5,6 @@ import InteractiveThemeScene from './components/InteractiveThemeScene.tsx'
 import InteractiveUploadScene from './components/InteractiveUploadScene.tsx'
 import LibraryScene from './components/LibraryScene.tsx'
 import ControlScene from './components/ControlScene.tsx'
-import MagicPortalTransition from './components/MagicPortalTransition.tsx'
 import MaterialStageTransition from './components/MaterialStageTransition.tsx'
 import PrototypeModeSwitch from './components/PrototypeModeSwitch.tsx'
 import ThemeUploadTransition from './components/ThemeUploadTransition.tsx'
@@ -209,19 +208,23 @@ const App = () => {
           key={runId}
           origin={origin}
           homeRef={homeRef}
-          libraryRef={libraryRef}
-          dynamicCardRef={dynamicCardRef}
+          targetRef={libraryRef}
+          sourceCardRef={dynamicCardRef}
+          targetRevealSelector=".library-reveal, .library-item"
+          variant="dynamic"
           onComplete={() => setView('library')}
         />
       )}
 
       {view === 'interactive-transition' && interactiveOrigin && (
-        <MagicPortalTransition
+        <TransitionPortal
           key={`interactive-${runId}`}
           origin={interactiveOrigin}
           homeRef={homeRef}
-          interactiveRef={interactiveRef}
-          interactiveCardRef={interactiveCardRef}
+          targetRef={interactiveRef}
+          sourceCardRef={interactiveCardRef}
+          targetRevealSelector=".interactive-reveal, .interactive-theme-card, .interactive-card-size-switch"
+          variant="interactive"
           onComplete={() => setView('interactive')}
         />
       )}

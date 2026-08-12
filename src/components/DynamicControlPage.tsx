@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Maximize2, Pencil, RotateCcw, X } from 'lucide-react'
+import {
+  Ban,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FlipHorizontal2,
+  FlipVertical2,
+  Maximize2,
+  Move,
+  MousePointerClick,
+  Pencil,
+  RotateCcw,
+  RotateCw,
+  SlidersHorizontal,
+  Sparkles,
+  Shuffle,
+  X
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
@@ -42,15 +59,34 @@ import {
 } from '../services/dynamicArtReceiverSync.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
 import DynamicAnimationPreview, {
-  DYNAMIC_ANIMATION_PREVIEWS,
   getDynamicAnimationPreview
 } from './DynamicAnimationPreview.tsx'
 import DynamicStageItemAnimation from './DynamicStageItemAnimation.tsx'
 import WalkAnimationCanvas from './WalkAnimationCanvas.tsx'
+import UnityAnimationCanvas from './UnityAnimationCanvas.tsx'
+import IntervalWheel from './IntervalWheel.tsx'
+import {
+  DYNAMIC_ANIMATION_IDS,
+  getDynamicAnimationMode,
+  getDynamicClickAnimationIds,
+  resolveDynamicAnimationId,
+  type DynamicAnimationMode
+} from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
+import {
+  UNITY_EXTRA_ANIMATION_MAX_ID,
+  UNITY_EXTRA_ANIMATION_MIN_ID
+} from '../../desktop-runtime/renderer/unity-animation-core.js'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
 type BackgroundIntervalUnit = 'seconds' | 'minutes'
+type PreviewPanelMode = 'object' | 'layers' | 'collapsed'
+
+interface PreviewPanelSnapshot {
+  mode: PreviewPanelMode
+  activeTab: ControlTab
+  selectedItemId: string
+}
 
 interface Point {
   x: number
@@ -166,6 +202,9 @@ const MAX_IMAGE_PREVIEW_SCALE = 5
 const MIN_STAGE_ITEM_TOUCH_SIZE = 64
 const STAGE_ITEM_TOUCH_PADDING = 14
 const MIN_STAGE_ITEM_COMPOSITOR_SIZE = 32
+const ANIMATION_SWIPE_THRESHOLD = 42
+const FIRST_SELECTABLE_ANIMATION_ID = DYNAMIC_ANIMATION_IDS[0] ?? 1
+const LAST_SELECTABLE_ANIMATION_ID = DYNAMIC_ANIMATION_IDS[DYNAMIC_ANIMATION_IDS.length - 1] ?? 17
 const RANDOM_PREVIEW_MOTION_MODES: DynamicMoveMode[] = [
   'verticalWave',
   'left',
@@ -247,6 +286,13 @@ const copyFieldOptions: { id: DynamicCopyField; labelKey: string }[] = [
 
 const ALL_COPY_FIELDS = copyFieldOptions.map((option) => option.id)
 
+const propertyTabOptions = [
+  { id: 'motion' as const, labelKey: 'control.motion', shortLabelKey: 'control.motionShort', icon: Move },
+  { id: 'animation' as const, labelKey: 'control.animation', shortLabelKey: 'control.animationShort', icon: Sparkles },
+  { id: 'transform' as const, labelKey: 'control.deform', shortLabelKey: 'control.deformShort', icon: SlidersHorizontal },
+  { id: 'copy' as const, labelKey: 'control.copyProperties', shortLabelKey: 'control.copyPropertiesShort', icon: RotateCw }
+]
+
 const getInitialItemId = (items: DynamicItem[], itemId = '') => {
   if (itemId && items.some((item) => item.id === itemId)) return itemId
   return items[0]?.id ?? ''
@@ -256,6 +302,16 @@ const getItemTrack = (item: DynamicItem) => item.moveTrack ?? getTrack(item.posi
 const getItemMoveSpeed = (item: DynamicItem) => clamp(item.moveSpeed ?? DEFAULT_MOVE_SPEED, 0, 100)
 const getItemFlipX = (item: DynamicItem) => item.flipX ?? false
 const getItemFlipY = (item: DynamicItem) => item.flipY ?? false
+const getResolvedPreviewAnimationId = (
+  item: DynamicItem,
+  groupId: string,
+  replayId: number
+) => resolveDynamicAnimationId(
+  getDynamicAnimationMode(item),
+  item.animationId,
+  DYNAMIC_ANIMATION_IDS,
+  `${groupId}:${item.id}:${replayId}`
+)
 const resolvePreviewMotionMode = (
   item: DynamicItem,
   groupId: string,
@@ -445,16 +501,20 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
   const { t } = useTranslation()
   const imageRef = useRef<HTMLImageElement>(null)
   const [retryToken, setRetryToken] = useState(0)
-  const [walkReady, setWalkReady] = useState(false)
+  const [animatedCanvasReady, setAnimatedCanvasReady] = useState(false)
   const walkActive = previewMode && animationId === 9
+  const unityActive = previewMode
+    && animationId >= UNITY_EXTRA_ANIMATION_MIN_ID
+    && animationId <= UNITY_EXTRA_ANIMATION_MAX_ID
+  const canvasAnimationActive = walkActive || unityActive
 
   useEffect(() => {
     setRetryToken(0)
   }, [src])
 
   useEffect(() => {
-    setWalkReady(false)
-  }, [replayId, src, walkActive])
+    setAnimatedCanvasReady(false)
+  }, [animationId, replayId, src, canvasAnimationActive])
 
   useLayoutEffect(() => {
     const image = imageRef.current
@@ -481,15 +541,30 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
         decoding="async"
         onLoad={(event) => onImageLoad(mediaId, event.currentTarget)}
         onError={handleImageError}
-        className={`dynamic-stage-item-visual ${active ? 'active' : ''} ${copyPulse ? 'copy-pulse' : ''} ${walkActive && walkReady ? 'walk-source-hidden' : ''}`}
+        className={`dynamic-stage-item-visual ${active ? 'active' : ''} ${copyPulse ? 'copy-pulse' : ''} ${canvasAnimationActive && animatedCanvasReady ? 'walk-source-hidden' : ''}`}
       />
       {walkActive && (
         <WalkAnimationCanvas
           src={src}
           ariaLabel={t('animation.namedWalk', { name })}
           replayKey={replayId}
-          onFirstFrame={() => setWalkReady(true)}
-          className={`dynamic-stage-item-visual dynamic-stage-item-walk ${walkReady ? 'is-ready' : ''}`}
+          onFirstFrame={() => setAnimatedCanvasReady(true)}
+          className={`dynamic-stage-item-visual dynamic-stage-item-walk ${animatedCanvasReady ? 'is-ready' : ''}`}
+        />
+      )}
+      {unityActive && (
+        <UnityAnimationCanvas
+          src={src}
+          animationId={animationId}
+          ariaLabel={t('animation.namedPreview', {
+            name,
+            animation: t(getDynamicAnimationPreview(animationId).labelKey)
+          })}
+          replayKey={replayId}
+          overscanX={1.55}
+          overscanY={1.72}
+          onFirstFrame={() => setAnimatedCanvasReady(true)}
+          className={`dynamic-stage-item-visual dynamic-stage-item-unity ${animatedCanvasReady ? 'is-ready' : ''}`}
         />
       )}
     </div>
@@ -747,6 +822,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   } | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const previewReplayIdRef = useRef(0)
+  const previewPanelSnapshotRef = useRef<PreviewPanelSnapshot | null>(null)
   const transformPersistTimerRef = useRef<number | null>(null)
   const propertyNameInputRef = useRef<HTMLInputElement>(null)
   const propertyThumbnailButtonRef = useRef<HTMLButtonElement>(null)
@@ -757,6 +833,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const imagePreviewTransformRef = useRef<ImagePreviewTransform>({ scale: 1, x: 0, y: 0 })
   const copyConfirmCloseButtonRef = useRef<HTMLButtonElement>(null)
   const copyReturnFocusRef = useRef<HTMLButtonElement | null>(null)
+  const clickAnimationRangeCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const animationSwipeStartRef = useRef<{ pointerId: number; x: number } | null>(null)
 
   const [selectedItemId, setSelectedItemId] = useState(() => getInitialItemId(group.items, initialItemId))
   const [toolOpen, setToolOpen] = useState(false)
@@ -812,6 +890,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [previewMode, setPreviewMode] = useState(false)
   const [previewReplayId, setPreviewReplayId] = useState(0)
   const [previewBackgroundId, setPreviewBackgroundId] = useState(group.background?.id ?? '')
+  const [animationCursor, setAnimationCursor] = useState(FIRST_SELECTABLE_ANIMATION_ID)
+  const [animationPreviewSessionId, setAnimationPreviewSessionId] = useState(0)
+  const [clickAnimationRangeOpen, setClickAnimationRangeOpen] = useState(false)
+  const [clickAnimationDraft, setClickAnimationDraft] = useState<number[]>([])
 
   const sortedItems = [...group.items].sort((a, b) => a.order - b.order)
   const layerItems = [...sortedItems].reverse()
@@ -835,6 +917,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
     MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
   )
+  const backgroundIntervalDisplayValue = Number(backgroundIntervalDraft)
+  const backgroundWheelValue = Number.isFinite(backgroundIntervalDisplayValue) && backgroundIntervalDisplayValue > 0
+    ? backgroundIntervalDisplayValue
+    : Number(formatBackgroundInterval(backgroundIntervalMs, backgroundIntervalUnit))
+  const backgroundWheelMin = backgroundIntervalUnit === 'minutes' ? 0.02 : 1
+  const backgroundWheelMax = backgroundIntervalUnit === 'minutes' ? 10 : 600
+  const backgroundWheelStep = backgroundIntervalUnit === 'minutes' ? 0.5 : 1
   const allLayersSelected = group.items.length > 0 && selectedLayerItemIds.length === group.items.length
   const someLayersSelected = selectedLayerItemIds.length > 0 && !allLayersSelected
   const allBackgroundsSelected = backgrounds.length > 0 && selectedBackgroundIds.length === backgrounds.length
@@ -848,6 +937,25 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         : 'layers'
   const rightPanelVisible = !previewMode && rightPanelMode !== 'collapsed'
   const visibleActiveTab = activeTab
+  const selectedAnimationMode = selectedItem ? getDynamicAnimationMode(selectedItem) : 'none'
+  const animationPreviewId = selectedItem
+    ? selectedAnimationMode === 'none'
+      ? 0
+      : selectedAnimationMode === 'random'
+        ? resolveDynamicAnimationId(
+          'random',
+          selectedItem.animationId,
+          DYNAMIC_ANIMATION_IDS,
+          `${group.id}:${selectedItem.id}:property:${animationPreviewSessionId}`
+        )
+        : animationCursor
+    : 0
+  const selectedItemScale = selectedItem
+    ? clamp(Number.isFinite(selectedItem.scale) ? selectedItem.scale : 1, MIN_ITEM_SCALE, MAX_ITEM_SCALE)
+    : 1
+  const selectedItemRotation = selectedItem
+    ? normalizeRotation(Number.isFinite(selectedItem.rotation) ? selectedItem.rotation : 0)
+    : 0
 
   const buildGroupStatePayload = (nextGroup: DynamicGroup) => {
     const nextBackgrounds = getBackgrounds(nextGroup)
@@ -871,7 +979,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         rotation: item.rotation,
         flipX: getItemFlipX(item),
         flipY: getItemFlipY(item),
+        animationMode: getDynamicAnimationMode(item),
         animationId: item.animationId,
+        clickAnimationIds: getDynamicClickAnimationIds(item),
         moveMode: item.moveMode,
         movePercent: item.movePercent,
         moveSpeed: getItemMoveSpeed(item),
@@ -910,12 +1020,20 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }, 180)
   }
 
+  const handleControlBack = () => {
+    if (transformPersistTimerRef.current !== null) {
+      flushPendingTransformPersist()
+    }
+    onBack()
+  }
+
   useEffect(() => {
     latestGroupRef.current = group
   }, [group])
 
   useEffect(() => {
     setPreviewMode(false)
+    previewPanelSnapshotRef.current = null
     setToolOpen(false)
     setBackgroundPanelOpen(false)
     const intervalMs = clamp(
@@ -929,6 +1047,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setRightPanelCollapsed(false)
     setAppearPanelOpen(false)
     setCopyConfirmOpen(false)
+    setClickAnimationRangeOpen(false)
+    setClickAnimationDraft([])
     setIsCopying(false)
     setCopyErrorKey('')
     setCopiedSourceItemId('')
@@ -946,6 +1066,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   useEffect(() => {
     setCopyConfirmOpen(false)
+    setClickAnimationRangeOpen(false)
+    setClickAnimationDraft([])
     setCopyErrorKey('')
     setCopiedSourceItemId((currentId) => currentId === selectedItemId ? '' : currentId)
     setIsImagePreviewOpen(false)
@@ -956,6 +1078,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setItemNameErrorKey('')
     setItemNameDraft(latestGroupRef.current.items.find((item) => item.id === selectedItemId)?.name ?? '')
   }, [selectedItemId])
+
+  useEffect(() => {
+    if (!selectedItem) return
+    const nextCursor = selectedItem.animationId >= FIRST_SELECTABLE_ANIMATION_ID
+      ? selectedItem.animationId
+      : FIRST_SELECTABLE_ANIMATION_ID
+    setAnimationCursor(nextCursor)
+  }, [selectedItem?.id, selectedItem?.animationId])
 
   useEffect(() => {
     if (!isEditingItemName) return undefined
@@ -983,13 +1113,24 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [copyConfirmOpen])
 
   useEffect(() => {
-    if (!isImagePreviewOpen && !copyConfirmOpen) return undefined
+    if (!clickAnimationRangeOpen) return undefined
+    const frame = window.requestAnimationFrame(() => clickAnimationRangeCloseButtonRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [clickAnimationRangeOpen])
+
+  useEffect(() => {
+    if (!isImagePreviewOpen && !copyConfirmOpen && !clickAnimationRangeOpen) return undefined
     const handleModalKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (isImagePreviewOpen) {
         setIsImagePreviewOpen(false)
         setImagePreviewTransform({ scale: 1, x: 0, y: 0 })
         window.requestAnimationFrame(() => propertyThumbnailButtonRef.current?.focus({ preventScroll: true }))
+        return
+      }
+      if (clickAnimationRangeOpen) {
+        setClickAnimationRangeOpen(false)
+        setClickAnimationDraft([])
         return
       }
       if (isCopying) return
@@ -999,7 +1140,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
     window.addEventListener('keydown', handleModalKeyDown)
     return () => window.removeEventListener('keydown', handleModalKeyDown)
-  }, [copyConfirmOpen, isCopying, isImagePreviewOpen])
+  }, [clickAnimationRangeOpen, copyConfirmOpen, isCopying, isImagePreviewOpen])
 
   useEffect(() => {
     const video = stageBackgroundVideoRef.current
@@ -1270,7 +1411,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const selectItem = (itemId: string, openTool = false) => {
     if (previewMode) return
 
+    const shouldRefreshPropertyPreview = (openTool && (!toolOpen || selectedItemId !== itemId))
+      || (!openTool && toolOpen && selectedItemId !== itemId)
     setSelectedItemId(itemId)
+    if (shouldRefreshPropertyPreview) {
+      setAnimationPreviewSessionId((value) => value + 1)
+    }
     if (openTool) {
       setRightPanelCollapsed(false)
       setToolOpen(true)
@@ -1290,6 +1436,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     return nextId
   }
 
+  const buildResolvedAnimationIds = (replayId: number, nextGroup = latestGroupRef.current) => (
+    Object.fromEntries(nextGroup.items.map((item) => [
+      item.id,
+      getResolvedPreviewAnimationId(item, nextGroup.id, replayId)
+    ]))
+  )
+
   const sendPreviewModeState = (
     enabled: boolean,
     options: {
@@ -1307,7 +1460,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       intervalMs: options.intervalMs ?? appearIntervalMs,
       backgroundPlayMode: options.backgroundPlayMode ?? group.backgroundPlayMode,
       backgroundIntervalMs: options.backgroundIntervalMs ?? backgroundIntervalMs,
-      replayId: options.replayId ?? previewReplayIdRef.current
+      replayId: options.replayId ?? previewReplayIdRef.current,
+      resolvedAnimationIds: buildResolvedAnimationIds(options.replayId ?? previewReplayIdRef.current)
     })
   }
 
@@ -1321,19 +1475,43 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const setPreviewModeEnabled = (enabled: boolean) => {
-    const replayId = enabled ? nextPreviewReplayId() : previewReplayIdRef.current
-    setPreviewMode(enabled)
     if (enabled) {
+      if (previewMode) return
+      previewPanelSnapshotRef.current = {
+        mode: rightPanelCollapsed
+          ? 'collapsed'
+          : toolOpen && selectedItem
+            ? 'object'
+            : 'layers',
+        activeTab,
+        selectedItemId
+      }
+      const replayId = nextPreviewReplayId()
+      setPreviewMode(true)
       setToolOpen(false)
       setBackgroundPanelOpen(false)
       setAppearPanelOpen(false)
       setCopyConfirmOpen(false)
+      setClickAnimationRangeOpen(false)
+      setClickAnimationDraft([])
+      setIsImagePreviewOpen(false)
       setManipulatingItemId('')
-    } else {
-      setRightPanelCollapsed(false)
+      sendPreviewModeState(true, { replayId })
+      return
     }
 
-    sendPreviewModeState(enabled, { replayId })
+    if (!previewMode) return
+    const replayId = previewReplayIdRef.current
+    const snapshot = previewPanelSnapshotRef.current
+    setPreviewMode(false)
+    setActiveTab(snapshot?.activeTab ?? 'motion')
+    setSelectedItemId(snapshot?.selectedItemId ?? selectedItemId)
+    setRightPanelCollapsed(snapshot?.mode === 'collapsed')
+    setToolOpen(snapshot?.mode === 'object')
+    setBackgroundPanelOpen(false)
+    setAppearPanelOpen(false)
+    previewPanelSnapshotRef.current = null
+    sendPreviewModeState(false, { replayId })
   }
 
   const resolveStageItemIdAtPoint = (clientPoint: Point) => {
@@ -1762,8 +1940,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
-  const commitBackgroundIntervalDraft = () => {
-    const draftValue = Number(backgroundIntervalDraft)
+  const commitBackgroundIntervalDraft = (displayValue?: number) => {
+    const draftValue = displayValue ?? Number(backgroundIntervalDraft)
     if (!Number.isFinite(draftValue) || draftValue <= 0) {
       setBackgroundIntervalDraft(formatBackgroundInterval(backgroundIntervalMs, backgroundIntervalUnit))
       return
@@ -1779,6 +1957,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (nextIntervalMs !== backgroundIntervalMs) {
       setBackgroundPlayback(group.backgroundPlayMode, nextIntervalMs)
     }
+  }
+
+  const handleBackgroundIntervalWheelChange = (displayValue: number) => {
+    const multiplier = backgroundIntervalUnit === 'minutes' ? 60000 : 1000
+    const nextIntervalMs = clamp(
+      Math.round(displayValue * multiplier),
+      MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+      MAX_DYNAMIC_BACKGROUND_INTERVAL_MS
+    )
+    setBackgroundIntervalDraft(formatBackgroundInterval(nextIntervalMs, backgroundIntervalUnit))
   }
 
   const handleBackgroundIntervalUnitChange = (unit: BackgroundIntervalUnit) => {
@@ -1977,18 +2165,93 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
+  const sendItemAnimationState = (item: DynamicItem) => {
+    sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
+      groupId: group.id,
+      itemId: item.id,
+      animationMode: getDynamicAnimationMode(item),
+      animationId: item.animationId,
+      clickAnimationIds: getDynamicClickAnimationIds(item)
+    })
+  }
+
   const handleAnimationSelect = (animationId: number) => {
     if (!selectedItem) return
 
-    updateItemLocal(selectedItem.id, (item) => ({
+    setAnimationCursor(animationId)
+    setAnimationPreviewSessionId((value) => value + 1)
+    const changedItem = updateItemLocal(selectedItem.id, (item) => ({
       ...item,
+      animationMode: 'fixed',
       animationId
     }), { persist: true, emit: false })
-    sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
-      groupId: group.id,
-      itemId: selectedItem.id,
-      animationId
-    })
+    if (changedItem) sendItemAnimationState(changedItem)
+  }
+
+  const handleAnimationModeSelect = (animationMode: DynamicAnimationMode) => {
+    if (!selectedItem) return
+
+    setAnimationPreviewSessionId((value) => value + 1)
+    const changedItem = updateItemLocal(selectedItem.id, (item) => ({
+      ...item,
+      animationMode,
+      animationId: animationMode === 'none' ? 0 : item.animationId
+    }), { persist: true, emit: false })
+    if (changedItem) sendItemAnimationState(changedItem)
+  }
+
+  const moveAnimationCursor = (offset: -1 | 1) => {
+    const currentIndex = DYNAMIC_ANIMATION_IDS.indexOf(animationCursor)
+    const nextIndex = currentIndex < 0
+      ? 0
+      : (currentIndex + offset + DYNAMIC_ANIMATION_IDS.length) % DYNAMIC_ANIMATION_IDS.length
+    handleAnimationSelect(DYNAMIC_ANIMATION_IDS[nextIndex])
+  }
+
+  const handleAnimationSwipeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    animationSwipeStartRef.current = { pointerId: event.pointerId, x: event.clientX }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handleAnimationSwipeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = animationSwipeStartRef.current
+    animationSwipeStartRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (!start || start.pointerId !== event.pointerId) return
+    const distance = event.clientX - start.x
+    if (Math.abs(distance) < ANIMATION_SWIPE_THRESHOLD) return
+    moveAnimationCursor(distance < 0 ? 1 : -1)
+  }
+
+  const openClickAnimationRange = () => {
+    if (!selectedItem) return
+    setClickAnimationDraft(getDynamicClickAnimationIds(selectedItem))
+    setClickAnimationRangeOpen(true)
+  }
+
+  const closeClickAnimationRange = () => {
+    setClickAnimationRangeOpen(false)
+    setClickAnimationDraft([])
+  }
+
+  const toggleClickAnimationDraft = (animationId: number) => {
+    setClickAnimationDraft((currentIds) => (
+      currentIds.includes(animationId)
+        ? currentIds.filter((id) => id !== animationId)
+        : [...currentIds, animationId].sort((first, second) => first - second)
+    ))
+  }
+
+  const confirmClickAnimationRange = () => {
+    if (!selectedItem || clickAnimationDraft.length === 0) return
+    const changedItem = updateItemLocal(selectedItem.id, (item) => ({
+      ...item,
+      clickAnimationIds: [...clickAnimationDraft]
+    }), { persist: true, emit: false })
+    if (changedItem) sendItemAnimationState(changedItem)
+    closeClickAnimationRange()
   }
 
   const setConstrainedImagePreviewTransform = (nextTransform: ImagePreviewTransform) => {
@@ -2216,7 +2479,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       onGroupChange(nextGroup)
       const protocolFields = copyFields.flatMap((field) => {
         if (field === 'motion') return ['moveMode', 'movePercent', 'moveSpeed', 'moveTrack']
-        if (field === 'animation') return ['animationId']
+        if (field === 'animation') return ['animationMode', 'animationId', 'clickAnimationIds']
         if (field === 'size') return ['scale', 'rotation']
         return ['flipX', 'flipY']
       })
@@ -2254,7 +2517,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           sendDynamicEvent(wsIp, dynamicPort, 'ItemAnimation', {
             groupId: group.id,
             itemId: copiedItem.id,
-            animationId: copiedItem.animationId
+            animationMode: getDynamicAnimationMode(copiedItem),
+            animationId: copiedItem.animationId,
+            clickAnimationIds: getDynamicClickAnimationIds(copiedItem)
           })
         }
       }
@@ -2291,6 +2556,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       ...item,
       rotation: normalizeRotation(item.rotation + delta)
     }), { persist: true, forceEmit: true })
+  }
+
+  const handleScaleSliderChange = (value: number) => {
+    if (!selectedItem) return
+    updateItemLocal(selectedItem.id, (item) => ({
+      ...item,
+      scale: clamp(value / 100, MIN_ITEM_SCALE, MAX_ITEM_SCALE)
+    }), { schedulePersist: true })
+  }
+
+  const handleRotationSliderChange = (value: number) => {
+    if (!selectedItem) return
+    updateItemLocal(selectedItem.id, (item) => ({
+      ...item,
+      rotation: normalizeRotation(value)
+    }), { schedulePersist: true })
   }
 
   const handleDeformChange = (axis: 'x' | 'y', value: boolean) => {
@@ -2971,7 +3252,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         ) : (
           <>
             <div className="topbar-title-row">
-              <button type="button" className="ipad-button ghost-button" onClick={onBack}>
+              <button type="button" className="ipad-button ghost-button" onClick={handleControlBack}>
                 {t('common.back')}
               </button>
               <div className="min-w-0">
@@ -3081,6 +3362,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             {sortedItems.map((item, index) => {
               const isManipulating = manipulatingItemId === item.id
               const resolvedMoveMode = resolvePreviewMotionMode(item, group.id, previewReplayId)
+              const resolvedAnimationId = previewMode
+                ? getResolvedPreviewAnimationId(item, group.id, previewReplayId)
+                : 0
               const isAmplitudeStatic = resolvedMoveMode !== 'left' && resolvedMoveMode !== 'right' && item.movePercent <= 0
               const shouldPlayMotion = previewMode && !isManipulating && !isAmplitudeStatic
               const motionMode = shouldPlayMotion ? resolvedMoveMode : 'none'
@@ -3117,9 +3401,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       replayId={previewReplayId}
                     >
                       <DynamicStageItemAnimation
-                        animationId={item.animationId}
+                        animationId={resolvedAnimationId}
                         itemId={item.id}
-                        enabled={previewMode && item.animationId !== 9}
+                        enabled={previewMode
+                          && resolvedAnimationId >= 1
+                          && resolvedAnimationId <= 8}
                         coordinateScale={animationCoordinateScale}
                       >
                         <div
@@ -3139,7 +3425,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                               src={item.media.url}
                               name={item.name}
                               mediaId={item.media.id}
-                              animationId={item.animationId}
+                              animationId={resolvedAnimationId}
                               previewMode={previewMode}
                               replayId={previewReplayId}
                               active={!previewMode && selectedItem?.id === item.id}
@@ -3162,7 +3448,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           <aside
             className="dynamic-layer-panel"
             aria-label={t('control.layers')}
-            style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
             <div className="dynamic-layer-header">
               <div>
@@ -3327,7 +3612,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           <aside
             className="dynamic-tool-panel side-right dynamic-property-overlay-panel"
             aria-label={t('control.objectProperties')}
-            style={stageSize.height > 0 ? { height: `${stageSize.height}px` } : undefined}
           >
             <div className={`dynamic-tool-header ${isEditingItemName ? 'is-renaming' : ''}`}>
               <div className="dynamic-tool-title">
@@ -3430,25 +3714,24 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             </div>
 
             <div className="tool-tabs dynamic-tool-tabs">
-              {[
-                { id: 'motion', labelKey: 'control.motion' },
-                { id: 'animation', labelKey: 'control.animation' },
-                { id: 'transform', labelKey: 'control.deform' },
-                { id: 'copy', labelKey: 'control.copyProperties' }
-              ].map((tab) => (
+              {propertyTabOptions.map(({ id, labelKey, shortLabelKey, icon: Icon }) => (
                 <button
-                  key={tab.id}
+                  key={id}
                   type="button"
-                  className={`tool-tab ${visibleActiveTab === tab.id ? 'active' : ''}`}
-                  onClick={() => setActiveTab(tab.id as ControlTab)}
+                  className={`tool-tab dynamic-property-tab ${visibleActiveTab === id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(id)}
+                  aria-label={t(labelKey)}
+                  title={t(labelKey)}
+                  aria-current={visibleActiveTab === id ? 'page' : undefined}
                 >
-                  {t(tab.labelKey)}
+                  <Icon size={15} strokeWidth={2.2} aria-hidden="true" />
+                  <span>{t(shortLabelKey)}</span>
                 </button>
               ))}
             </div>
 
             {visibleActiveTab === 'motion' && (
-              <div className="dynamic-tool-body">
+              <div className="dynamic-tool-body dynamic-property-body dynamic-property-motion-body">
                 <div className="motion-button-row">
                   {motionOptions.map((motion) => (
                     <button
@@ -3505,74 +3788,213 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             )}
 
             {visibleActiveTab === 'animation' && (
-              <div className="dynamic-tool-body compact">
-                <div className="animation-grid dynamic-animation-grid">
-                  {DYNAMIC_ANIMATION_PREVIEWS.map((animation) => (
+              <div className="dynamic-tool-body compact dynamic-property-body dynamic-property-animation-body dynamic-animation-tool-body">
+                <section className="dynamic-animation-mode-card">
+                  <div className="dynamic-property-section-heading">
+                    <strong>{t('animation.mode')}</strong>
+                    <span>
+                      {selectedAnimationMode === 'none'
+                        ? t('animation.none')
+                        : selectedAnimationMode === 'random'
+                          ? t('animation.random')
+                          : t(getDynamicAnimationPreview(animationCursor).shortLabelKey)}
+                    </span>
+                  </div>
+                  <div className="dynamic-animation-mode-row" aria-label={t('animation.mode')}>
                     <button
-                      key={animation.id}
                       type="button"
-                      className={`animation-tile ${selectedItem.animationId === animation.id ? 'active' : ''}`}
-                      onClick={() => handleAnimationSelect(animation.id)}
+                      className={`dynamic-animation-mode-button ${selectedAnimationMode === 'none' ? 'active' : ''}`}
+                      onClick={() => handleAnimationModeSelect('none')}
+                      aria-pressed={selectedAnimationMode === 'none'}
                     >
-                      <span className={`animation-tile-icon animation-tile-icon-${animation.className}`} aria-hidden="true">
-                        <span />
-                      </span>
-                      <span>{t(animation.shortLabelKey)}</span>
+                      <Ban size={18} strokeWidth={2.3} aria-hidden="true" />
+                      <span>{t('animation.none')}</span>
                     </button>
-                  ))}
-                </div>
-                <div className="dynamic-animation-preview">
-                  <DynamicAnimationPreview animationId={selectedItem.animationId} />
-                  <strong>{t(getDynamicAnimationPreview(selectedItem.animationId).labelKey)}</strong>
-                </div>
+                    <button
+                      type="button"
+                      className={`dynamic-animation-mode-button random ${selectedAnimationMode === 'random' ? 'active' : ''}`}
+                      onClick={() => handleAnimationModeSelect('random')}
+                      aria-pressed={selectedAnimationMode === 'random'}
+                    >
+                      <Shuffle size={18} strokeWidth={2.3} aria-hidden="true" />
+                      <span>{t('animation.random')}</span>
+                    </button>
+                  </div>
+                </section>
+
+                <section className="dynamic-animation-preview-card">
+                  <div className="dynamic-animation-carousel-meta" aria-live="polite">
+                    <strong>
+                      {t(getDynamicAnimationPreview(animationPreviewId).labelKey)}
+                    </strong>
+                    <span>{String(animationPreviewId).padStart(2, '0')} / {String(LAST_SELECTABLE_ANIMATION_ID).padStart(2, '0')}</span>
+                  </div>
+
+                  <div className="dynamic-animation-carousel">
+                    <button
+                      type="button"
+                      className="dynamic-animation-arrow"
+                      onClick={() => moveAnimationCursor(-1)}
+                      aria-label={t('animation.previous')}
+                      title={t('animation.previous')}
+                    >
+                      <ChevronLeft size={22} strokeWidth={2.4} />
+                    </button>
+                    <div
+                      className="dynamic-animation-carousel-card"
+                      onPointerDown={handleAnimationSwipeStart}
+                      onPointerUp={handleAnimationSwipeEnd}
+                      onPointerCancel={() => { animationSwipeStartRef.current = null }}
+                    >
+                      <DynamicAnimationPreview
+                        animationId={animationPreviewId}
+                        replayKey={`${selectedItem.id}:${animationPreviewId}:${animationPreviewSessionId}`}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="dynamic-animation-arrow"
+                      onClick={() => moveAnimationCursor(1)}
+                      aria-label={t('animation.next')}
+                      title={t('animation.next')}
+                    >
+                      <ChevronRight size={22} strokeWidth={2.4} />
+                    </button>
+                  </div>
+
+                  <div className="dynamic-animation-preview-footer">
+                    <span>
+                      {selectedAnimationMode === 'none'
+                        ? t('animation.none')
+                        : t('animation.preview', { name: t(getDynamicAnimationPreview(animationPreviewId).labelKey) })}
+                    </span>
+                  </div>
+                </section>
+
+                <button
+                  type="button"
+                  className="dynamic-click-animation-range-button"
+                  onClick={openClickAnimationRange}
+                  aria-haspopup="dialog"
+                >
+                  <MousePointerClick size={19} strokeWidth={2.2} aria-hidden="true" />
+                  <span>
+                    <strong>{t('animation.clickRange')}</strong>
+                    <small>{t('animation.selectedCount', { count: getDynamicClickAnimationIds(selectedItem).length })}</small>
+                  </span>
+                  <ChevronRight size={18} strokeWidth={2.2} aria-hidden="true" />
+                </button>
               </div>
             )}
 
             {visibleActiveTab === 'transform' && (
-              <div className="dynamic-tool-body compact">
+              <div className="dynamic-tool-body compact dynamic-property-body dynamic-property-transform-body">
                 <div className="dynamic-transform-readout dynamic-transform-readout-clean">
                   <span>
                     <small>{t('control.scale')}</small>
-                    <strong>{Math.round(selectedItem.scale * 100)}%</strong>
+                    <strong>{Math.round(selectedItemScale * 100)}%</strong>
                   </span>
                   <span>
                     <small>{t('control.rotation')}</small>
-                    <strong>{selectedItem.rotation.toFixed(0)}°</strong>
+                    <strong>{selectedItemRotation.toFixed(0)}°</strong>
                   </span>
                 </div>
-                <div className="control-row">
-                  <button type="button" className="scale-step-button" onClick={() => handleScaleNudge(-0.1)}>-</button>
-                  <strong>{t('control.scale')}</strong>
-                  <button type="button" className="scale-step-button" onClick={() => handleScaleNudge(0.1)}>+</button>
-                </div>
-                <div className="control-row">
-                  <button type="button" className="scale-step-button" onClick={() => handleRotationNudge(-5)}>-</button>
-                  <strong>{t('control.rotation')}</strong>
-                  <button type="button" className="scale-step-button" onClick={() => handleRotationNudge(5)}>+</button>
-                </div>
+                <section className="dynamic-transform-control-card">
+                  <div className="dynamic-transform-stepper-row">
+                    <div>
+                      <small>{t('control.size')}</small>
+                      <strong>{t('control.scale')}</strong>
+                    </div>
+                    <div className="dynamic-transform-stepper">
+                      <button type="button" onClick={() => handleScaleNudge(-0.1)} aria-label={t('control.scale')}>-</button>
+                      <span>{Math.round(selectedItemScale * 100)}%</span>
+                      <button type="button" onClick={() => handleScaleNudge(0.1)} aria-label={t('control.scale')}>+</button>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={MIN_ITEM_SCALE * 100}
+                    max={MAX_ITEM_SCALE * 100}
+                    step="1"
+                    value={Math.round(selectedItemScale * 100)}
+                    onChange={(event) => handleScaleSliderChange(Number(event.target.value))}
+                    onPointerUp={flushPendingTransformPersist}
+                    onPointerCancel={flushPendingTransformPersist}
+                    onBlur={flushPendingTransformPersist}
+                    aria-label={t('control.scale')}
+                    className="ipad-slider"
+                  />
+                  <div className="dynamic-transform-stepper-row">
+                    <div>
+                      <small>{t('control.rotation')}</small>
+                      <strong>{t('control.rotation')}</strong>
+                    </div>
+                    <div className="dynamic-transform-stepper">
+                      <button type="button" onClick={() => handleRotationNudge(-5)} aria-label={t('control.rotation')}>-</button>
+                      <span>{selectedItemRotation.toFixed(0)}°</span>
+                      <button type="button" onClick={() => handleRotationNudge(5)} aria-label={t('control.rotation')}>+</button>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    step="1"
+                    value={selectedItemRotation}
+                    onChange={(event) => handleRotationSliderChange(Number(event.target.value))}
+                    onPointerUp={flushPendingTransformPersist}
+                    onPointerCancel={flushPendingTransformPersist}
+                    onBlur={flushPendingTransformPersist}
+                    aria-label={t('control.rotation')}
+                    className="ipad-slider"
+                  />
+                </section>
                 <div className="dynamic-deform-stack">
-                  <label className="toggle-control wide">
+                  <label className="toggle-control wide dynamic-deform-toggle">
                     <input
                       type="checkbox"
                       checked={getItemFlipX(selectedItem)}
                       onChange={(event) => handleDeformChange('x', event.target.checked)}
                     />
-                    <span>{t('control.flipHorizontal')}</span>
+                    <span className="dynamic-deform-toggle-label">
+                      <FlipHorizontal2 size={16} strokeWidth={2.2} aria-hidden="true" />
+                      <strong>{t('control.flipHorizontal')}</strong>
+                    </span>
+                    <span className="dynamic-deform-switch" aria-hidden="true" />
                   </label>
-                  <label className="toggle-control wide">
+                  <label className="toggle-control wide dynamic-deform-toggle">
                     <input
                       type="checkbox"
                       checked={getItemFlipY(selectedItem)}
                       onChange={(event) => handleDeformChange('y', event.target.checked)}
                     />
-                    <span>{t('control.flipVertical')}</span>
+                    <span className="dynamic-deform-toggle-label">
+                      <FlipVertical2 size={16} strokeWidth={2.2} aria-hidden="true" />
+                      <strong>{t('control.flipVertical')}</strong>
+                    </span>
+                    <span className="dynamic-deform-switch" aria-hidden="true" />
                   </label>
+                </div>
+                <div className="dynamic-transform-live-preview" aria-label={t('control.objectPreview')}>
+                  <div
+                    className="dynamic-transform-live-preview-object"
+                    style={{
+                      transform: `rotate(${selectedItemRotation}deg) scale(${getItemFlipX(selectedItem) ? -selectedItemScale : selectedItemScale}, ${getItemFlipY(selectedItem) ? -selectedItemScale : selectedItemScale})`
+                    }}
+                  >
+                    <img
+                      src={selectedItem.media.url}
+                      alt={t('control.previewNamed', { name: selectedItem.name })}
+                      draggable={false}
+                    />
+                  </div>
+                  <span>{t('control.objectPreview')}</span>
                 </div>
               </div>
             )}
 
             {visibleActiveTab === 'copy' && (
-              <div className="dynamic-tool-body compact">
+              <div className="dynamic-tool-body compact dynamic-property-body dynamic-property-copy-body">
                 <div className="dynamic-copy-section-heading">
                   <span>{t('control.sourceObject')}</span>
                   <small>{t('control.availableCount', { count: Math.max(0, sortedItems.length - 1) })}</small>
@@ -3586,11 +4008,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       onClick={(event) => openCopyConfirm(item.id, event.currentTarget)}
                       aria-haspopup="dialog"
                     >
-                      <img src={item.media.url} alt={item.name} />
-                      <span>{item.name}</span>
-                      <span className="copy-source-action" aria-hidden="true">
-                        <span>→</span>
+                      <img src={item.media.url} alt="" draggable={false} />
+                      <span className="dynamic-copy-source-copy">
+                        <strong>{item.name}</strong>
+                        <small>{t('control.sourceObject')}</small>
                       </span>
+                      <ChevronRight className="dynamic-copy-source-chevron" size={17} strokeWidth={2.2} aria-hidden="true" />
                     </button>
                   ))}
                   {sortedItems.length <= 1 && (
@@ -3753,26 +4176,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 ))}
               </div>
               {group.backgroundPlayMode !== 'fixed' && (
-                <label className="dynamic-interval-input">
+                <div className="dynamic-interval-input">
                   <span>{t('control.switchInterval')}</span>
                   <span className="dynamic-interval-fields">
-                    <input
-                      type="number"
-                      min={backgroundIntervalUnit === 'minutes' ? 0.02 : 1}
-                      max={backgroundIntervalUnit === 'minutes' ? 10 : 600}
-                      step={backgroundIntervalUnit === 'minutes' ? 0.5 : 1}
+                    <IntervalWheel
+                      value={backgroundWheelValue}
+                      min={backgroundWheelMin}
+                      max={backgroundWheelMax}
+                      step={backgroundWheelStep}
                       inputMode="decimal"
-                      value={backgroundIntervalDraft}
-                      onChange={(event) => setBackgroundIntervalDraft(event.target.value)}
-                      onBlur={commitBackgroundIntervalDraft}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') event.currentTarget.blur()
-                        if (event.key === 'Escape') {
-                          setBackgroundIntervalDraft(formatBackgroundInterval(backgroundIntervalMs, backgroundIntervalUnit))
-                          event.currentTarget.blur()
-                        }
-                      }}
-                      aria-label={t('control.backgroundInterval')}
+                      onChange={handleBackgroundIntervalWheelChange}
+                      onCommit={commitBackgroundIntervalDraft}
+                      ariaLabel={t('control.backgroundInterval')}
                     />
                     <select
                       value={backgroundIntervalUnit}
@@ -3783,7 +4198,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       <option value="minutes">{t('control.minutes')}</option>
                     </select>
                   </span>
-                </label>
+                </div>
               )}
             </div>
 
@@ -4021,6 +4436,87 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 disabled={selectedCopyFields.length === 0 || isCopying}
               >
                 {isCopying ? t('control.copying') : t('control.confirmCopy')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {clickAnimationRangeOpen && selectedItem && (
+        <div className="dynamic-modal-overlay dynamic-click-range-modal-overlay" role="presentation">
+          <section
+            className="dynamic-click-range-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dynamic-click-range-title"
+          >
+            <div className="dynamic-click-range-heading">
+              <div>
+                <p className="eyebrow">{t('control.objectProperties')}</p>
+                <h2 id="dynamic-click-range-title">{t('animation.clickRangeTitle')}</h2>
+                <p>{t('animation.clickRangeHint')}</p>
+              </div>
+              <button
+                ref={clickAnimationRangeCloseButtonRef}
+                type="button"
+                className="dynamic-panel-close"
+                onClick={closeClickAnimationRange}
+                aria-label={t('common.close')}
+                title={t('common.close')}
+              >
+                <X size={18} strokeWidth={2.4} />
+              </button>
+            </div>
+
+            <div className="dynamic-click-range-toolbar">
+              <span>{t('animation.selectedCount', { count: clickAnimationDraft.length })}</span>
+              <button
+                type="button"
+                className="dynamic-copy-select-all"
+                onClick={() => setClickAnimationDraft(
+                  clickAnimationDraft.length === DYNAMIC_ANIMATION_IDS.length
+                    ? []
+                    : [...DYNAMIC_ANIMATION_IDS]
+                )}
+              >
+                {clickAnimationDraft.length === DYNAMIC_ANIMATION_IDS.length
+                  ? t('common.deselectAll')
+                  : t('common.selectAll')}
+              </button>
+            </div>
+
+            <div className="dynamic-click-range-options" aria-label={t('animation.clickRangeTitle')}>
+              {DYNAMIC_ANIMATION_IDS.map((animationId) => {
+                const definition = getDynamicAnimationPreview(animationId)
+                const checked = clickAnimationDraft.includes(animationId)
+                return (
+                  <label key={animationId} className={`dynamic-click-range-option ${checked ? 'selected' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleClickAnimationDraft(animationId)}
+                    />
+                    <span className="dynamic-click-range-check" aria-hidden="true">
+                      {checked ? <Check size={14} strokeWidth={3} /> : null}
+                    </span>
+                    <span className="dynamic-click-range-number">{String(animationId).padStart(2, '0')}</span>
+                    <strong>{t(definition.labelKey)}</strong>
+                  </label>
+                )
+              })}
+            </div>
+
+            <div className="dynamic-click-range-actions">
+              <button type="button" className="ipad-button secondary-button" onClick={closeClickAnimationRange}>
+                {t('animation.clickRangeCancel')}
+              </button>
+              <button
+                type="button"
+                className="ipad-button primary-button"
+                onClick={confirmClickAnimationRange}
+                disabled={clickAnimationDraft.length === 0}
+              >
+                {t('animation.clickRangeConfirm')}
               </button>
             </div>
           </section>

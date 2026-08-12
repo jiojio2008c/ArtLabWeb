@@ -1,5 +1,14 @@
 import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
+import {
+  DYNAMIC_ANIMATION_IDS,
+  getDynamicAnimationMode,
+  getDynamicClickAnimationIds,
+  normalizeDynamicAnimationId,
+  normalizeDynamicClickAnimationIds,
+  normalizeDynamicAnimationMode,
+  type DynamicAnimationMode
+} from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
 
 const DYNAMIC_GROUPS_KEY = 'magicfloor_dynamic_groups_v1'
 const DYNAMIC_DB_NAME = 'magicfloor_dynamic_media'
@@ -52,7 +61,9 @@ interface DynamicItem {
   rotation: number
   flipX: boolean
   flipY: boolean
+  animationMode: DynamicAnimationMode
   animationId: number
+  clickAnimationIds: number[]
   moveMode: DynamicMoveMode
   movePercent: number
   moveSpeed: number
@@ -443,6 +454,9 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
         media: await resolveMediaUrl(item.media),
         flipX: item.flipX ?? false,
         flipY: item.flipY ?? false,
+        animationMode: getDynamicAnimationMode(item),
+        animationId: normalizeDynamicAnimationId(item.animationId),
+        clickAnimationIds: getDynamicClickAnimationIds(item),
         moveSpeed: getDynamicMoveSpeedFromItem(item),
         moveTrack: item.moveTrack ?? getDynamicMoveTrackFromPosition(item.position.y)
       }))
@@ -865,7 +879,9 @@ const addDynamicItem = async (groupId: string, file: File, itemName?: string) =>
     rotation: 0,
     flipX: false,
     flipY: false,
+    animationMode: 'none',
     animationId: 0,
+    clickAnimationIds: [...DYNAMIC_ANIMATION_IDS],
     moveMode: 'none',
     movePercent: 50,
     moveSpeed: DEFAULT_DYNAMIC_MOVE_SPEED,
@@ -995,7 +1011,13 @@ const copyDynamicItemSettings = async (
       rotation: fieldSet.has('size') ? source.rotation : item.rotation,
       flipX: fieldSet.has('deform') ? source.flipX ?? false : item.flipX,
       flipY: fieldSet.has('deform') ? source.flipY ?? false : item.flipY,
+      animationMode: fieldSet.has('animation')
+        ? normalizeDynamicAnimationMode(source.animationMode, source.animationId)
+        : normalizeDynamicAnimationMode(item.animationMode, item.animationId),
       animationId: fieldSet.has('animation') ? source.animationId : item.animationId,
+      clickAnimationIds: fieldSet.has('animation')
+        ? getDynamicClickAnimationIds(source)
+        : normalizeDynamicClickAnimationIds(item.clickAnimationIds, !Array.isArray(item.clickAnimationIds)),
       moveMode: fieldSet.has('motion') ? source.moveMode : item.moveMode,
       movePercent: fieldSet.has('motion') ? source.movePercent : item.movePercent,
       moveSpeed: fieldSet.has('motion') ? getDynamicMoveSpeedFromItem(source) : item.moveSpeed,
@@ -1093,6 +1115,7 @@ const updateDynamicBackgroundPlayback = (
 
 export type {
   DynamicAppearMode,
+  DynamicAnimationMode,
   DynamicBackground,
   DynamicBackgroundPlayMode,
   DynamicCopyField,

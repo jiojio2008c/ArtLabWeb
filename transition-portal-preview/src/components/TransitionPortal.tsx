@@ -1,13 +1,15 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { gsap } from 'gsap'
 import { createPortalWorld } from './PortalWorld.ts'
-import type { PortalOrigin } from '../types.ts'
+import type { PortalOrigin, PortalVariant } from '../types.ts'
 
 interface TransitionPortalProps {
   origin: PortalOrigin
   homeRef: RefObject<HTMLElement>
-  libraryRef: RefObject<HTMLElement>
-  dynamicCardRef: RefObject<HTMLButtonElement>
+  targetRef: RefObject<HTMLElement>
+  sourceCardRef: RefObject<HTMLButtonElement>
+  targetRevealSelector: string
+  variant: PortalVariant
   onComplete: () => void
 }
 
@@ -36,8 +38,10 @@ const BINARY_STREAMS = Array.from({ length: 18 }, (_, index) => ({
 const TransitionPortal: React.FC<TransitionPortalProps> = ({
   origin,
   homeRef,
-  libraryRef,
-  dynamicCardRef,
+  targetRef,
+  sourceCardRef,
+  targetRevealSelector,
+  variant,
   onComplete
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -55,30 +59,39 @@ const TransitionPortal: React.FC<TransitionPortalProps> = ({
     const matrix = matrixRef.current
     const shardsContainer = shardsRef.current
     const home = homeRef.current
-    const library = libraryRef.current
-    const card = dynamicCardRef.current
+    const target = targetRef.current
+    const card = sourceCardRef.current
 
-    if (!root || !canvas || !backdrop || !binary || !matrix || !shardsContainer || !home || !library || !card) {
+    if (!root || !canvas || !backdrop || !binary || !matrix || !shardsContainer || !home || !target || !card) {
       return
     }
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const libraryElements = Array.from(library.querySelectorAll('.library-reveal, .library-item'))
-    const homeFadeElements = Array.from(home.querySelectorAll('.home-fade'))
+    const targetElements = Array.from(target.querySelectorAll<HTMLElement>(targetRevealSelector))
+    const homeFadeElements = Array.from(home.querySelectorAll<HTMLElement>('.home-fade, .art-entry-card'))
+      .filter((element) => element !== card)
     const paperShards = Array.from(shardsContainer.querySelectorAll<HTMLElement>('.paper-shard'))
-    const world = reducedMotion ? null : createPortalWorld(canvas, origin)
+    const world = reducedMotion ? null : createPortalWorld(canvas, origin, variant)
 
-    gsap.set(library, { visibility: 'visible', opacity: 0 })
-    gsap.set(libraryElements, { opacity: 0, y: 24, scale: 0.975 })
+    gsap.set(target, { visibility: 'visible', opacity: 0 })
+    gsap.set(targetElements, { opacity: 0, y: 24, scale: 0.975 })
     gsap.set([backdrop, binary, matrix, canvas], { opacity: 0 })
     gsap.set(paperShards, { opacity: 0, transformOrigin: 'center center' })
 
+    const completeTransition = () => {
+      onComplete()
+      window.requestAnimationFrame(() => {
+        gsap.set(target, { clearProps: 'opacity,transform,filter,visibility' })
+        gsap.set(targetElements, { clearProps: 'opacity,transform,filter' })
+      })
+    }
+
     if (reducedMotion) {
       gsap.set([canvas, binary, matrix, shardsContainer], { display: 'none' })
-      const reducedTimeline = gsap.timeline({ onComplete })
+      const reducedTimeline = gsap.timeline({ onComplete: completeTransition })
         .to(home, { opacity: 0, duration: 0.18, ease: 'power1.out' }, 0)
-        .to(library, { opacity: 1, duration: 0.28, ease: 'power1.out' }, 0.12)
-        .to(libraryElements, { opacity: 1, y: 0, scale: 1, duration: 0.24, stagger: 0.025 }, 0.16)
+        .to(target, { opacity: 1, duration: 0.28, ease: 'power1.out' }, 0.12)
+        .to(targetElements, { opacity: 1, y: 0, scale: 1, duration: 0.24, stagger: 0.025 }, 0.16)
         .set(home, { visibility: 'hidden' }, 0.44)
 
       return () => reducedTimeline.kill()
@@ -86,7 +99,7 @@ const TransitionPortal: React.FC<TransitionPortalProps> = ({
 
     const timeline = gsap.timeline({
       defaults: { overwrite: 'auto' },
-      onComplete
+      onComplete: completeTransition
     })
 
     timeline
@@ -128,7 +141,7 @@ const TransitionPortal: React.FC<TransitionPortalProps> = ({
         ease: 'power2.inOut'
       }, 0.4)
       .to(home, { opacity: 0, duration: 0.48, ease: 'power2.in' }, 1.08)
-      .to(library, {
+      .to(target, {
         opacity: 1,
         scale: 1,
         filter: 'none',
@@ -136,7 +149,7 @@ const TransitionPortal: React.FC<TransitionPortalProps> = ({
         ease: 'power2.out'
       }, 1.16)
       .to(world!.state, { progress: 0.92, duration: 0.66, ease: 'power2.inOut' }, 1.18)
-      .to(libraryElements, {
+      .to(targetElements, {
         opacity: 1,
         y: 0,
         scale: 1,
@@ -155,7 +168,7 @@ const TransitionPortal: React.FC<TransitionPortalProps> = ({
       timeline.kill()
       world?.destroy()
     }
-  }, [dynamicCardRef, homeRef, libraryRef, onComplete, origin])
+  }, [homeRef, onComplete, origin, sourceCardRef, targetRef, targetRevealSelector, variant])
 
   return (
     <div ref={rootRef} className="transition-portal-layer" aria-hidden="true">

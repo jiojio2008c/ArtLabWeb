@@ -5,6 +5,8 @@ export interface DynamicTransitionOrigin {
   height: number
 }
 
+export type DynamicPortalVariant = 'dynamic' | 'interactive'
+
 export type DynamicArtworkTransitionDirection = 'forward' | 'backward'
 
 export interface DynamicArtworkTransitionRequest {

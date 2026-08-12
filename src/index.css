@@ -59,6 +59,7 @@ code {
 }
 
 .page-frame {
+  position: relative;
   width: 100vw;
   height: 100dvh;
   overflow: hidden;
@@ -2217,8 +2218,10 @@ code {
   box-shadow: inset 0 0 24px rgba(89, 92, 255, 0.3);
 }
 
-.dynamic-home-transitioning .dynamic-portal-card-grid,
-.dynamic-home-transitioning .dynamic-portal-card-corners {
+.dynamic-home-transitioning .dynamic-choice-card .dynamic-portal-card-grid,
+.dynamic-home-transitioning .dynamic-choice-card .dynamic-portal-card-corners,
+.interactive-home-transitioning .interactive-choice-card .dynamic-portal-card-grid,
+.interactive-home-transitioning .interactive-choice-card .dynamic-portal-card-corners {
   opacity: 1;
   animation: dynamic-portal-card-pulse 360ms ease-out both;
 }
@@ -2402,8 +2405,20 @@ code {
   clip-path: polygon(0 78%, 27% 72%, 51% 80%, 75% 70%, 100% 77%, 100% 100%, 0 100%);
 }
 
-.dynamic-story-frame {
+.dynamic-story-frame-motion {
   position: fixed;
+  z-index: 3;
+  overflow: visible;
+  transform-origin: 0 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.dynamic-story-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -2416,7 +2431,7 @@ code {
     0 18px 46px rgba(20, 31, 33, 0.3);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  will-change: left, top, width, height, opacity, transform;
+  will-change: opacity, transform;
 }
 
 .dynamic-story-stage-proxy {
@@ -3423,6 +3438,364 @@ code {
 
   .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
     --control-collapsed-gutter: 58px;
+  }
+}
+
+/* Dynamic animation carousel and click-range controls. */
+.dynamic-animation-tool-body {
+  gap: 12px;
+}
+
+.dynamic-animation-mode-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dynamic-animation-mode-button,
+.dynamic-animation-arrow,
+.dynamic-click-animation-range-button {
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.dynamic-animation-mode-button {
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 8px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dynamic-animation-mode-button.random {
+  color: #315e66;
+  background: rgba(221, 244, 243, 0.7);
+}
+
+.dynamic-animation-mode-button.active {
+  border-color: #087f75;
+  color: #fff;
+  background: #087f75;
+  box-shadow: 0 6px 16px rgba(8, 127, 117, 0.18);
+}
+
+.dynamic-animation-mode-button:active,
+.dynamic-animation-arrow:active,
+.dynamic-click-animation-range-button:active {
+  transform: scale(0.97);
+}
+
+.dynamic-animation-carousel {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 7px;
+}
+
+.dynamic-animation-arrow {
+  width: 34px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dynamic-animation-arrow:hover {
+  border-color: rgba(8, 127, 117, 0.46);
+  background: rgba(221, 244, 243, 0.82);
+}
+
+.dynamic-animation-carousel-card {
+  min-width: 0;
+  touch-action: pan-y;
+  cursor: grab;
+}
+
+.dynamic-animation-carousel-card:active {
+  cursor: grabbing;
+}
+
+.dynamic-animation-carousel-card .dynamic-animation-preview {
+  border-radius: 9px;
+  padding: 8px;
+}
+
+.dynamic-animation-carousel-card .dynamic-animation-preview-stage {
+  min-height: 132px;
+}
+
+.dynamic-animation-carousel-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dynamic-animation-carousel-meta strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.dynamic-animation-carousel-meta span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.dynamic-click-animation-range-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  padding: 9px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dynamic-click-animation-range-button > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.dynamic-click-animation-range-button strong,
+.dynamic-click-animation-range-button small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dynamic-click-animation-range-button strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.dynamic-click-animation-range-button small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.dynamic-click-animation-range-button:hover {
+  border-color: rgba(8, 127, 117, 0.46);
+  background: rgba(221, 244, 243, 0.72);
+}
+
+.dynamic-animation-preview-unity-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 132% !important;
+  height: 142% !important;
+  max-width: none;
+  max-height: none;
+  display: block;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 14px 18px rgba(23, 23, 23, 0.22));
+}
+
+.dynamic-stage-item-unity {
+  max-width: none;
+  max-height: none;
+  opacity: 0;
+  transition: opacity 80ms linear;
+  object-fit: contain;
+}
+
+.dynamic-stage-item-unity.is-ready {
+  opacity: 1;
+}
+
+.dynamic-modal-overlay.dynamic-click-range-modal-overlay {
+  z-index: 210;
+  display: grid;
+  place-items: center;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+  padding:
+    max(20px, env(safe-area-inset-top), env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-right), env(safe-area-inset-left));
+}
+
+.dynamic-click-range-modal-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 22, 24, 0.18);
+  backdrop-filter: blur(14px) saturate(1.18);
+  -webkit-backdrop-filter: blur(14px) saturate(1.18);
+}
+
+.dynamic-click-range-modal {
+  position: relative;
+  z-index: 1;
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(720px, calc(100dvh - 40px));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 14px;
+  background: rgba(244, 250, 249, 0.78);
+  box-shadow: 0 28px 80px rgba(12, 36, 38, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(1.18);
+  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+  animation: dynamic-click-range-modal-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.dynamic-click-range-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dynamic-click-range-heading h2 {
+  margin: 3px 0 5px;
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.dynamic-click-range-heading p:last-child {
+  max-width: 420px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dynamic-click-range-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dynamic-click-range-options {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding: 2px;
+}
+
+.dynamic-click-range-option {
+  min-width: 0;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 22px 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 9px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.dynamic-click-range-option:active {
+  transform: scale(0.98);
+}
+
+.dynamic-click-range-option.selected {
+  border-color: rgba(8, 127, 117, 0.5);
+  background: rgba(221, 244, 243, 0.82);
+}
+
+.dynamic-click-range-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dynamic-click-range-check {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(23, 23, 23, 0.22);
+  border-radius: 6px;
+  color: #fff;
+  background: #fff;
+}
+
+.dynamic-click-range-option.selected .dynamic-click-range-check {
+  border-color: #087f75;
+  background: #087f75;
+}
+
+.dynamic-click-range-number {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.dynamic-click-range-option strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.dynamic-click-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+@keyframes dynamic-click-range-modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 520px) {
+  .dynamic-click-range-modal {
+    width: min(100%, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    padding: 15px;
+  }
+
+  .dynamic-click-range-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dynamic-click-range-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -10737,8 +11110,55 @@ button.ui-pressed {
   animation: dynamic-portal-library-reveal 560ms 190ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important;
 }
 
-.dynamic-story-route-backward .page-view-dynamicGroups .dynamic-library-content-stage {
-  opacity: 0;
+.dynamic-art-route-surface {
+  background-color: #dbecef;
+  background-image: url("./assets/magic-floor-background.webp");
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.dynamic-art-route-surface > .page-frame {
+  background-color: #dbecef;
+}
+
+.dynamic-story-dual-route {
+  isolation: isolate;
+}
+
+.dynamic-story-dual-route > .dynamic-library-screen,
+.dynamic-story-dual-route > .dynamic-control-screen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dynamic-story-dual-route > .dynamic-library-screen {
+  z-index: 1;
+}
+
+.dynamic-story-dual-route > .dynamic-control-screen {
+  z-index: 2;
+}
+
+.dynamic-story-route-backward .page-view-dynamicControl > .dynamic-library-screen.dynamic-transition-prepared {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.dynamic-story-route-backward .page-view-dynamicControl > .dynamic-control-screen {
+  pointer-events: none;
+}
+
+.dynamic-story-route-active .page-frame :is(
+  .dynamic-library-breadcrumbs,
+  .dynamic-library-browser,
+  .dynamic-background-workspace,
+  .dynamic-items-workspace,
+  .dynamic-control-workspace
+) {
+  animation: none !important;
 }
 
 @keyframes dynamic-folder-scan {
@@ -11774,7 +12194,7 @@ button.ui-pressed {
 
 .interactive-magic-route-active .page-view-directSelect .direct-select-screen,
 .interactive-magic-route-active .page-view-directSelect .direct-magic-header,
-.interactive-magic-route-active .page-view-directSelect .direct-theme-card {
+.interactive-magic-route-active .page-view-directSelect .direct-theme-card-motion {
   opacity: 0;
 }
 
@@ -11978,13 +12398,24 @@ button.ui-pressed {
   perspective: 1100px;
 }
 
-.direct-select-screen .direct-theme-card {
+.direct-select-screen .direct-theme-card-motion {
   position: relative;
   width: 100%;
   min-width: 0;
   height: auto;
   min-height: 0;
   aspect-ratio: 0.91 / 1;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+}
+
+.direct-select-screen .direct-theme-card {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
   display: grid;
   grid-template-rows: minmax(0, 1fr) 58px;
   gap: 0;
@@ -11995,9 +12426,7 @@ button.ui-pressed {
   color: #fff;
   background: #0d171d;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.12);
-  transform-style: preserve-3d;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-  will-change: transform, opacity;
 }
 
 .direct-select-screen .direct-theme-card:hover,
@@ -12006,11 +12435,6 @@ button.ui-pressed {
   border-color: rgba(202, 255, 247, 0.66);
   box-shadow: 0 24px 54px rgba(0, 0, 0, 0.48), 0 0 22px rgba(103, 241, 228, 0.18);
   outline: none;
-}
-
-.direct-select-screen .direct-theme-card:hover,
-.direct-select-screen .direct-theme-card:focus-visible {
-  transform: translateY(-7px);
 }
 
 .direct-theme-media {
@@ -12032,9 +12456,17 @@ button.ui-pressed {
   transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1), filter 300ms ease;
 }
 
-.direct-select-screen .direct-theme-card:hover .direct-theme-image {
-  transform: scale(1.045);
-  filter: saturate(1.08) brightness(1.04);
+@media (hover: hover) and (pointer: fine) {
+  .direct-select-screen .direct-theme-card:hover,
+  .direct-select-screen .direct-theme-card:focus-visible {
+    transform: translateY(-7px);
+  }
+
+  .direct-select-screen .direct-theme-card:hover .direct-theme-image,
+  .direct-select-screen .direct-theme-card:focus-visible .direct-theme-image {
+    transform: scale(1.045);
+    filter: saturate(1.08) brightness(1.04);
+  }
 }
 
 .direct-select-screen .direct-theme-shade {
@@ -12220,7 +12652,7 @@ button.ui-pressed {
     grid-template-columns: 136px minmax(0, 1fr) 126px;
   }
 
-  .direct-select-screen .direct-theme-card {
+  .direct-select-screen .direct-theme-card-motion {
     height: auto;
   }
 
@@ -12239,7 +12671,7 @@ button.ui-pressed {
     min-height: 64px;
   }
 
-  .direct-select-screen .direct-theme-card {
+  .direct-select-screen .direct-theme-card-motion {
     height: auto;
   }
 }
@@ -12468,7 +12900,7 @@ button.ui-pressed {
 }
 
 .direct-theme-upload-return-route-active .page-view-directSelect .direct-magic-header,
-.direct-theme-upload-return-route-active .page-view-directSelect .direct-theme-card {
+.direct-theme-upload-return-route-active .page-view-directSelect .direct-theme-card-motion {
   opacity: 0;
 }
 
@@ -12661,4 +13093,1223 @@ button.ui-pressed {
 /* Keep short artwork names clear of the control top bar's lower edge. */
 .dynamic-control-screen > .dynamic-control-topbar .screen-title {
   transform: translateY(-3px);
+}
+
+/* The layer rail and object properties share the full control-workspace height. */
+.dynamic-control-screen .dynamic-editor-row.right-panel-open {
+  height: 100%;
+  max-height: 100%;
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open .dynamic-stage-shell {
+  align-self: center;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-layer-panel,
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-property-overlay-panel {
+  box-sizing: border-box;
+  height: 100%;
+  max-height: 100%;
+  align-self: stretch;
+  overflow: hidden;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-layer-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-property-overlay-panel .dynamic-tool-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-property-overlay-panel,
+  .dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-property-overlay-panel.side-left,
+  .dynamic-control-screen .dynamic-editor-row.right-panel-open > .dynamic-property-overlay-panel.side-right {
+    left: auto;
+    right: auto !important;
+    top: auto;
+    bottom: auto;
+    width: var(--control-layer-width);
+    height: 100% !important;
+    max-height: 100%;
+    animation-name: dynamic-property-over-layer-in;
+  }
+}
+
+/* Background interval lock wheel: the field stays fixed while only its digits move. */
+.dynamic-background-modal .dynamic-background-playback {
+  position: relative;
+  z-index: 8;
+  overflow: visible;
+}
+
+.dynamic-background-modal .dynamic-interval-input,
+.dynamic-background-modal .dynamic-interval-fields {
+  overflow: visible;
+}
+
+.dynamic-background-modal .dynamic-interval-fields {
+  grid-template-columns: minmax(104px, 1fr) 82px;
+}
+
+.dynamic-background-modal .dynamic-interval-fields > select {
+  min-height: 38px;
+}
+
+.dynamic-interval-wheel {
+  position: relative;
+  z-index: 20;
+  width: 100%;
+  height: 38px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dynamic-interval-wheel-viewport {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 148px;
+  overflow: visible;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.dynamic-interval-wheel-track {
+  position: absolute;
+  left: 0;
+  top: 52px;
+  width: 100%;
+  height: 44px;
+}
+
+.dynamic-interval-wheel-cell {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 10px;
+  color: #17211d;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.12) 48%, rgba(180, 230, 233, 0.2)),
+    rgba(229, 242, 240, 0.38);
+  box-shadow:
+    0 9px 22px rgba(27, 55, 51, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(84, 156, 160, 0.13);
+  backdrop-filter: blur(20px) saturate(1.34) brightness(1.04);
+  -webkit-backdrop-filter: blur(20px) saturate(1.34) brightness(1.04);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.dynamic-interval-wheel-current {
+  z-index: 3;
+  top: 3px;
+  width: 100%;
+  height: 38px;
+  overflow: visible;
+  border-color: rgba(23, 33, 28, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  pointer-events: auto;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.dynamic-interval-wheel-current::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: -3px;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(75, 194, 205, 0.72);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(210, 244, 244, 0.4) 54%, rgba(126, 218, 225, 0.26)),
+    rgba(226, 248, 247, 0.58);
+  box-shadow:
+    0 8px 20px rgba(24, 93, 99, 0.16),
+    0 0 0 1px rgba(47, 173, 186, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 120ms ease, transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-current {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-current::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dynamic-interval-wheel-value,
+.dynamic-background-modal .dynamic-interval-fields .dynamic-interval-wheel-current input {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: right;
+  letter-spacing: 0;
+}
+
+.dynamic-interval-wheel-value {
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.dynamic-control-screen .dynamic-interval-wheel-value:active,
+.dynamic-control-screen .dynamic-interval-wheel-value.ui-pressed {
+  transform: none;
+  box-shadow: none;
+}
+
+.dynamic-interval-wheel-digit-window {
+  --dynamic-interval-wheel-window-size: 44px;
+  --dynamic-interval-wheel-reel-top: 0px;
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  right: 0;
+  width: var(--dynamic-interval-wheel-window-size);
+  height: var(--dynamic-interval-wheel-window-size);
+  overflow: hidden;
+  border-radius: 10px;
+  clip-path: inset(0 round 10px);
+  -webkit-clip-path: inset(0 round 10px);
+  contain: paint;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.dynamic-interval-wheel-digit-window-previous,
+.dynamic-interval-wheel-digit-window-next {
+  --dynamic-interval-wheel-window-size: 38px;
+  right: 3px;
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+
+.dynamic-interval-wheel-digit-window-previous {
+  --dynamic-interval-wheel-reel-top: 43px;
+  top: -43px;
+}
+
+.dynamic-interval-wheel-digit-window-next {
+  --dynamic-interval-wheel-reel-top: -49px;
+  top: 49px;
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-digit-window-previous,
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-digit-window-next {
+  opacity: 1;
+}
+
+.dynamic-interval-wheel-digit-reel {
+  position: absolute;
+  top: var(--dynamic-interval-wheel-reel-top);
+  left: calc((var(--dynamic-interval-wheel-window-size) - 44px) / 2);
+  width: 44px;
+  height: 44px;
+  transform: translate3d(0, var(--dynamic-interval-wheel-offset, 0), 0);
+  will-change: transform;
+}
+
+.dynamic-interval-wheel-digit {
+  position: absolute;
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: #17211d;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  transform: translate3d(0, calc(var(--dynamic-interval-wheel-digit-position, 0) * 46px), 0);
+  will-change: transform;
+}
+
+.dynamic-interval-wheel-digit-window-previous .dynamic-interval-wheel-digit,
+.dynamic-interval-wheel-digit-window-next .dynamic-interval-wheel-digit {
+  color: #fff;
+  font-size: 14px;
+  text-shadow: 0 2px 4px rgba(7, 12, 29, 0.48);
+}
+
+.dynamic-background-modal .dynamic-interval-fields .dynamic-interval-wheel-current input {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  padding-right: 10px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.dynamic-background-modal .dynamic-interval-fields .dynamic-interval-wheel-current input::-webkit-inner-spin-button,
+.dynamic-background-modal .dynamic-interval-fields .dynamic-interval-wheel-current input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.dynamic-interval-wheel-neighbor {
+  left: auto;
+  right: 3px;
+  top: 3px;
+  width: 38px;
+  height: 38px;
+  z-index: 2;
+  isolation: isolate;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  border-color: rgba(224, 221, 255, 0.7);
+  color: #fff;
+  background:
+    linear-gradient(148deg, rgba(235, 232, 255, 0.22), rgba(101, 96, 164, 0.15) 38%, rgba(28, 57, 72, 0.2)),
+    rgba(45, 48, 91, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(110, 102, 177, 0.22),
+    inset 0 0 22px rgba(211, 202, 255, 0.09),
+    0 0 0 1px rgba(149, 165, 236, 0.1),
+    0 0 16px rgba(126, 110, 255, 0.16),
+    0 12px 28px rgba(10, 18, 39, 0.18);
+  backdrop-filter: blur(32px) saturate(1.32) brightness(1.06);
+  -webkit-backdrop-filter: blur(32px) saturate(1.32) brightness(1.06);
+  transform: translate3d(0, 0, 0) scale(0.64);
+  transition:
+    opacity 130ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 150ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.dynamic-interval-wheel-neighbor::before,
+.dynamic-interval-wheel-neighbor::after {
+  content: '';
+  position: absolute;
+  display: block;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.dynamic-interval-wheel-neighbor::before {
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(132deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.1) 30%, transparent 52%),
+    linear-gradient(318deg, rgba(83, 230, 255, 0.09), transparent 42%),
+    linear-gradient(24deg, rgba(177, 116, 255, 0.11), transparent 48%);
+  opacity: 0.74;
+}
+
+.dynamic-interval-wheel-neighbor::after {
+  inset: 3px;
+  z-index: 1;
+  border: 1px solid rgba(244, 242, 255, 0.38);
+  border-right-color: rgba(149, 151, 209, 0.18);
+  border-bottom-color: rgba(104, 111, 172, 0.22);
+  border-radius: 7px;
+  box-shadow: inset 0 0 14px rgba(180, 164, 255, 0.08);
+}
+
+.dynamic-interval-wheel-previous {
+  transform: translate3d(0, -46px, 0) scale(0.74);
+}
+
+.dynamic-interval-wheel-next {
+  transform: translate3d(0, 46px, 0) scale(0.74);
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-neighbor {
+  opacity: 0.96;
+  pointer-events: auto;
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-previous {
+  transform: translate3d(0, -46px, 0) scale(1);
+}
+
+.dynamic-interval-wheel.is-expanded .dynamic-interval-wheel-next {
+  transform: translate3d(0, 46px, 0) scale(1);
+}
+
+.dynamic-interval-wheel.is-editing .dynamic-interval-wheel-neighbor,
+.dynamic-interval-wheel-neighbor:disabled {
+  opacity: 0.34;
+  pointer-events: none;
+  filter: saturate(0.45);
+}
+
+.dynamic-interval-wheel-value:focus-visible,
+.dynamic-background-modal .dynamic-interval-fields .dynamic-interval-wheel-current input:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(8, 127, 141, 0.54);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-interval-wheel-digit-window,
+  .dynamic-interval-wheel-neighbor,
+  .dynamic-interval-wheel-current::before {
+    transition-duration: 1ms;
+  }
+}
+
+/* Production object-properties panel, synchronized with the approved prototype. */
+.dynamic-control-screen .dynamic-property-overlay-panel {
+  padding: 9px 8px 10px;
+  gap: 0;
+  color: #17231f;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.3), transparent 42%),
+    rgba(247, 250, 249, 0.89);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(1.12);
+  -webkit-backdrop-filter: blur(28px) saturate(1.12);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-header {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 62px;
+  padding: 1px 2px 8px;
+  align-items: center;
+  gap: 7px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-tool-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-thumbnail-button {
+  width: 44px;
+  height: 46px;
+  min-width: 44px;
+  flex: 0 0 44px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-thumbnail-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-thumbnail-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-title-copy,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-name-button,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-name-button > span {
+  min-width: 0;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-title-copy {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 0;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-title-copy > .eyebrow {
+  overflow: hidden;
+  color: #71817d;
+  font-size: 8px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-name-button {
+  min-height: 25px;
+  padding: 1px 2px 1px 0;
+  gap: 4px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-name-button > span {
+  font-size: 15px;
+  line-height: 1.05;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-name-button > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-panel-close {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  flex: 0 0 34px;
+  border: 1px solid rgba(23, 48, 43, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs {
+  flex: 0 0 auto;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin: 7px 0 8px;
+  padding: 3px;
+  border: 1px solid rgba(34, 61, 56, 0.08);
+  border-radius: 9px;
+  background: rgba(227, 235, 232, 0.84);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 1px;
+  display: grid;
+  grid-template-rows: 15px minmax(0, 1fr);
+  place-items: center;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 7px;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab > svg {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  flex: 0 0 14px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab > span {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-property-body,
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-body.compact {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 1px 1px 10px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(47, 122, 116, 0.28) transparent;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-card,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-card,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-control-card,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading {
+  box-sizing: border-box;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(23, 48, 43, 0.09);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+    rgba(255, 255, 255, 0.76);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 5px 12px rgba(28, 62, 57, 0.045);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading > span {
+  min-width: 0;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading > span {
+  overflow: hidden;
+  color: #1c2a26;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading > span,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta > span,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading > small {
+  flex: 0 0 auto;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgba(33, 143, 139, 0.18);
+  border-radius: 999px;
+  color: #087f8d;
+  background: rgba(210, 245, 242, 0.7);
+  font-size: 8px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button {
+  min-width: 0;
+  min-height: 38px;
+  gap: 5px;
+  padding: 0 5px;
+  border-color: rgba(23, 48, 43, 0.1);
+  border-radius: 7px;
+  color: #53635f;
+  background: rgba(247, 249, 248, 0.92);
+  font-size: 9px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button.active {
+  border-color: rgba(8, 127, 145, 0.34);
+  color: #fff;
+  background: #1f2925;
+  box-shadow: 0 4px 10px rgba(24, 31, 27, 0.16);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel {
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 5px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-arrow {
+  box-sizing: border-box;
+  width: 34px;
+  height: 42px;
+  min-width: 34px;
+  padding: 0;
+  border-color: rgba(23, 48, 43, 0.1);
+  border-radius: 50%;
+  color: #214943;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 5px 12px rgba(26, 71, 62, 0.11);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-arrow > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(53, 91, 84, 0.16);
+  border-radius: 7px;
+  touch-action: pan-y;
+  cursor: grab;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card:active {
+  cursor: grabbing;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card .dynamic-animation-preview-stage {
+  width: 100%;
+  min-height: 82px;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.78), transparent 34%),
+    linear-gradient(180deg, #d9f0ee, #b7ddd2 66%, #8fbd9c);
+  background-size: auto;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card .dynamic-animation-preview-person {
+  width: min(48%, 88px);
+  height: 74%;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-card > .dynamic-animation-carousel-meta > strong {
+  font-size: 12px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-footer {
+  min-width: 0;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  color: #6d7b76;
+  font-size: 8px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-footer > span {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button {
+  min-height: 50px;
+  padding: 7px 9px;
+  border-color: rgba(23, 48, 43, 0.1);
+  border-radius: 8px;
+  color: #1c2a26;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button > svg:first-child {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button strong {
+  font-size: 10px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button small {
+  font-size: 8px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean > span {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 64px;
+  padding: 8px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 4px;
+  border: 1px solid rgba(23, 48, 43, 0.09);
+  border-radius: 8px;
+  color: #1c2a26;
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean small {
+  overflow: hidden;
+  color: #71817c;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean strong {
+  color: #087f8d;
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-control-card {
+  gap: 10px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child > small {
+  overflow: hidden;
+  color: #71817c;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child > strong {
+  overflow: hidden;
+  color: #1c2a26;
+  font-size: 10px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper {
+  flex: 0 0 auto;
+  display: inline-grid;
+  grid-template-columns: 27px 43px 27px;
+  align-items: center;
+  gap: 3px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper > button {
+  box-sizing: border-box;
+  width: 27px;
+  height: 27px;
+  min-width: 27px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(23, 48, 43, 0.12);
+  border-radius: 6px;
+  color: #2b6965;
+  background: rgba(230, 247, 243, 0.8);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper > span {
+  min-width: 0;
+  color: #1b3631;
+  font-size: 9px;
+  font-weight: 900;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-control-card > input[type="range"] {
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  accent-color: #078f8d;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-stack {
+  gap: 0;
+  padding: 4px 9px;
+  border: 1px solid rgba(23, 48, 43, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle {
+  box-sizing: border-box;
+  position: relative;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 1px;
+  justify-content: space-between;
+  gap: 7px;
+  overflow: hidden;
+  border: 0;
+  border-top: 1px solid rgba(23, 48, 43, 0.07);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle:first-child {
+  border-top: 0;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: #405550;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle-label > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle-label > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  min-width: 34px;
+  flex: 0 0 34px;
+  border-radius: 999px;
+  background: #d8e0dd;
+  box-shadow: inset 0 0 0 1px rgba(23, 48, 43, 0.1);
+  transition: background-color 160ms ease;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(26, 48, 43, 0.22);
+  transition: transform 160ms ease;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle > input:checked ~ .dynamic-deform-switch {
+  background: #2c9e91;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle > input:checked ~ .dynamic-deform-switch::after {
+  transform: translateX(14px);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle > input:focus-visible ~ .dynamic-deform-switch {
+  outline: 2px solid rgba(8, 127, 145, 0.5);
+  outline-offset: 2px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview {
+  box-sizing: border-box;
+  position: relative;
+  min-width: 0;
+  min-height: 108px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed rgba(51, 108, 98, 0.2);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(223, 244, 239, 0.7), rgba(191, 224, 203, 0.72));
+  contain: paint;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview-object {
+  width: 42px;
+  height: 50px;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transform-origin: center;
+  transition: transform 180ms ease;
+  pointer-events: none;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview-object > img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 6px rgba(33, 69, 55, 0.2));
+  user-select: none;
+  pointer-events: none;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview > span {
+  position: absolute;
+  right: 7px;
+  bottom: 5px;
+  color: rgba(43, 93, 82, 0.72);
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-copy-body > .dynamic-copy-section-heading {
+  align-items: center;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-source-list {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 7px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-source-button {
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  padding: 7px 8px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 17px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(23, 48, 43, 0.1);
+  border-radius: 8px;
+  color: #1c2a26;
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-source-button:hover {
+  border-color: rgba(8, 127, 145, 0.27);
+  background: rgba(239, 251, 248, 0.92);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-source-button > img {
+  box-sizing: border-box;
+  width: 46px;
+  height: 48px;
+  padding: 3px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: rgba(226, 239, 235, 0.9);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-source-button > .dynamic-copy-source-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > strong {
+  color: #1c2a26;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > small {
+  color: #71817c;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-chevron {
+  width: 15px;
+  height: 15px;
+  color: #5f7b73;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .copy-empty {
+  box-sizing: border-box;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px dashed rgba(53, 91, 84, 0.18);
+  border-radius: 8px;
+  color: #71817c;
+  background: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  text-align: center;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-feedback {
+  min-height: 34px;
+  padding: 0 9px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 9px;
+}
+
+@media (max-width: 1100px) {
+  .dynamic-control-screen .dynamic-property-overlay-panel {
+    padding-inline: 7px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab {
+    padding-inline: 0;
+    font-size: 8px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab > svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel {
+    gap: 3px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card .dynamic-animation-preview-stage {
+    min-height: 76px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper {
+    grid-template-columns: 25px 39px 25px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper > button {
+    width: 25px;
+    height: 25px;
+    min-width: 25px;
+  }
+}
+
+@media (max-height: 720px) {
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-header {
+    min-height: 54px;
+    padding-bottom: 6px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-thumbnail-button {
+    width: 40px;
+    height: 42px;
+    min-width: 40px;
+    flex-basis: 40px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs {
+    margin-block: 5px 6px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab {
+    min-height: 36px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-property-body,
+  .dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-body.compact {
+    gap: 6px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-card,
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-card,
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-control-card,
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading {
+    gap: 6px;
+    padding: 7px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button {
+    min-height: 34px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-card .dynamic-animation-preview-stage {
+    min-height: 70px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean > span {
+    min-height: 54px;
+  }
+
+  .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview {
+    min-height: 92px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-control-screen .dynamic-property-overlay-panel,
+  .dynamic-control-screen .dynamic-property-overlay-panel *,
+  .dynamic-control-screen .dynamic-property-overlay-panel *::before,
+  .dynamic-control-screen .dynamic-property-overlay-panel *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

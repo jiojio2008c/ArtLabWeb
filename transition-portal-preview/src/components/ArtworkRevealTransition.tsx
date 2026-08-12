@@ -76,7 +76,7 @@ const ArtworkRevealTransition: React.FC<ArtworkRevealTransitionProps> = ({
       height: plusSize
     }
     const stageItems = Array.from(rail.querySelectorAll<HTMLElement>(
-      '.theme-upload-rail-heading, .theme-upload-mask-preview, .theme-upload-mask-grid, .theme-upload-primary'
+      '.theme-upload-rail-heading, .theme-upload-mask-preview, .theme-upload-mask-grid, .theme-upload-send'
     ))
     const cloneCorners = Array.from(root.querySelectorAll<HTMLElement>('.artwork-reveal-corner'))
     const stageHeading = stagePanel.querySelector<HTMLElement>('.theme-upload-panel-heading')

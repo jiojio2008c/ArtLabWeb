@@ -6,6 +6,10 @@ import {
   type DynamicMedia
 } from './dynamicArtStorage.ts'
 import { sendDynamicEventAsync, uploadUnityAssetAsync } from './unityBridge.ts'
+import {
+  getDynamicAnimationMode,
+  getDynamicClickAnimationIds
+} from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
 
 const DYNAMIC_RECEIVER_SYNC_KEY = 'magicfloor_dynamic_receiver_sync_v1'
 
@@ -66,7 +70,9 @@ const toItemPayload = (item: DynamicItem) => ({
   rotation: item.rotation,
   flipX: item.flipX ?? false,
   flipY: item.flipY ?? false,
+  animationMode: getDynamicAnimationMode(item),
   animationId: item.animationId,
+  clickAnimationIds: getDynamicClickAnimationIds(item),
   moveMode: item.moveMode,
   movePercent: item.movePercent,
   moveSpeed: item.moveSpeed,

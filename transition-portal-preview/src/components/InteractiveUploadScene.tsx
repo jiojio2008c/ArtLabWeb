@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
-import { ArrowLeft, Check, ImagePlus, Plus, RotateCcw, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { ArrowLeft, Check, ImagePlus, Plus, RotateCcw, Sparkles, Upload } from 'lucide-react'
 import type { InteractiveTheme } from './interactiveThemeData.ts'
 import ArtworkRevealTransition from './ArtworkRevealTransition.tsx'
+import ArtworkLaunchTransition from './ArtworkLaunchTransition.tsx'
+import InteractiveUploadCompleteScene from './InteractiveUploadCompleteScene.tsx'
+import { playArtworkLaunchSound } from '../artworkLaunchAudio.ts'
+
+type UploadFlowPhase = 'editing' | 'launching' | 'complete'
 
 interface InteractiveUploadSceneProps {
   rootRef: RefObject<HTMLElement>
@@ -31,6 +36,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
   const [previewUrl, setPreviewUrl] = useState('')
   const [fileName, setFileName] = useState('')
   const [isRevealing, setIsRevealing] = useState(false)
+  const [uploadPhase, setUploadPhase] = useState<UploadFlowPhase>('editing')
 
   useEffect(() => {
     setSelectedMaskId(theme?.masks[0]?.id ?? '')
@@ -40,19 +46,12 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
     })
     setFileName('')
     setIsRevealing(false)
+    setUploadPhase('editing')
   }, [theme?.id])
 
   useEffect(() => () => {
     if (previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
-
-  if (!theme) return null
-
-  const selectedMask = theme.masks.find((item) => item.id === selectedMaskId) ?? theme.masks[0]
-  const themeStyle = {
-    '--upload-accent': theme.accent,
-    '--upload-secondary': theme.secondary
-  } as React.CSSProperties
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -69,19 +68,38 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
   }
 
   const openFilePicker = () => inputRef.current?.click()
+  const isInteractionLocked = isRevealing || uploadPhase === 'launching'
+
+  const startArtworkLaunch = () => {
+    if (!previewUrl || isInteractionLocked) return
+    playArtworkLaunchSound()
+    setUploadPhase('launching')
+  }
+
+  const finishArtworkLaunch = useCallback(() => {
+    setUploadPhase('complete')
+  }, [])
+
+  if (!theme) return null
+
+  const selectedMask = theme.masks.find((item) => item.id === selectedMaskId) ?? theme.masks[0]
+  const themeStyle = {
+    '--upload-accent': theme.accent,
+    '--upload-secondary': theme.secondary
+  } as React.CSSProperties
 
   return (
     <section
       ref={rootRef}
-      className={`interactive-upload-scene theme-${theme.effect} ${previewUrl ? 'has-selection' : 'is-importing'} ${isRevealing ? 'is-artwork-revealing' : ''} ${visible ? 'is-visible' : ''}`}
+      className={`interactive-upload-scene theme-${theme.effect} ${previewUrl ? 'has-selection' : 'is-importing'} ${isRevealing ? 'is-artwork-revealing' : ''} ${uploadPhase === 'launching' ? 'is-artwork-launching' : ''} ${uploadPhase === 'complete' ? 'is-upload-complete' : ''} ${visible ? 'is-visible' : ''}`}
       style={themeStyle}
-      aria-label={`${theme.title}快速上載`}
+      aria-label={`${theme.title}上載圖片`}
       aria-hidden={!visible}
     >
-      {(!previewUrl || isRevealing) && (
+      {uploadPhase !== 'complete' && (!previewUrl || isRevealing) && (
         <div ref={importViewRef} className="theme-upload-import-view">
           <header className="theme-upload-import-header">
-            <button type="button" className="theme-upload-import-back upload-reveal" onClick={onBack} disabled={isRevealing}>
+            <button type="button" className="theme-upload-import-back upload-reveal" onClick={onBack} disabled={isInteractionLocked}>
               <ArrowLeft aria-hidden="true" />
               <span>返回</span>
             </button>
@@ -95,7 +113,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
               type="button"
               className="theme-upload-import-replay upload-reveal"
               onClick={onReplay}
-              disabled={isRevealing}
+              disabled={isInteractionLocked}
               aria-label="重播轉場"
               title="重播轉場"
             >
@@ -104,7 +122,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
           </header>
 
           <main className="theme-upload-import-main">
-            <button ref={dropzoneRef} type="button" className="theme-upload-dropzone upload-reveal" onClick={openFilePicker} disabled={isRevealing}>
+            <button ref={dropzoneRef} type="button" className="theme-upload-dropzone upload-reveal" onClick={openFilePicker} disabled={isInteractionLocked}>
               <span ref={plusRef} className="theme-upload-dropzone-plus" aria-hidden="true">
                 <Plus />
               </span>
@@ -115,7 +133,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
         </div>
       )}
 
-      {previewUrl && (
+      {previewUrl && uploadPhase !== 'complete' && (
         <div ref={adjustmentRef} className="theme-upload-adjustment artwork-reveal-target" aria-hidden={isRevealing}>
           <div className="theme-upload-ambient" aria-hidden="true">
             <span className="theme-upload-ambient-line line-one" />
@@ -123,7 +141,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
           </div>
 
           <header ref={adjustmentHeaderRef} className="theme-upload-header">
-            <button type="button" className="theme-upload-back" onClick={onBack} disabled={isRevealing}>
+            <button type="button" className="theme-upload-back" onClick={onBack} disabled={isInteractionLocked}>
               <ArrowLeft aria-hidden="true" />
               <span>返回主題</span>
             </button>
@@ -131,7 +149,7 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
               <p><Sparkles aria-hidden="true" /> {theme.title}</p>
               <h1>調整作品</h1>
             </div>
-            <button type="button" className="theme-upload-primary" onClick={openFilePicker} disabled={isRevealing}>
+            <button type="button" className="theme-upload-primary" onClick={openFilePicker} disabled={isInteractionLocked}>
               <ImagePlus aria-hidden="true" />
               <span>重新選擇</span>
             </button>
@@ -184,12 +202,23 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
                     className={`theme-upload-mask-option ${selectedMask.id === item.id ? 'active' : ''}`}
                     onClick={() => setSelectedMaskId(item.id)}
                     aria-pressed={selectedMask.id === item.id}
+                    disabled={isInteractionLocked}
                   >
                     <img src={item.image} alt="" />
                     <span>{item.id}</span>
                   </button>
                 ))}
               </div>
+
+              <button
+                type="button"
+                className="theme-upload-send"
+                onClick={startArtworkLaunch}
+                disabled={isInteractionLocked}
+              >
+                <Upload aria-hidden="true" />
+                <span>上載圖片</span>
+              </button>
             </aside>
           </div>
         </div>
@@ -210,6 +239,28 @@ const InteractiveUploadScene: React.FC<InteractiveUploadSceneProps> = ({
           accent={theme.accent}
           secondary={theme.secondary}
           onComplete={() => setIsRevealing(false)}
+        />
+      )}
+
+      {previewUrl && uploadPhase === 'launching' && (
+        <ArtworkLaunchTransition
+          sourceRef={stageShellRef}
+          sourceUrl={previewUrl}
+          maskUrl={selectedMask.image}
+          accent={theme.accent}
+          secondary={theme.secondary}
+          adjustmentRef={adjustmentRef}
+          onComplete={finishArtworkLaunch}
+        />
+      )}
+
+      {previewUrl && uploadPhase === 'complete' && (
+        <InteractiveUploadCompleteScene
+          sourceUrl={previewUrl}
+          maskUrl={selectedMask.image}
+          fileName={fileName}
+          onBack={onBack}
+          onReupload={() => setUploadPhase('editing')}
         />
       )}
 

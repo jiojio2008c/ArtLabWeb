@@ -58,6 +58,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
     const movingTitle = movingTitleRef.current
     const source = sourceRootRef.current
     const selectedCard = source?.querySelector<HTMLElement>(`[data-theme-id="${theme.id}"]`)
+    const selectedCardMotion = selectedCard?.closest<HTMLElement>('.direct-theme-card-motion')
     const selectedTitle = selectedCard?.querySelector<HTMLElement>('.direct-theme-content strong')
     const cloneImage = clone?.querySelector<HTMLImageElement>('.direct-theme-upload-clone-image')
     const cloneCopy = clone?.querySelector<HTMLElement>('.direct-theme-upload-clone-copy')
@@ -76,8 +77,8 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
       width: origin.width - 24,
       height: 28
     }
-    const cards = source ? Array.from(source.querySelectorAll<HTMLElement>('.direct-theme-card')) : []
-    const otherCards = cards.filter((card) => card !== selectedCard)
+    const cardMotions = source ? Array.from(source.querySelectorAll<HTMLElement>('.direct-theme-card-motion')) : []
+    const otherCardMotions = cardMotions.filter((cardMotion) => cardMotion !== selectedCardMotion)
     const sourceHeader = source?.querySelector<HTMLElement>('.direct-magic-header')
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
@@ -151,21 +152,21 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
 
       if (reducedMotion) {
         const reducedExit = gsap.timeline({ paused: true })
-          .to([sourceHeader, ...cards].filter(Boolean), { opacity: 0, duration: 0.16 }, 0)
+          .to([sourceHeader, ...cardMotions].filter(Boolean), { opacity: 0, duration: 0.16 }, 0)
           .to(wash, { clipPath: 'inset(0% 0 0 0)', duration: 0.22, ease: 'power1.inOut' }, 0)
           .set(clone, { opacity: 0 }, 0.2)
         timelines.push(reducedExit)
         await playTimeline(reducedExit)
       } else {
         const exitTimeline = gsap.timeline({ paused: true, defaults: { overwrite: 'auto' } })
-          .to(selectedCard ?? [], {
+          .to(selectedCardMotion ?? [], {
             scale: 0.965,
             boxShadow: `0 0 0 2px rgba(255,255,255,.94), 0 0 24px var(--direct-upload-accent)`,
             duration: 0.13,
             ease: 'power2.out'
           }, 0)
-          .to(selectedCard ?? [], { opacity: 0, duration: 0.14, ease: 'power1.out' }, 0.11)
-          .to(otherCards, {
+          .to(selectedCardMotion ?? [], { opacity: 0, duration: 0.14, ease: 'power1.out' }, 0.11)
+          .to(otherCardMotions, {
             y: 14,
             scale: 0.95,
             opacity: 0,
@@ -318,7 +319,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
         clonePlus,
         movingTitle,
         ...traces,
-        ...cards,
+        ...cardMotions,
         sourceHeader,
         ...destinationElements
       ].filter(Boolean))

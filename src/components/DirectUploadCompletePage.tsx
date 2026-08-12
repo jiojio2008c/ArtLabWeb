@@ -8,13 +8,13 @@ interface DirectUploadCompletePageProps {
     name: string
     url: string
   } | null
-  onBackToEntry: () => void
+  onBackToThemes: () => void
   onReupload: () => void
 }
 
 const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
   result,
-  onBackToEntry,
+  onBackToThemes,
   onReupload
 }) => {
   const { t } = useTranslation()
@@ -55,8 +55,8 @@ const DirectUploadCompletePage: React.FC<DirectUploadCompletePageProps> = ({
       </section>
 
       <div className="direct-complete-actions">
-        <button type="button" className="ipad-button secondary-button" onClick={onBackToEntry}>
-          {t('common.backHome')}
+        <button type="button" className="ipad-button secondary-button" onClick={onBackToThemes}>
+          {t('directComplete.backToThemes')}
         </button>
         <button type="button" className="ipad-button primary-button" onClick={onReupload}>
           {t('directComplete.uploadAgain')}

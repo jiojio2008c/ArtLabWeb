@@ -4,6 +4,16 @@ import {
 } from './walk-animation-core.js'
 import { sampleItemAnimation } from './item-animation-core.js'
 import {
+  DYNAMIC_ANIMATION_IDS,
+  getDynamicAnimationMode,
+  resolveDynamicAnimationId
+} from './dynamic-animation-catalog.js'
+import {
+  UNITY_EXTRA_ANIMATION_MAX_ID,
+  UNITY_EXTRA_ANIMATION_MIN_ID,
+  drawUnityAnimationImage
+} from './unity-animation-core.js'
+import {
   RIPPLE_DURATION_MS,
   createAnimationOverrideStore,
   mapClientPointToStage,
@@ -588,26 +598,57 @@ const drawMissingItem = (item, x, y) => {
 
 const getEffectiveAnimation = (item, now) => {
   const override = animationOverrides.get(runtimeState.activeGroupId, item)
-  if (!override) {
+  if (override) {
     return {
-      animationId: Number(item.animationId ?? 0),
-      timeSeconds: now / 1000
+      animationId: override.activeAnimationId,
+      timeSeconds: Math.max(0, now - override.startedAt) / 1000
     }
   }
 
+  const preview = runtimeState.preview ?? {}
+  const mode = getDynamicAnimationMode(item)
+  let animationId = 0
+  if (preview.enabled) {
+    animationId = Number(
+      preview.resolvedAnimationIds?.[item.itemId]
+      ?? resolveDynamicAnimationId(
+        mode,
+        item.animationId,
+        DYNAMIC_ANIMATION_IDS,
+        `${preview.groupId ?? runtimeState.activeGroupId ?? ''}:${item.itemId}:${preview.replayId ?? 0}`
+      )
+    )
+  } else if (mode === 'fixed') {
+    animationId = Number(item.animationId ?? 0)
+  }
+
   return {
-    animationId: override.activeAnimationId,
-    timeSeconds: Math.max(0, now - override.startedAt) / 1000
+    animationId,
+    timeSeconds: preview.enabled
+      ? Math.max(0, now - previewStartTime) / 1000
+      : now / 1000
   }
 }
 
 const getItemRenderState = (item, itemIndex, now, image) => {
   const effectiveAnimation = getEffectiveAnimation(item, now)
-  const animation = sampleItemAnimation(
-    effectiveAnimation.animationId,
-    item.itemId,
-    effectiveAnimation.timeSeconds
-  )
+  const animation = effectiveAnimation.animationId >= UNITY_EXTRA_ANIMATION_MIN_ID
+    && effectiveAnimation.animationId <= UNITY_EXTRA_ANIMATION_MAX_ID
+    ? {
+        offsetX: 0,
+        offsetY: 0,
+        rotation: 0,
+        skewX: 0,
+        skewY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        alpha: 1
+      }
+    : sampleItemAnimation(
+        effectiveAnimation.animationId,
+        item.itemId,
+        effectiveAnimation.timeSeconds
+      )
   const motion = getMotionTransform(item, itemIndex, now)
   const baseX = clamp(item.position?.x ?? 0.5, -0.5, 1.5) * STAGE_WIDTH
   const baseY = clamp(item.position?.y ?? 0.5, -0.5, 1.5) * STAGE_HEIGHT
@@ -650,6 +691,23 @@ const drawItemImage = (renderContext, image, renderState) => {
       -height / 2,
       width,
       height,
+      renderState.animationTimeSeconds
+    )
+    return
+  }
+
+  if (
+    renderState.animationId >= UNITY_EXTRA_ANIMATION_MIN_ID
+    && renderState.animationId <= UNITY_EXTRA_ANIMATION_MAX_ID
+  ) {
+    drawUnityAnimationImage(
+      renderContext,
+      image.element,
+      -width / 2,
+      -height / 2,
+      width,
+      height,
+      renderState.animationId,
       renderState.animationTimeSeconds
     )
     return

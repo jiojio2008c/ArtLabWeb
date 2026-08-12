@@ -1,5 +1,5 @@
 export const INTERACTIVE_ANIMATION_MIN_ID = 1
-export const INTERACTIVE_ANIMATION_MAX_ID = 9
+export const INTERACTIVE_ANIMATION_MAX_ID = 17
 export const RIPPLE_DURATION_MS = 1100
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -7,6 +7,18 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const normalizeAnimationId = (value) => {
   const animationId = Number(value ?? 0)
   return Number.isFinite(animationId) ? Math.trunc(animationId) : 0
+}
+
+const normalizeAnimationIds = (value, legacy = false) => {
+  const fallback = legacy
+    ? [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    : Array.from({ length: INTERACTIVE_ANIMATION_MAX_ID }, (_unused, index) => index + 1)
+  const source = Array.isArray(value) ? value : []
+  const ids = [...new Set(source
+    .map((id) => normalizeAnimationId(id))
+    .filter((id) => id >= 1 && id <= INTERACTIVE_ANIMATION_MAX_ID))]
+    .sort((first, second) => first - second)
+  return ids.length > 0 ? ids : fallback
 }
 
 const makeOverrideKey = (groupId, itemId) => `${groupId}\u0000${itemId}`
@@ -48,7 +60,13 @@ export const createAnimationOverrideStore = () => {
     if (!override) return null
 
     const authoritativeAnimationId = normalizeAnimationId(item.animationId)
-    if (override.authoritativeAnimationId !== authoritativeAnimationId) {
+    const legacyRange = !Array.isArray(item.clickAnimationIds)
+    const authoritativeAnimationIds = normalizeAnimationIds(item.clickAnimationIds, legacyRange)
+    if (
+      override.authoritativeAnimationId !== authoritativeAnimationId
+      || override.authoritativeAnimationMode !== (item.animationMode ?? 'fixed')
+      || JSON.stringify(override.authoritativeAnimationIds) !== JSON.stringify(authoritativeAnimationIds)
+    ) {
       overrides.delete(key)
       return null
     }
@@ -61,13 +79,25 @@ export const createAnimationOverrideStore = () => {
 
     const existing = get(groupId, item)
     const authoritativeAnimationId = normalizeAnimationId(item.animationId)
-    const activeAnimationId = getNextInteractiveAnimationId(
+    const authoritativeAnimationMode = item.animationMode ?? (
+      authoritativeAnimationId === 0 ? 'none' : 'fixed'
+    )
+    const authoritativeAnimationIds = normalizeAnimationIds(
+      item.clickAnimationIds,
+      !Array.isArray(item.clickAnimationIds)
+    )
+    const currentIndex = authoritativeAnimationIds.indexOf(
       existing?.activeAnimationId ?? authoritativeAnimationId
     )
+    const activeAnimationId = authoritativeAnimationIds[
+      currentIndex >= 0 ? (currentIndex + 1) % authoritativeAnimationIds.length : 0
+    ]
     const override = {
       groupId,
       itemId: item.itemId,
       authoritativeAnimationId,
+      authoritativeAnimationMode,
+      authoritativeAnimationIds,
       activeAnimationId,
       startedAt
     }
@@ -98,6 +128,9 @@ export const createAnimationOverrideStore = () => {
       if (
         !item
         || normalizeAnimationId(item.animationId) !== override.authoritativeAnimationId
+        || (item.animationMode ?? 'fixed') !== override.authoritativeAnimationMode
+        || JSON.stringify(normalizeAnimationIds(item.clickAnimationIds, !Array.isArray(item.clickAnimationIds)))
+          !== JSON.stringify(override.authoritativeAnimationIds)
       ) {
         overrides.delete(key)
       }

@@ -80,8 +80,9 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
     const stagingLeft = (viewportWidth - stagingWidth) / 2
     const stagingTop = (viewportHeight - stagingHeight) / 2
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const supportsFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches
     const timelines: gsap.core.Timeline[] = []
-    let destinationCards: HTMLElement[] = []
+    let destinationCardMotions: HTMLElement[] = []
     let destinationHeader: HTMLElement | null = null
     let cancelled = false
 
@@ -104,10 +105,11 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
       for (let attempt = 0; attempt < 12; attempt += 1) {
         const target = targetRootRef.current
         const selectedCard = target?.querySelector<HTMLElement>(`[data-theme-id="${theme.id}"]`)
+        const selectedCardMotion = selectedCard?.closest<HTMLElement>('.direct-theme-card-motion')
         const header = target?.querySelector<HTMLElement>('.direct-magic-header')
-        const cards = target ? Array.from(target.querySelectorAll<HTMLElement>('.direct-theme-card')) : []
-        if (target && selectedCard && header && cards.length > 0) {
-          return { selectedCard, header, cards }
+        const cardMotions = target ? Array.from(target.querySelectorAll<HTMLElement>('.direct-theme-card-motion')) : []
+        if (target && selectedCard && selectedCardMotion && header && cardMotions.length > 0) {
+          return { selectedCard, selectedCardMotion, header, cardMotions }
         }
         await nextFrame()
       }
@@ -183,21 +185,23 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
         return
       }
 
-      const { selectedCard, header, cards } = destination
-      destinationCards = cards
+      const { selectedCard, selectedCardMotion, header, cardMotions } = destination
+      destinationCardMotions = cardMotions
       destinationHeader = header
-      const otherCards = cards.filter((card) => card !== selectedCard)
+      const otherCardMotions = cardMotions.filter((cardMotion) => cardMotion !== selectedCardMotion)
       const targetRect = selectedCard.getBoundingClientRect()
 
-      gsap.set(selectedCard, { opacity: 0 })
-      gsap.set(otherCards, { opacity: 0, y: 16, scale: 0.94, rotationY: 8 })
+      gsap.killTweensOf(cardMotions)
+      gsap.set(cardMotions, { clearProps: 'opacity,transform,filter' })
+      gsap.set(selectedCardMotion, { opacity: 0 })
+      gsap.set(otherCardMotions, { opacity: 0, y: 16, scale: 0.94, rotationY: 8 })
       gsap.set(header, { opacity: 0, y: -10 })
 
       if (reducedMotion) {
         const reducedEntry = gsap.timeline({ paused: true })
           .set(clone, { opacity: 0 })
           .to(wash, { opacity: 0, duration: 0.18, ease: 'power1.out' }, 0)
-          .to([header, ...cards], { opacity: 1, y: 0, scale: 1, rotationY: 0, duration: 0.18 }, 0.04)
+          .to([header, ...cardMotions], { opacity: 1, y: 0, scale: 1, rotationY: 0, duration: 0.18 }, 0.04)
         timelines.push(reducedEntry)
         await playTimeline(reducedEntry)
       } else {
@@ -213,7 +217,7 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
           }, 0)
           .to(wash, { opacity: 0, duration: 0.4, ease: 'power2.inOut' }, 0)
           .to(header, { opacity: 1, y: 0, duration: 0.28, ease: 'power3.out' }, 0.12)
-          .to(otherCards, {
+          .to(otherCardMotions, {
             opacity: 1,
             y: 0,
             scale: 1,
@@ -222,13 +226,15 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
             stagger: 0.035,
             ease: 'power3.out'
           }, 0.14)
-          .set(selectedCard, { opacity: 1 }, 0.37)
+          .set(selectedCardMotion, { opacity: 1 }, 0.37)
           .to(clone, { opacity: 0, duration: 0.12, ease: 'power1.out' }, 0.37)
         timelines.push(entryTimeline)
         await playTimeline(entryTimeline)
       }
 
-      selectedCard.focus({ preventScroll: true })
+      if (supportsFinePointer) {
+        selectedCard.focus({ preventScroll: true })
+      }
       if (!cancelled) onCompleteRef.current()
     }
 
@@ -249,9 +255,9 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
         sourcePlus,
         ...sourceCopy,
         destinationHeader,
-        ...destinationCards
+        ...destinationCardMotions
       ].filter(Boolean))
-      gsap.set([destinationHeader, ...destinationCards].filter(Boolean), { clearProps: 'opacity,transform,filter' })
+      gsap.set([destinationHeader, ...destinationCardMotions].filter(Boolean), { clearProps: 'opacity,transform,filter' })
     }
   }, [sourceRootRef, targetRootRef, theme])
 

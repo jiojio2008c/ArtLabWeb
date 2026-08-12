@@ -38,41 +38,133 @@ const waitForPaint = () => new Promise<void>((resolve) => {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))
 })
 
-const waitForStageMedia = async (stage: HTMLElement) => {
-  const imagePromises = Array.from(stage.querySelectorAll<HTMLImageElement>('img')).map((image) => {
-    const decodeImage = () => image.decode?.().catch(() => undefined) ?? Promise.resolve()
-    if (image.complete && image.naturalWidth > 0) {
-      return decodeImage()
+const waitForImage = (image: HTMLImageElement, timeoutMs: number) => new Promise<void>((resolve) => {
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    window.clearTimeout(timeout)
+    image.removeEventListener('load', handleLoad)
+    image.removeEventListener('error', finish)
+    resolve()
+  }
+  const decode = () => {
+    const decodePromise = image.decode?.()
+    if (decodePromise) {
+      void decodePromise.catch(() => undefined).then(finish)
+    } else {
+      finish()
     }
-    return new Promise<void>((resolve) => {
-      image.addEventListener('load', () => {
-        void decodeImage().then(() => resolve())
-      }, { once: true })
-      image.addEventListener('error', () => resolve(), { once: true })
-    })
-  })
-  const videoPromises = Array.from(stage.querySelectorAll<HTMLVideoElement>('video')).map((video) => {
-    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve()
-    return new Promise<void>((resolve) => {
-      video.addEventListener('loadedmetadata', () => resolve(), { once: true })
-      video.addEventListener('error', () => resolve(), { once: true })
-    })
-  })
+  }
+  const handleLoad = () => decode()
+  const timeout = window.setTimeout(finish, timeoutMs)
 
-  await Promise.race([
-    Promise.allSettled([...imagePromises, ...videoPromises]),
-    new Promise<void>((resolve) => window.setTimeout(resolve, 900))
-  ])
+  if (image.complete) {
+    if (image.naturalWidth > 0) decode()
+    else finish()
+    return
+  }
+
+  image.addEventListener('load', handleLoad, { once: true })
+  image.addEventListener('error', finish, { once: true })
+})
+
+const waitForVideo = (video: HTMLVideoElement, timeoutMs: number) => new Promise<void>((resolve) => {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+    resolve()
+    return
+  }
+
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    window.clearTimeout(timeout)
+    video.removeEventListener('loadedmetadata', finish)
+    video.removeEventListener('error', finish)
+    resolve()
+  }
+  const timeout = window.setTimeout(finish, timeoutMs)
+  video.addEventListener('loadedmetadata', finish, { once: true })
+  video.addEventListener('error', finish, { once: true })
+})
+
+const waitForMediaElements = async (
+  elements: Array<HTMLImageElement | HTMLVideoElement>,
+  timeoutMs: number
+) => {
+  await Promise.all(elements.map((element) => (
+    element instanceof HTMLImageElement
+      ? waitForImage(element, timeoutMs)
+      : waitForVideo(element, timeoutMs)
+  )))
+}
+
+const waitForStageMedia = async (stage: HTMLElement) => {
+  const media = Array.from(stage.querySelectorAll<HTMLImageElement | HTMLVideoElement>('img, video'))
+  await waitForMediaElements(media, 900)
+}
+
+const waitForLibraryMedia = async (library: HTMLElement, groupId: string) => {
+  const targetCard = library.querySelector<HTMLElement>(`[data-library-entity-id="${groupId}"]`)
+  const targetMedia = targetCard
+    ? Array.from(targetCard.querySelectorAll<HTMLImageElement | HTMLVideoElement>('img, video'))
+    : []
+  const visibleMedia = Array.from(
+    library.querySelectorAll<HTMLImageElement | HTMLVideoElement>(
+      '.dynamic-library-icon-preview img, .dynamic-library-icon-preview video, '
+      + '.dynamic-library-detail-thumbnail img, .dynamic-library-detail-thumbnail video'
+    )
+  ).filter((element) => {
+    const rect = element.getBoundingClientRect()
+    return rect.bottom >= -80
+      && rect.top <= window.innerHeight + 80
+      && rect.right >= -80
+      && rect.left <= window.innerWidth + 80
+  })
+  const media = Array.from(new Set([...targetMedia, ...visibleMedia])).slice(0, 12)
+  await waitForMediaElements(media, 700)
 }
 
 const buildStageProxy = (stage: HTMLElement, proxy: HTMLElement) => {
-  const clone = stage.cloneNode(true) as HTMLElement
-  clone.classList.add('dynamic-story-stage-clone')
-  clone.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'))
-  clone.querySelectorAll<HTMLVideoElement>('video').forEach((video) => {
-    video.muted = true
-    void video.play().catch(() => undefined)
-  })
+  const clone = document.createElement('div')
+  clone.className = `${stage.className} dynamic-story-stage-clone`
+
+  const sourceMedia = stage.querySelector<HTMLImageElement | HTMLVideoElement>('.dynamic-stage-background')
+  if (sourceMedia instanceof HTMLVideoElement) {
+    if (sourceMedia.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && sourceMedia.videoWidth > 0) {
+      const canvas = document.createElement('canvas')
+      const scale = Math.min(1, 1280 / sourceMedia.videoWidth)
+      canvas.width = Math.max(1, Math.round(sourceMedia.videoWidth * scale))
+      canvas.height = Math.max(1, Math.round(sourceMedia.videoHeight * scale))
+      canvas.className = sourceMedia.className
+      canvas.setAttribute('aria-hidden', 'true')
+      try {
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('Canvas 2D context is unavailable')
+        context.drawImage(sourceMedia, 0, 0, canvas.width, canvas.height)
+        clone.append(canvas)
+      } catch {
+        const video = sourceMedia.cloneNode(true) as HTMLVideoElement
+        video.autoplay = false
+        video.loop = false
+        video.muted = true
+        clone.append(video)
+      }
+    } else {
+      const video = sourceMedia.cloneNode(true) as HTMLVideoElement
+      video.autoplay = false
+      video.loop = false
+      video.muted = true
+      clone.append(video)
+    }
+  } else if (sourceMedia) {
+    clone.append(sourceMedia.cloneNode(true))
+  } else {
+    const emptyStage = stage.querySelector<HTMLElement>('.dynamic-empty-stage')
+    if (emptyStage) clone.append(emptyStage.cloneNode(true))
+  }
+
   proxy.replaceChildren(clone)
 }
 
@@ -88,11 +180,50 @@ const getPieceOffset = (index: number) => ({
   rotation: index % 2 === 0 ? -8 : 9
 })
 
+const getViewportFrameRect = (): DynamicTransitionOrigin => ({
+  left: 12,
+  top: 12,
+  width: Math.max(1, window.innerWidth - 24),
+  height: Math.max(1, window.innerHeight - 24)
+})
+
+const setFrameFlip = (
+  frameMotion: HTMLElement,
+  sourceRect: DynamicTransitionOrigin,
+  targetRect: DynamicTransitionOrigin
+) => {
+  gsap.set(frameMotion, {
+    left: targetRect.left,
+    top: targetRect.top,
+    width: Math.max(1, targetRect.width),
+    height: Math.max(1, targetRect.height),
+    x: sourceRect.left - targetRect.left,
+    y: sourceRect.top - targetRect.top,
+    scaleX: sourceRect.width / Math.max(1, targetRect.width),
+    scaleY: sourceRect.height / Math.max(1, targetRect.height),
+    transformOrigin: '0 0',
+    force3D: true
+  })
+}
+
+const syncMediaCounterScale = (frameMotion: HTMLElement, media: HTMLElement | null) => {
+  if (!media) return
+  const scaleX = Number(gsap.getProperty(frameMotion, 'scaleX')) || 1
+  const scaleY = Number(gsap.getProperty(frameMotion, 'scaleY')) || 1
+  gsap.set(media, {
+    scaleX: 1 / scaleX,
+    scaleY: 1 / scaleY,
+    transformOrigin: 'center center',
+    force3D: true
+  })
+}
+
 const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
   request,
   onSceneSwitch,
   onComplete
 }) => {
+  const frameMotionRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
   const stageProxyRef = useRef<HTMLDivElement>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -106,11 +237,12 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
   }, [onComplete, onSceneSwitch])
 
   useEffect(() => {
+    const frameMotion = frameMotionRef.current
     const frame = frameRef.current
     const workspace = workspaceRef.current
     const tears = tearsRef.current
     const stageProxy = stageProxyRef.current
-    if (!frame || !workspace || !tears || !stageProxy) return
+    if (!frameMotion || !frame || !workspace || !tears || !stageProxy) return
 
     const media = frame.querySelector<HTMLElement>('.dynamic-story-frame-media')
     const tearPieces = Array.from(tears.querySelectorAll<HTMLElement>('.dynamic-story-tear-piece'))
@@ -124,6 +256,9 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
     const cleanupTargets = new Set<Element>()
     let cancelled = false
     let sceneSwitched = false
+    let finishScheduled = false
+    let finishFrame = 0
+    let settleFrame = 0
 
     const remember = (...targets: Array<Element | null | undefined>) => {
       targets.forEach((target) => {
@@ -138,8 +273,28 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
       sceneSwitchRef.current()
     }
 
+    const preparedLibraryMountPromise = request.direction === 'backward'
+      ? waitForElement<HTMLElement>('.dynamic-library-screen.dynamic-transition-prepared')
+        .then(async (library) => {
+          if (!library || cancelled) return library
+          await waitForPaint()
+          return library
+        })
+      : Promise.resolve(null)
+    const preparedLibraryPromise = preparedLibraryMountPromise.then(async (library) => {
+      if (!library || cancelled) return library
+      await waitForLibraryMedia(library, request.groupId)
+      return library
+    })
+
     const finish = () => {
-      if (!cancelled) completeRef.current()
+      if (cancelled || finishScheduled) return
+      finishScheduled = true
+      finishFrame = window.requestAnimationFrame(() => {
+        settleFrame = window.requestAnimationFrame(() => {
+          if (!cancelled) completeRef.current()
+        })
+      })
     }
 
     if (reducedMotion) {
@@ -150,6 +305,8 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
       timelines.push(timeline)
       return () => {
         cancelled = true
+        window.cancelAnimationFrame(finishFrame)
+        window.cancelAnimationFrame(settleFrame)
         timelines.forEach((item) => item.kill())
         cleanupTargets.forEach((target) => gsap.set(target, { clearProps: 'opacity,transform,boxShadow' }))
       }
@@ -198,18 +355,29 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         transformPerspective: 1100
       })
       gsap.set(topbar, { opacity: 0, y: -14 })
-      gsap.set(panel ? [panel] : [], { opacity: 0, x: '112%' })
-      gsap.set(statusToast ? [statusToast] : [], { opacity: 0, y: -8 })
+      if (panel) gsap.set(panel, { opacity: 0, x: '112%' })
+      if (statusToast) gsap.set(statusToast, { opacity: 0, y: -8 })
       const dropDistance = Math.min(190, Math.max(110, targetRect.height * 0.28))
       const itemStagger = items.length > 1 ? Math.min(0.075, 0.52 / (items.length - 1)) : 0
-      gsap.set(items, { opacity: 0, y: -dropDistance })
+      if (items.length > 0) gsap.set(items, { opacity: 0, y: -dropDistance })
+
+      const currentFrameRect = getRect(frameMotion) ?? getViewportFrameRect()
+      gsap.killTweensOf(frameMotion)
+      setFrameFlip(frameMotion, currentFrameRect, targetRect)
+      gsap.set(media, { scaleX: 1, scaleY: 1 })
 
       const reveal = gsap.timeline({ onComplete: finish })
+        .to(frameMotion, {
+          x: 0,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          force3D: true,
+          borderRadius: 8,
+          duration: 0.58,
+          ease: 'power3.out'
+        }, 0)
         .to(frame, {
-          left: targetRect.left,
-          top: targetRect.top,
-          width: targetRect.width,
-          height: targetRect.height,
           borderRadius: 8,
           rotationX: 0,
           scaleY: 1,
@@ -218,60 +386,84 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         }, 0)
         .to(stageShell, { opacity: 1, duration: 0.24, ease: 'power2.out' }, 0.46)
         .to([frame, workspace, tears], { opacity: 0, duration: 0.24 }, 0.5)
-        .to(items, {
+        .to(topbar, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' }, 0.64)
+      if (items.length > 0) {
+        reveal.to(items, {
           opacity: 1,
           y: 0,
           duration: 0.62,
           stagger: itemStagger,
           ease: 'elastic.out(1, .58)'
         }, 0.58)
-        .to(topbar, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' }, 0.64)
-        .to(panel ? [panel] : [], { opacity: 1, x: 0, duration: 0.34, ease: 'power3.out' }, 0.68)
-        .to(statusToast ? [statusToast] : [], { opacity: 1, y: 0, duration: 0.24 }, 0.76)
+      }
+      if (panel) {
+        reveal.to(panel, { opacity: 1, x: 0, duration: 0.34, ease: 'power3.out' }, 0.68)
+      }
+      if (statusToast) {
+        reveal.to(statusToast, { opacity: 1, y: 0, duration: 0.24 }, 0.76)
+      }
       timelines.push(reveal)
     }
 
     const runBackwardReveal = async () => {
-      switchScene()
-      const library = await waitForElement<HTMLElement>('.dynamic-library-screen')
+      const library = await preparedLibraryPromise
       if (!library || cancelled) {
         finish()
         return
       }
 
       const targetCard = library.querySelector<HTMLElement>(`[data-library-entity-id="${request.groupId}"]`)
-      const targetRect = getRect(targetCard) ?? request.origin ?? getFallbackOrigin()
       const topbar = library.querySelector<HTMLElement>('.dynamic-library-topbar')
       const breadcrumbs = library.querySelector<HTMLElement>('.dynamic-library-breadcrumbs')
       const browser = library.querySelector<HTMLElement>('.dynamic-library-browser')
+      const contentStage = library.querySelector<HTMLElement>('.dynamic-library-content-stage')
       const entities = Array.from(library.querySelectorAll<HTMLElement>('.dynamic-library-icon-card, .dynamic-library-detail-row'))
-      remember(library, targetCard, topbar, breadcrumbs, browser, ...entities)
+      const libraryChrome = [topbar, breadcrumbs, browser].filter((element): element is HTMLElement => Boolean(element))
+      remember(library, targetCard, topbar, breadcrumbs, browser, contentStage, ...entities)
 
       gsap.set(library, { opacity: 1 })
-      gsap.set([topbar, breadcrumbs, browser], { opacity: 0, y: 18 })
-      gsap.set(entities, { opacity: 0, y: 20, scale: 0.92 })
+      if (contentStage) gsap.set(contentStage, { opacity: 1 })
+      if (libraryChrome.length > 0) gsap.set(libraryChrome, { opacity: 0, y: 18 })
+      if (entities.length > 0) gsap.set(entities, { opacity: 0, y: 20, scale: 0.92 })
       gsap.set(stageProxy, { opacity: 0 })
       gsap.set(media, { opacity: request.previewUrl ? 1 : 0, y: 0, filter: 'none' })
 
+      switchScene()
+      await waitForPaint()
+      if (cancelled) return
+
+      const targetRect = getRect(targetCard) ?? request.origin ?? getFallbackOrigin()
+      const currentFrameRect = getRect(frameMotion) ?? getViewportFrameRect()
+      gsap.killTweensOf(frameMotion)
+      setFrameFlip(frameMotion, currentFrameRect, targetRect)
+      syncMediaCounterScale(frameMotion, media)
+
       const reveal = gsap.timeline({ onComplete: finish })
-        .to(frame, {
-          left: targetRect.left,
-          top: targetRect.top,
-          width: targetRect.width,
-          height: targetRect.height,
+        .to(frameMotion, {
+          x: 0,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          force3D: true,
           borderRadius: 8,
           duration: 0.4,
-          ease: 'power3.inOut'
+          ease: 'power3.inOut',
+          onUpdate: () => syncMediaCounterScale(frameMotion, media),
+          onComplete: () => gsap.set(media, { scaleX: 1, scaleY: 1 })
         }, 0)
         .to([workspace, tears], { opacity: 0, duration: 0.3, ease: 'power2.out' }, 0.18)
-        .to([topbar, breadcrumbs, browser], {
+        .to(frame, { opacity: 0, duration: 0.18 }, 0.43)
+      if (libraryChrome.length > 0) {
+        reveal.to(libraryChrome, {
           opacity: 1,
           y: 0,
           duration: 0.42,
           stagger: 0.045,
           ease: 'power2.out'
         }, 0.16)
-        .to(entities, {
+      }
+      if (entities.length > 0) {
+        reveal.to(entities, {
           opacity: 1,
           y: 0,
           scale: 1,
@@ -279,13 +471,15 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
           stagger: 0.035,
           ease: 'back.out(1.25)'
         }, 0.22)
-        .to(frame, { opacity: 0, duration: 0.18 }, 0.43)
+      }
       timelines.push(reveal)
     }
 
     if (request.direction === 'forward') {
       const origin = request.origin ?? getRect(sourceCard) ?? getFallbackOrigin()
-      gsap.set(frame, { ...origin, opacity: 1 })
+      const viewportRect = getViewportFrameRect()
+      setFrameFlip(frameMotion, origin, viewportRect)
+      gsap.set(frame, { opacity: 1 })
       gsap.set(workspace, { opacity: 0 })
       gsap.set(tears, { opacity: 0 })
       gsap.set(tearPieces, { opacity: 1, x: 0, y: 0, rotation: 0 })
@@ -298,15 +492,16 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
           ease: 'power2.out'
         }, 0)
         .to(media, { y: -24, opacity: 0, filter: 'blur(8px)', duration: 0.27, ease: 'power2.in' }, 0.04)
-        .to(frame, {
-          left: 12,
-          top: 12,
-          width: window.innerWidth - 24,
-          height: window.innerHeight - 24,
-          borderRadius: 12,
+        .to(frameMotion, {
+          x: 0,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          force3D: true,
           duration: 0.4,
           ease: 'power3.inOut'
         }, 0.2)
+        .to(frame, { borderRadius: 12, duration: 0.4, ease: 'power3.inOut' }, 0.2)
         .to(workspace, { opacity: 1, duration: 0.28, ease: 'power2.out' }, 0.28)
         .to(tears, { opacity: 1, duration: 0.08 }, 0.3)
         .to(tearPieces, {
@@ -322,68 +517,97 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         .call(() => { void runForwardReveal() }, [], 0.52)
       timelines.push(timeline)
     } else {
-      const stage = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-stage')
-      const stageShell = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-stage-shell')
-      const topbar = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-control-topbar')
-      const control = document.querySelector<HTMLElement>('.dynamic-control-screen')
-      const panel = control ? getActiveControlPanel(control) : null
-      const statusToast = document.querySelector<HTMLElement>('.dynamic-control-screen .status-toast')
-      const items = Array.from(document.querySelectorAll<HTMLElement>('.dynamic-control-screen .dynamic-stage-item-motion'))
-      const origin = getRect(stage) ?? request.origin ?? getFallbackOrigin()
-      remember(stage, stageShell, topbar, panel, statusToast, ...items)
-      if (stage) buildStageProxy(stage, stageProxy)
+      gsap.set([frame, workspace, tears], { opacity: 0 })
 
-      gsap.set(frame, {
-        ...origin,
-        opacity: 0,
-        rotationX: 0,
-        scaleY: 1,
-        transformOrigin: 'center bottom',
-        transformPerspective: 1100
-      })
-      gsap.set(stageProxy, { opacity: stage ? 1 : 0 })
-      gsap.set(media, { opacity: 0 })
-      gsap.set(workspace, { opacity: 0 })
-      gsap.set(tears, { opacity: 1 })
-      gsap.set(tearPieces, {
-        opacity: 0,
-        x: (index) => getPieceOffset(index).x,
-        y: (index) => getPieceOffset(index).y,
-        rotation: (index) => getPieceOffset(index).rotation
-      })
+      const runBackwardExit = async () => {
+        await preparedLibraryMountPromise
+        if (cancelled) return
 
-      const timeline = gsap.timeline()
-        .to(frame, { opacity: 1, duration: 0.12 }, 0)
-        .to(panel ? [panel] : [], { x: '112%', opacity: 0, duration: 0.22, ease: 'power2.in' }, 0)
-        .to(topbar, { opacity: 0, y: -12, duration: 0.2 }, 0)
-        .to(statusToast ? [statusToast] : [], { opacity: 0, y: -8, duration: 0.16 }, 0)
-        .to(items, { opacity: 0, y: -76, duration: 0.2, stagger: 0.025 }, 0.03)
-        .to(stageShell ? [stageShell] : [], { opacity: 0, duration: 0.22, ease: 'power2.in' }, 0.08)
-        .to(frame, {
-          rotationX: 76,
-          scaleY: 0.3,
-          duration: 0.34,
-          ease: 'power2.in'
-        }, 0.08)
-        .to(workspace, { opacity: 1, duration: 0.2 }, 0.12)
-        .to(frame, {
-          left: 12,
-          top: 12,
-          width: window.innerWidth - 24,
-          height: window.innerHeight - 24,
+        const stage = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-stage')
+        const stageShell = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-stage-shell')
+        const topbar = document.querySelector<HTMLElement>('.dynamic-control-screen .dynamic-control-topbar')
+        const control = document.querySelector<HTMLElement>('.dynamic-control-screen')
+        const panel = control ? getActiveControlPanel(control) : null
+        const statusToast = document.querySelector<HTMLElement>('.dynamic-control-screen .status-toast')
+        const items = Array.from(document.querySelectorAll<HTMLElement>('.dynamic-control-screen .dynamic-stage-item-motion'))
+        const origin = getRect(stage) ?? request.origin ?? getFallbackOrigin()
+        remember(stage, stageShell, topbar, panel, statusToast, ...items)
+        if (stage) buildStageProxy(stage, stageProxy)
+
+        const viewportRect = getViewportFrameRect()
+        setFrameFlip(frameMotion, origin, viewportRect)
+        gsap.set(frame, {
+          opacity: 0,
           rotationX: 0,
           scaleY: 1,
-          duration: 0.35,
-          ease: 'power2.inOut'
-        }, 0.16)
-        .to(tearPieces, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.3, stagger: 0.02 }, 0.28)
-        .to(sourcePage, { opacity: 0, duration: 0.2 }, 0.42)
-        .call(() => { void runBackwardReveal() }, [], 0.5)
-      timelines.push(timeline)
+          transformOrigin: 'center bottom',
+          transformPerspective: 1100
+        })
+        gsap.set(stageProxy, { opacity: stage ? 1 : 0 })
+        gsap.set(media, { opacity: 0 })
+        gsap.set(workspace, { opacity: 0 })
+        gsap.set(tears, { opacity: 1 })
+        gsap.set(tearPieces, {
+          opacity: 0,
+          x: (index) => getPieceOffset(index).x,
+          y: (index) => getPieceOffset(index).y,
+          rotation: (index) => getPieceOffset(index).rotation
+        })
+
+        const timeline = gsap.timeline()
+          .to(frame, { opacity: 1, duration: 0.12 }, 0)
+          .to(frame, {
+            rotationX: 76,
+            scaleY: 0.3,
+            duration: 0.34,
+            ease: 'power2.in'
+          }, 0.08)
+          .to(workspace, { opacity: 1, duration: 0.2 }, 0.12)
+          .to(frameMotion, {
+            x: 0,
+            y: 0,
+            scaleX: 1,
+            scaleY: 1,
+            force3D: true,
+            duration: 0.35,
+            ease: 'power2.inOut'
+          }, 0.16)
+          .to(frame, {
+            rotationX: 0,
+            scaleY: 1,
+            duration: 0.35,
+            ease: 'power2.inOut'
+          }, 0.16)
+          .to(tearPieces, { opacity: 1, x: 0, y: 0, rotation: 0, duration: 0.3, stagger: 0.02 }, 0.28)
+          .call(() => { void runBackwardReveal() }, [], 0.5)
+        if (panel) {
+          timeline.to(panel, { x: '112%', opacity: 0, duration: 0.22, ease: 'power2.in' }, 0)
+        }
+        if (topbar) {
+          timeline.to(topbar, { opacity: 0, y: -12, duration: 0.2 }, 0)
+        }
+        if (items.length > 0) {
+          timeline.to(items, { opacity: 0, y: -76, duration: 0.2, stagger: 0.025 }, 0.03)
+        }
+        if (stageShell) {
+          timeline.to(stageShell, { opacity: 0, duration: 0.22, ease: 'power2.in' }, 0.08)
+        }
+        if (sourcePage) {
+          timeline.to(sourcePage, { opacity: 0, duration: 0.2 }, 0.42)
+        }
+        if (statusToast) {
+          timeline.to(statusToast, { opacity: 0, y: -8, duration: 0.16 }, 0)
+        }
+        timelines.push(timeline)
+      }
+
+      void runBackwardExit()
     }
 
     return () => {
       cancelled = true
+      window.cancelAnimationFrame(finishFrame)
+      window.cancelAnimationFrame(settleFrame)
       timelines.forEach((timeline) => timeline.kill())
       cleanupTargets.forEach((target) => gsap.set(target, { clearProps: 'opacity,transform,boxShadow' }))
     }
@@ -398,19 +622,21 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         <span className="dynamic-story-tear-piece tear-three" />
         <span className="dynamic-story-tear-piece tear-four" />
       </div>
-      <div ref={frameRef} className="dynamic-story-frame">
-        <div ref={stageProxyRef} className="dynamic-story-stage-proxy" />
-        {request.previewUrl ? (
-          request.previewType === 'video' ? (
-            <video className="dynamic-story-frame-media" src={request.previewUrl} autoPlay loop muted playsInline />
+      <div ref={frameMotionRef} className="dynamic-story-frame-motion">
+        <div ref={frameRef} className="dynamic-story-frame">
+          <div ref={stageProxyRef} className="dynamic-story-stage-proxy" />
+          {request.previewUrl ? (
+            request.previewType === 'video' ? (
+              <video className="dynamic-story-frame-media" src={request.previewUrl} autoPlay loop muted playsInline />
+            ) : (
+              <img className="dynamic-story-frame-media" src={request.previewUrl} alt="" draggable={false} />
+            )
           ) : (
-            <img className="dynamic-story-frame-media" src={request.previewUrl} alt="" draggable={false} />
-          )
-        ) : (
-          <span className="dynamic-story-frame-media dynamic-story-frame-placeholder">{request.groupName.slice(0, 1)}</span>
-        )}
-        <span className="dynamic-story-frame-grid" />
-        <span className="dynamic-story-frame-edge" />
+            <span className="dynamic-story-frame-media dynamic-story-frame-placeholder">{request.groupName.slice(0, 1)}</span>
+          )}
+          <span className="dynamic-story-frame-grid" />
+          <span className="dynamic-story-frame-edge" />
+        </div>
       </div>
     </div>
   )

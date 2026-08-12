@@ -48,6 +48,7 @@ interface DynamicGroupsPageProps {
   onDeleteGroup: (groupId: string) => void
   onSelectGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
   portalArrival?: boolean
+  transitionPrepared?: boolean
 }
 
 interface MenuPosition {
@@ -118,7 +119,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onUpdateGroup,
   onDeleteGroup,
   onSelectGroup,
-  portalArrival = false
+  portalArrival = false,
+  transitionPrepared = false
 }) => {
   const { t, i18n } = useTranslation()
   const initialPreferencesRef = useRef(loadDynamicLibraryPreferences())
@@ -738,7 +740,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         />
       )
     }
-    return <img src={preview.url} alt={compact ? '' : group.name} onError={() => markPreviewFailed(group.id)} />
+    return <img src={preview.url} alt={compact ? '' : group.name} decoding="async" onError={() => markPreviewFailed(group.id)} />
   }
 
   const renderMoreButton = (entity: LibraryEntity, interactive = true) => (
@@ -908,7 +910,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const deleteFolderHasContents = deleteFolderMaterialCount > 0 || deleteFolderChildCount > 0
 
   return (
-    <main className={`ipad-screen dynamic-screen dynamic-library-screen apple-container ${portalArrival ? 'dynamic-portal-arriving' : ''} ${folderTransitioning ? 'folder-transitioning' : ''}`} aria-busy={folderTransitioning}>
+    <main
+      className={`ipad-screen dynamic-screen dynamic-library-screen apple-container ${portalArrival ? 'dynamic-portal-arriving' : ''} ${folderTransitioning ? 'folder-transitioning' : ''} ${transitionPrepared ? 'dynamic-transition-prepared' : ''}`}
+      aria-busy={folderTransitioning || transitionPrepared}
+      aria-hidden={transitionPrepared || undefined}
+    >
       <header className="ipad-topbar dynamic-library-topbar">
         <div className="topbar-title-row">
           <button type="button" className="ipad-button ghost-button dynamic-library-back" onClick={handleBack}>

@@ -98,7 +98,7 @@ const InteractiveThemeScene: React.FC<InteractiveThemeSceneProps> = ({
 
     <button type="button" className="magic-replay-button interactive-reveal" onClick={onReplay}>
       <RotateCcw aria-hidden="true" />
-      <span>重播魔幻轉場</span>
+      <span>重播數碼轉場</span>
     </button>
   </section>
 )

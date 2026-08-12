@@ -63,6 +63,7 @@ const zhHant = {
   'directComplete.result': '結果',
   'directComplete.sent': '圖片已發送',
   'directComplete.unknownFile': '未記錄檔案名稱',
+  'directComplete.backToThemes': '返回選項',
   'directComplete.uploadAgain': '重新上載',
   'upload.noFile': '未選擇檔案',
   'upload.directHttp': 'HTTP 直送',
@@ -296,10 +297,14 @@ const zhHant = {
   'control.nameSaveFailed': '無法儲存名稱，請重試',
   'control.backToLayers': '返回圖層',
   'control.motion': '移動方式',
+  'control.motionShort': '移動方式',
   'control.animation': '動畫',
+  'control.animationShort': '動畫',
   'control.size': '大小',
   'control.deform': '變形',
+  'control.deformShort': '變形',
   'control.copyProperties': '屬性複製',
+  'control.copyPropertiesShort': '屬性複製',
   'control.motionNone': '停止',
   'control.motionVertical': '上下',
   'control.motionLeft': '左移',
@@ -332,7 +337,7 @@ const zhHant = {
   'control.backgroundPlaybackMode': '背景切換方式',
   'control.backgroundFixed': '固定背景',
   'control.backgroundRandom': '隨機切換',
-  'control.backgroundSequence': '逐個切換',
+  'control.backgroundSequence': '全部切換',
   'control.switchInterval': '切換間隔',
   'control.backgroundInterval': '背景切換間隔',
   'control.backgroundIntervalUnit': '背景切換間隔單位',
@@ -380,7 +385,10 @@ const zhHant = {
   'animation.shortWalk': '行走',
   'animation.preview': '{{name}}預覽',
   'animation.walkPreview': '行走動畫預覽',
-  'animation.namedWalk': '{{name}}行走動畫'
+  'animation.namedWalk': '{{name}}行走動畫',
+  'animation.danceOne': '舞動一', 'animation.danceTwo': '舞動二', 'animation.jellyJump': '果凍跳躍', 'animation.jumpFlip': '翻轉跳躍', 'animation.pullRight': '向右拉伸', 'animation.raiseHand': '舉手', 'animation.rolling': '滾動', 'animation.unityWave': '揮動',
+  'animation.shortDanceOne': '舞動一', 'animation.shortDanceTwo': '舞動二', 'animation.shortJellyJump': '果凍', 'animation.shortJumpFlip': '翻跳', 'animation.shortPullRight': '拉伸', 'animation.shortRaiseHand': '舉手', 'animation.shortRolling': '滾動', 'animation.shortUnityWave': '揮動',
+  'animation.namedPreview': '{{name}}：{{animation}}', 'animation.mode': '動畫模式', 'animation.random': '隨機動畫', 'animation.previous': '上一個動畫', 'animation.next': '下一個動畫', 'animation.selectedCount': '已選 {{count}} 項', 'animation.clickRange': '點擊動畫範圍', 'animation.clickRangeTitle': '選擇點擊動畫', 'animation.clickRangeHint': '選擇此物件在 PC 上被點擊時播放的動畫。', 'animation.clickRangeConfirm': '套用範圍', 'animation.clickRangeCancel': '取消'
 } as const
 
 type TranslationResource = { [Key in keyof typeof zhHant]: string }

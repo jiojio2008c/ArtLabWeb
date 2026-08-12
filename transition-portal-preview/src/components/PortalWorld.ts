@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { portalFragmentShader, portalVertexShader } from '../shaders/portalShaders.ts'
-import type { PortalOrigin } from '../types.ts'
+import type { PortalOrigin, PortalVariant } from '../types.ts'
 
 interface FragmentRecord {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
@@ -74,6 +74,78 @@ const createLaptop = () => {
     new THREE.Vector3(-0.26, 0.24, 0.54), new THREE.Vector3(0.26, 0.24, 0.54)
   ], 0xffffff)
   group.add(diamond)
+  return group
+}
+
+const createInteractiveCards = () => {
+  const group = new THREE.Group()
+  const cardWidth = 0.42
+  const cardHeight = 0.88
+  const halfWidth = cardWidth / 2
+  const halfHeight = cardHeight / 2
+  const cards = [
+    { x: -0.67, y: -0.04, rotation: -0.15, color: 0x55efff },
+    { x: -0.23, y: 0.08, rotation: -0.05, color: 0xb477ff },
+    { x: 0.23, y: 0.08, rotation: 0.05, color: 0xff6fcf },
+    { x: 0.67, y: -0.04, rotation: 0.15, color: 0x79f6a7 }
+  ]
+
+  cards.forEach((cardData, index) => {
+    const card = new THREE.Group()
+    const outline = createLine([
+      new THREE.Vector3(-halfWidth, -halfHeight, 0), new THREE.Vector3(halfWidth, -halfHeight, 0),
+      new THREE.Vector3(halfWidth, -halfHeight, 0), new THREE.Vector3(halfWidth, halfHeight, 0),
+      new THREE.Vector3(halfWidth, halfHeight, 0), new THREE.Vector3(-halfWidth, halfHeight, 0),
+      new THREE.Vector3(-halfWidth, halfHeight, 0), new THREE.Vector3(-halfWidth, -halfHeight, 0),
+      new THREE.Vector3(-halfWidth + 0.04, -0.24, 0.01), new THREE.Vector3(halfWidth - 0.04, -0.24, 0.01)
+    ], cardData.color)
+    card.add(outline)
+
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(cardWidth - 0.025, cardHeight - 0.025),
+      new THREE.MeshBasicMaterial({
+        color: cardData.color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      })
+    )
+    fill.position.z = -0.015
+    fill.userData.portalOpacity = 0.1
+    card.add(fill)
+
+    const motif = index < 2
+      ? [
+          new THREE.Vector3(-0.13, -0.08, 0.02), new THREE.Vector3(-0.06, 0.18, 0.02),
+          new THREE.Vector3(-0.06, 0.18, 0.02), new THREE.Vector3(0.01, -0.08, 0.02),
+          new THREE.Vector3(0.01, -0.08, 0.02), new THREE.Vector3(0.09, 0.24, 0.02),
+          new THREE.Vector3(0.09, 0.24, 0.02), new THREE.Vector3(0.16, -0.08, 0.02)
+        ]
+      : index === 2
+        ? [
+            new THREE.Vector3(0, 0.23, 0.02), new THREE.Vector3(0.14, 0.08, 0.02),
+            new THREE.Vector3(0.14, 0.08, 0.02), new THREE.Vector3(0, -0.08, 0.02),
+            new THREE.Vector3(0, -0.08, 0.02), new THREE.Vector3(-0.14, 0.08, 0.02),
+            new THREE.Vector3(-0.14, 0.08, 0.02), new THREE.Vector3(0, 0.23, 0.02)
+          ]
+        : [
+            new THREE.Vector3(-0.16, 0.14, 0.02), new THREE.Vector3(-0.05, 0.08, 0.02),
+            new THREE.Vector3(-0.05, 0.08, 0.02), new THREE.Vector3(0.05, 0.14, 0.02),
+            new THREE.Vector3(0.05, 0.14, 0.02), new THREE.Vector3(0.16, 0.08, 0.02),
+            new THREE.Vector3(-0.16, 0.01, 0.02), new THREE.Vector3(-0.05, -0.05, 0.02),
+            new THREE.Vector3(-0.05, -0.05, 0.02), new THREE.Vector3(0.05, 0.01, 0.02),
+            new THREE.Vector3(0.05, 0.01, 0.02), new THREE.Vector3(0.16, -0.05, 0.02)
+          ]
+    card.add(createLine(motif, 0xffffff))
+
+    card.position.set(cardData.x, cardData.y, 0.53 + Math.abs(cardData.x) * 0.025)
+    card.rotation.z = cardData.rotation
+    group.add(card)
+  })
+
+  group.position.y = 0.03
   return group
 }
 
@@ -240,7 +312,11 @@ const disposeObject = (object: THREE.Object3D) => {
   })
 }
 
-export const createPortalWorld = (canvas: HTMLCanvasElement, origin: PortalOrigin): PortalWorld => {
+export const createPortalWorld = (
+  canvas: HTMLCanvasElement,
+  origin: PortalOrigin,
+  variant: PortalVariant = 'dynamic'
+): PortalWorld => {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     alpha: true,
@@ -294,8 +370,8 @@ export const createPortalWorld = (canvas: HTMLCanvasElement, origin: PortalOrigi
   violetEdges.scale.setScalar(1.045)
   portalGroup.add(cyanEdges, violetEdges)
 
-  const laptop = createLaptop()
-  portalGroup.add(laptop)
+  const portalGlyph = variant === 'interactive' ? createInteractiveCards() : createLaptop()
+  portalGroup.add(portalGlyph)
   scene.add(portalGroup)
 
   const particleCount = window.innerWidth >= 1100 ? 620 : 420
@@ -369,9 +445,14 @@ export const createPortalWorld = (canvas: HTMLCanvasElement, origin: PortalOrigi
     glowMaterial.uniforms.uOpacity.value = activation * visibility
     ;(cyanEdges.material as THREE.LineBasicMaterial).opacity = activation * visibility
     ;(violetEdges.material as THREE.LineBasicMaterial).opacity = activation * 0.72 * visibility
-    laptop.traverse((child) => {
-      const line = child as THREE.LineSegments
-      if (line.material) (line.material as THREE.LineBasicMaterial).opacity = activation * visibility
+    portalGlyph.traverse((child) => {
+      const renderable = child as THREE.Mesh | THREE.LineSegments
+      if (!renderable.material) return
+      const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material]
+      const opacityScale = typeof child.userData.portalOpacity === 'number' ? child.userData.portalOpacity : 1
+      materials.forEach((material) => {
+        material.opacity = activation * visibility * opacityScale
+      })
     })
 
     const streamVisibility = range(progress, 0.14, 0.38) * (1 - range(progress, 0.8, 1))

@@ -59,9 +59,10 @@ const HomeScene: React.FC<HomeSceneProps> = ({
       >
         <span className="entry-image-shell">
           <img src="/assets/Magic_floor_UI_art.png" alt="" draggable={false} />
+          <span className="hologram-grid" aria-hidden="true" />
         </span>
         <strong>互動藝術</strong>
-        <span className="interactive-card-aura" aria-hidden="true" />
+        <span className="card-portal-corners" aria-hidden="true" />
       </button>
     </div>
   </section>

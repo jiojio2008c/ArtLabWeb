@@ -11,6 +11,7 @@ export type PreviewView =
 export type TransitionMode = 'shared' | 'storybook'
 export type InteractiveCardSize = 'current' | 'compact'
 export type MaterialTransitionDirection = 'forward' | 'backward'
+export type PortalVariant = 'dynamic' | 'interactive'
 
 export interface PortalOrigin {
   left: number
