@@ -9,7 +9,8 @@
     "fix:ios-spm": "node scripts/fix-ios-spm-paths.cjs",
     "sync:ios": "npm run build && npx cap sync ios && npm run fix:ios-spm",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:creation-flow": "node --no-warnings scripts/verify-dynamic-creation-flow.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.0",

@@ -38,6 +38,11 @@ import {
   type DynamicArchiveSourceSnapshot
 } from './services/dynamicArtArchiveSync.ts'
 import { markDynamicReceiverNeedsResync } from './services/dynamicArtReceiverSync.ts'
+import {
+  loadDynamicCreationFlowSession,
+  removeDynamicCreationFlowSession
+} from './services/dynamicCreationFlowStorage.ts'
+import type { DynamicCreationFlowExperience } from './services/dynamicCreationFlowCore.js'
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 import { getCurrentSession, logoutCurrentSession, subscribeToAuthChanges } from './services/authService.ts'
 import { loadCurrentUserAccount, type UserAccount } from './services/userProfileService.ts'
@@ -98,6 +103,7 @@ function App() {
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
+  const [dynamicEditorExperience, setDynamicEditorExperience] = useState<DynamicCreationFlowExperience>('free')
   const [dynamicPortalOrigin, setDynamicPortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [interactivePortalOrigin, setInteractivePortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
@@ -423,11 +429,16 @@ function App() {
     navigateTo('directSelect')
   }
 
-  const beginDynamicArtworkTransition = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
+  const beginDynamicArtworkTransition = (
+    group: DynamicGroup,
+    origin?: DynamicTransitionOrigin,
+    experience?: DynamicCreationFlowExperience
+  ) => {
     clearDynamicArchiveSyncTimers()
     setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
+    if (experience) setDynamicEditorExperience(experience)
     const preview = group.thumbnail ?? group.background ?? group.items[0]?.media
     setDynamicArtworkTransition({
       direction: 'forward',
@@ -440,10 +451,11 @@ function App() {
   }
 
   const handleCreateDynamicGroup = (group: DynamicGroup) => {
-    beginDynamicArtworkTransition(group)
+    beginDynamicArtworkTransition(group, undefined, 'flow')
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
+    removeDynamicCreationFlowSession(groupId)
     setDynamicGroups((currentGroups) => currentGroups.filter((group) => group.id !== groupId))
     setSelectedDynamicGroupId((currentGroupId) => currentGroupId === groupId ? '' : currentGroupId)
     setSelectedDynamicItemId('')
@@ -463,7 +475,12 @@ function App() {
   }
 
   const handleSelectDynamicGroup = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
-    beginDynamicArtworkTransition(group, origin)
+    const flowSession = loadDynamicCreationFlowSession(group.id, {
+      itemIds: group.items.map((item) => item.id),
+      defaultExperience: 'free'
+    })
+    setDynamicEditorExperience(flowSession.experience)
+    beginDynamicArtworkTransition(group, origin, flowSession.experience)
   }
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
@@ -474,6 +491,11 @@ function App() {
 
   const handleOpenDynamicControl = (itemId = '') => {
     if (!selectedDynamicGroup) return
+    const flowSession = loadDynamicCreationFlowSession(selectedDynamicGroup.id, {
+      itemIds: selectedDynamicGroup.items.map((item) => item.id),
+      defaultExperience: 'free'
+    })
+    setDynamicEditorExperience(flowSession.experience)
     setSelectedDynamicItemId(itemId)
     navigateTo('dynamicControl')
   }
@@ -623,6 +645,7 @@ function App() {
                 onBack={handleReturnFromDynamicControl}
                 onGroupChange={updateDynamicGroupState}
                 initialItemId={selectedDynamicItemId}
+                initialExperience={dynamicEditorExperience}
                 transitionPreparing={Boolean(forwardDynamicArtworkTransition)}
               />
             )}

@@ -2455,3 +2455,376 @@ SHA-256: 8AFCC25FD43938688BE46EF2AD5E54F003ACE0413C7FEAC8B19EC9758447257F
 ```
 
 兩個 release 目錄同時保留 electron-builder 產生的 `win-unpacked`，便攜 EXE 本身可正常交付。`desktop-runtime/README.md` 仍保留「跨背景暫時帶入且不修改 backgroundIds」的舊描述，後續維護時應以本節、目前原始碼與測試為準並同步修正文檔。`npm run lint` 仍因沒有 ESLint 設定檔而無法啟動；本輪未執行任何 Git 操作。
+
+## 26. 2026-08-18 EXE 發佈整理、Git 回退節點與動態藝術線性創作流程
+
+### EXE 發佈整理
+
+- 按交付要求清除 8 個已被最終版本取代的舊發佈目錄，共釋放約 `3.135 GiB`：
+  - `release-advanced-final-20260813`
+  - `release-advanced-vertical-final-20260813`
+  - `release-advanced-linked-final-20260814`
+  - `release-advanced-linked-vertical-final-20260814`
+  - `release-background-transitions-final-20260814`
+  - `release-background-transitions-vertical-final-20260814`
+  - `release-transition-audio-final-20260814`
+  - `release-transition-audio-vertical-final-20260814`
+- `desktop-runtime` 目前只保留最新標準版與完整翻轉版兩個發佈目錄：
+  - `release-target-loop-final-20260817`
+  - `release-target-loop-vertical-final-20260817`
+- 新增 `desktop-runtime/scripts/clean-release-directories.cjs`；所有正式打包命令現在都會在建立 EXE 前自動刪除同類型舊發佈目錄。
+- `prepack:dir` 與 `prepack:portable` 只清理舊標準版；`prepack:vertical-flip` 只清理舊完整翻轉版；`pack:all` 依序產生兩個版本，不會在生成第二個版本時誤刪剛完成的第一個版本。
+- 可使用 `npm --prefix desktop-runtime run clean:releases` 手動清空全部受管理的發佈目錄。清理腳本只檢查 `desktop-runtime` 的直接子目錄，並驗證目錄名稱，不會觸及 `.codex-build`、`node_modules`、`ffmpegbin` 或其他依賴與原始碼目錄。
+- `.gitignore` 已補上 `.codex-build/`、`.codex-panel-build/`、`test-artifacts/`、`test-results/`、`*.log` 與桌面驗收截圖等生成內容；既有誤追蹤的 Vite 快取、套件鎖快取與開發日誌已從 Git 追蹤中移除，但沒有刪除本機依賴。
+
+清理後保留的最新標準版：
+
+```text
+desktop-runtime/release-target-loop-final-20260817/MagicFloor Dynamic Player 0.1.0.exe
+Size: 85,302,382 bytes
+SHA-256: 196C0E8354B2DDBFF9B12E6F32E1D7CC36C7B6327C708DA989504AACEDD57F5B
+```
+
+清理後保留的最新完整翻轉版：
+
+```text
+desktop-runtime/release-target-loop-vertical-final-20260817/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+Size: 85,289,448 bytes
+SHA-256: 8AFCC25FD43938688BE46EF2AD5E54F003ACE0413C7FEAC8B19EC9758447257F
+```
+
+兩個版本都監聽 `8080`，不可同時運行。本輪線性創作流程沒有修改 EXE 協定，因此沒有另外產生新版本；桌面交付仍以上述兩個目錄及 SHA-256 為準。
+
+### Git 回退節點
+
+- 在線性創作流程實作前，已建立並推送基線提交：
+
+```text
+93e50c67e87ad522db94173cf57d7b68b45ba1f4
+chore: checkpoint before linear creation flow
+```
+
+- 遠端 `origin/main` 已指向上述提交。
+- 已建立並推送回退標籤 `rollback-pre-linear-flow-20260818`；標籤解引用後同樣指向 `93e50c67e87ad522db94173cf57d7b68b45ba1f4`。
+- 此回退節點包含 EXE 舊版本清理、自動清理打包鉤子及此前已完成的功能，但不包含其後新增的線性創作流程，可用作流程改版前的完整回退基線。
+- 線性創作流程目前仍是上述基線之後的工作樹修改；若後續需要把目前效果另作正式版本，應建立新的提交或標籤，不要移動既有回退標籤。
+
+### 動態藝術線性創作流程
+
+- iPad 動態藝術控制頁新增正式的「創作流程」體驗；這不是新手教學、氣泡提示或刪減功能的簡易模式，而是把現有完整功能重新整理成單一路徑的作品建立流程。
+- 控制頁同時保留「創作流程」與「自由編輯」兩種體驗，使用者可隨時切換。兩種體驗共用同一個 `DynamicControlPage`、舞台、手勢、圖層、屬性面板、背景編輯器、音源、預覽、保存與 PC 同步邏輯，不建立第二套作品編輯器。
+- 新建作品預設進入「創作流程」；既有作品預設維持「自由編輯」，若該作品曾經選擇過編輯體驗，則恢復本機保存的上次模式及步驟。從作品物件卡明確開啟某個物件時，該入口物件優先於 session 上次選取，避免錯誤跳回第一個物件。
+- 創作流程依照實際建立順序分為六步：
+  1. `物件`
+  2. `佈局與動作`
+  3. `出場編排`
+  4. `背景`
+  5. `聲音`
+  6. `檢查與預覽`
+- 「物件」步驟沿用既有圖層、上載、刪除、多選及排序；點選圖層只切換目前物件，不會提前展開全部自由編輯屬性。點擊「屬性」會線性前往「佈局與動作」並開啟該物件。
+- 「佈局與動作」集中顯示移動方式、目標點、動畫、大小與變形及屬性複製等既有功能，不改變舞台手勢或屬性資料。
+- 「出場編排」把原本分散在出場設定、圖層順序及物件聯動中的操作整理為同一工作區，可設定全部／逐個出場、出場間隔、統一出場動畫、主要出場順序及接續動作。
+- 主要出場順序仍使用既有 `DynamicItem.order`，因此調整出場主順序也會同步調整圖層層級；介面已明確提示這項既有資料限制。`showAfter` 與 `hideAfter` 不會被假裝成一般排序，而是以「接續出現／接續隱藏」關係獨立呈現。
+- 新增接續動作與點擊既有接續關係均會開啟原有物件聯動編輯器；使用者可修改受控物件、出現／隱藏模式、延遲或移除關係，並繼續沿用原有循環防護、背景強制繼承及 `A -> B` 規則。舞台在「出場編排」步驟會持續顯示既有關係輔助線。
+- 流程的「物件／佈局與動作／出場編排」三步會顯示作品全部物件，不會被目前活動背景誤過濾；「背景／聲音」仍可選取並編輯目前背景未顯示的物件。自由編輯與正式預覽仍維持原有按活動背景過濾的行為。
+- 「背景」與「聲音」步驟提供作品層級總覽及逐物件摘要；需要修改時會進入既有背景編輯器、物件背景或物件音源屬性，不複製或縮減現有功能。詳情關閉或底部返回會回到同一步總覽。
+- 背景與聲音均為可選步驟；點擊「稍後設定」或在未配置時直接按主要「下一步」都會寫入跳過狀態並完成線性前進。若後來新增真實配置，完成態重新以實際資料和阻塞問題為準，不會被舊跳過標記掩蓋。
+- 聲音總覽只會在「已有音源、觸發方式為到達目標點、但尚未設定目標點」時提示返回佈局；普通循環物件、一般出現音源及無音源物件不再誤報。
+- 「檢查與預覽」集中顯示物件、背景、音源及接續關係數量，並把缺少物件、目標點未完成、無效背景／音源引用、關係遺失、自我聯動或循環等問題分成阻塞項與提醒。可修復問題的「去處理」會返回對應步驟及物件；只能告知狀態的歷史資料提醒改為靜態卡，不再顯示點擊後無反應的假操作。
+- 點擊「開始完整預覽」會使用原有正式預覽；停止預覽後會回到第六步。存在使用者可處理的阻塞問題時不會直接開始預覽。
+- 關閉進階功能時，既有接續關係只讀顯示且不可點擊；進階專屬但在基礎模式中無入口的目標點、音源、背景與關係問題不會阻斷基礎流程預覽。
+- 流程底部固定提供「上一步／下一步」、可選步驟跳過、詳情返回及自動儲存狀態；最後一步以「完成編輯」返回作品檔案。
+- 流程模式、目前步驟、已選物件、佈局子步驟、已檢查物件及跳過步驟只保存在本機：
+
+```text
+localStorage key: magicfloor_dynamic_creation_flow_v1
+```
+
+- 流程狀態按作品 ID 分開保存；作品被刪除時會一併移除相應流程會話。損壞 JSON、舊版 session、已刪除物件及不可用的 `localStorage` 均會安全回退。
+- 自由編輯修改作品後，流程摘要、播放順序、接續關係及問題清單會重新從真實作品資料推導，不依賴一份容易過期的流程副本。
+- 本輪沒有新增或修改 `DynamicGroup`、`DynamicItem`、`DynamicBackground` 的持久化欄位，也沒有修改 IndexedDB 作品格式、`GroupStateSync`、`GroupSelectAndSync`、`PreviewMode`、Unity／PC 通訊或 EXE 播放協定。
+- 流程會話只存在 iPad／瀏覽器本機，不會傳送至 Windows EXE；現有作品在「創作流程」和「自由編輯」之間切換時使用完全相同的作品資料。
+- 繁體中文、簡體中文、英文、葡萄牙文與波蘭文已補齊流程、步驟、出場編排、背景、聲音、檢查及問題提示文案。
+- 新面板保留最小 `44px` 觸控目標、鍵盤／螢幕閱讀器狀態、`aria-current` 步驟標記、`prefers-reduced-motion` 及 iPad 橫向響應式版面。
+
+### 驗證與測試頁
+
+- `npm run test:creation-flow` 通過，覆蓋損壞及舊版 session、已刪除物件恢復、空作品、播放順序轉換、分支／連鎖／隱藏關係、循環關係、目標點音源、可選背景與聲音，以及自由編輯後重新推導。
+- `npm run build` 通過；其中包含 TypeScript 與 Vite 生產構建，共完成 `1760` 個模組，只保留既有的大型 chunk 提示。
+- `npm --prefix desktop-runtime run test:appearance`、`test:item-copy`、`test:target-motion`、`test:background-order` 與 `test:transition-audio` 均通過，確認新增流程沒有改變既有 EXE 時間線、屬性複製、目標點、背景播放順序及轉場音效。
+- 隔離瀏覽器驗收已覆蓋：創作／自由模式切換資料不變、第 1 步三個圖層且不可折疊、第 2 步只顯示四個允許屬性、跨背景物件背景／聲音詳情、既有與新增接續關係、可選步驟由主要按鈕或稍後設定跳過、Review 完整預覽、停止後返回 Review、基礎模式隱藏進階問題，以及靜態提醒不再呈現假按鈕。全程無瀏覽器執行錯誤。
+- 已產生兩種 iPad 橫向尺寸的出場編排與檢查頁驗收截圖：
+
+```text
+test-artifacts/dynamic-flow-20260818/appearance-1024x768.png
+test-artifacts/dynamic-flow-20260818/review-1024x768.png
+test-artifacts/dynamic-flow-20260818/appearance-1366x1024.png
+test-artifacts/dynamic-flow-20260818/review-1366x1024.png
+```
+
+- 截圖尺寸分別為 `1024 × 768` 與 `1366 × 1024`；四張圖均確認 `documentWidth === viewportWidth`、頁面高度固定於視口、圖片完整載入、流程面板與底部導覽無重疊，瀏覽器錯誤陣列為空。`test-artifacts/` 已被忽略，不會意外提交至 Git。
+- 主應用測試頁已啟動並監聽所有網路介面：本機 `http://127.0.0.1:5173/`、同網路 iPad `http://192.168.1.39:5173/`；兩個地址檢查時均回傳 HTTP `200`，頁面標題為 `MagicFloor`。
+- 過場預覽頁仍運行於本機 `http://127.0.0.1:5188/`、同網路 `http://192.168.1.39:5188/`；兩個地址檢查時均回傳 HTTP `200`，頁面標題為 `MagicFloor Portal Transition Preview`。
+
+## 27. 2026-08-18 出場父子樹、物件背景分配與固定 Steps 導航
+
+### 出場編排改為父物件／子物件結構
+
+- 「出場編排」不再同時顯示一份全部物件平鋪清單及另一份獨立接續關係清單，而是直接使用 `flowSummary.relationTree` 遞迴顯示真實的父子關係。
+- 未綁定物件維持原有完整頂層卡片；已綁定物件會以完整卡片收進父物件下方，保留縮圖、名稱、移動、動畫、目標點狀態及繼續新增下一層子物件的能力。
+- 子物件上方新增可點擊的關係列，明確顯示「幾秒後出現」或「幾秒後隱藏」；點擊後仍開啟原有物件聯動編輯器，可更換受控物件、修改模式／延遲或解除關係。
+- `showAfter` 使用青綠色關係提示，`hideAfter` 使用琥珀色關係提示，狀態同時由圖示與文字表達，不只依靠顏色。
+- 主出場順序只對沒有父物件的根節點編號及顯示上下按鈕；綁定子物件不再被錯誤暗示為主順序的一部分。同一父物件的子節點依 `delayMs`、再依作品順序排列。
+- 根節點上下移動會交換相鄰根節點在完整 `DynamicItem.order` 中的位置；子節點即使夾在兩個根節點的全域順序之間，也不會造成按下後畫面看似沒有變化。
+- 支援 `A → B → C` 多級遞迴；視覺縮排最多累積三層，更深關係維持相同可用寬度，避免 iPad 窄右欄因深鏈產生橫向溢出。
+- 父子樹已移到出場步驟首屏，先讓使用者看見目前出場結構與「接在此物件後」操作；全部／依序出場、間隔及統一動畫保留完整功能，改放在父子編排之後。
+- 刪除右側面板內已被隱藏的舊四節點步驟軌道及全部殘留樣式，整個流程只保留頂部一套六步導航。
+
+### 背景步驟改為兩段式線性操作
+
+- 背景步驟第一屏改為兩個明確任務：`1 選擇物件`、`2 選擇出現背景`，不再要求使用者先進入舊屬性面板才理解「指定背景」的含義。
+- 物件清單同時顯示目前背景範圍；目前物件以勾號及高亮表達，被聯動的子物件以鎖圖示及「背景跟隨父物件」文字表達。
+- 選中一般物件後，可直接選擇「所有背景」或「指定背景」：
+  - 「所有背景」繼續寫入既有 `backgroundIds=[]`，代表目前及日後新增的全部背景。
+  - 「指定背景」原位展開兩欄背景縮圖選擇；至少保留一個背景，避免空陣列被既有資料語義重新解讀為全部背景。
+- 選中綁定子物件時，不顯示一組難以理解的灰色控制項，而是顯示完整鎖定原因及「設定父物件」按鈕；按下後直接切換到其直接父物件。父物件背景變更仍由 `synchronizeDynamicLinkedBackgrounds()` 遞迴同步至子／孫物件。
+- 沒有任何背景時，主要提示改為「先加入舞台背景」；背景素材、排序、播放方式、轉場與背景音樂保留在頁面底部支援區，繼續開啟原有完整背景編輯器。
+- 新增流程內背景更新 handler 仍使用既有 `updateItemLocal(..., { persist: true, emit: false })`、IndexedDB／本地作品保存及 `GroupStateSync`，沒有新增作品欄位或 PC 訊息。
+
+### Ant Design Steps 風格頂部導航
+
+- 頂部六步導航改為 `nav > ol > li > button` 的固定圓形節點與五條連接線，視覺參考 Ant Design `Steps`，但沒有新增 Ant Design 依賴，繼續使用現有青綠色設計語言。
+- 六個節點始終固定在等寬欄位中；切換目前步驟時不再改變按鈕寬度或造成整條導航左右跳動。
+- 狀態分為目前 `process`、已完成 `finish`、已經過但有阻塞問題 `error`、未到達 `wait` 及前置條件不足 `disabled`；未來步驟不會因自由編輯已有資料而提前顯示完成。
+- `1366 × 1024` 顯示六個完整標題；導航容器小於 `660px`（包含 `1024 × 768` iPad 橫向配置）時仍保留六個節點及連接線，只隱藏非目前步驟的視覺標題，完整名稱仍保留在可存取名稱中。
+- 支援左右方向鍵、Home、End、Enter／Space；禁用步驟使用 `aria-disabled` 保持可聚焦及可讀，當前步驟使用 `aria-current="step"`。
+- 步驟切換後焦點移至新頁面標題，而不是停留在導航按鈕；焦點框統一為青綠色，避免瀏覽器預設黑色外框破壞視覺，同時保留鍵盤焦點可見性。
+- 所有主要觸控操作維持至少 `44px`，保留 `prefers-reduced-motion`，並在 1024／1366 iPad 橫向尺寸中維持右欄、舞台與底部流程列不重疊。
+
+### 五語、相容性與驗收
+
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文新增父子出場、關係出現／隱藏、兩段式背景選擇、背景繼承、設定父物件及無背景首要操作文案；五語靜態鍵均無缺漏或重複，插值參數一致。
+- `flow.step3Description` 已明確說明「主物件順序＋父子接續關係」；`flow.step4Description` 已明確說明「先選物件，再選背景；綁定子物件跟隨父物件」。
+- 本輪只重組流程 UI 與操作入口；`DynamicGroup`、`DynamicItem`、`linkedAppearance`、`backgroundIds`、IndexedDB 格式、PC／EXE 播放時間線及同步協定均未修改，因此沒有重新生成 EXE。最新標準版及完整翻轉版仍以第 25／26 節列出的兩個 `release-target-loop-*` 目錄及 SHA-256 為準。
+- 隔離 Edge／CDP 真實互動驗收通過：
+  - `Paper Plane` 為唯一根卡，`Starlight` 與 `Blue Dancer` 依 `0.4s hideAfter → 0.7s showAfter` 嵌套顯示，子卡沒有主順序箭頭。
+  - 點擊子物件關係列成功開啟原有「物件聯動」對話框。
+  - `Paper Plane → Starlight → Blue Dancer` 三級鏈完整遞迴顯示，兩層關係列均存在，孫物件沒有主順序箭頭。
+  - 三個未綁定根物件按下向下按鈕後，根順序由 `Blue Dancer / Paper Plane / Starlight` 立即改為 `Paper Plane / Blue Dancer / Starlight`。
+  - 背景頁顯示 `1 / 2` 任務號、兩個子物件鎖定狀態；選中 `Blue Dancer` 會顯示跟隨 `Paper Plane` 的完整說明，按「設定父物件」後正確切回 `Paper Plane`；切換「所有背景」後其 `aria-checked` 為 `true`。
+  - 全程 `window.__flowHarnessErrors=[]`。
+- 已重新產生六張最新驗收截圖：
+
+```text
+test-artifacts/dynamic-flow-20260818/appearance-1024x768.png
+test-artifacts/dynamic-flow-20260818/backgrounds-1024x768.png
+test-artifacts/dynamic-flow-20260818/review-1024x768.png
+test-artifacts/dynamic-flow-20260818/appearance-1366x1024.png
+test-artifacts/dynamic-flow-20260818/backgrounds-1366x1024.png
+test-artifacts/dynamic-flow-20260818/review-1366x1024.png
+```
+
+- 六張截圖均確認 `documentWidth === viewportWidth`、`documentHeight === viewportHeight`、圖片完整載入、目前面板步驟正確且瀏覽器錯誤陣列為空；隔離 Edge 驗收完成後已關閉，不影響使用者原有瀏覽器資料。
+- 驗證命令全部通過：
+
+```text
+npm run test:creation-flow
+npm run build
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+git diff --check
+```
+
+- 生產構建完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；沒有新增建置錯誤。
+- 主測試頁 `5173` 與過場預覽頁 `5188` 仍在運行。本輪改動仍位於 `93e50c67e87ad522db94173cf57d7b68b45ba1f4` 回退基線之後的未提交工作樹中；既有 `rollback-pre-linear-flow-20260818` 標籤沒有移動。
+
+## 28. 2026-08-18 流程文字減量、父子鏈收合與舞台背景入口簡化
+
+### 文字與資訊層級減量
+
+- 依第二輪實機回饋，流程面板由「以說明文字解釋操作」調整為「由畫面結構與按鈕本身表達操作」。
+- 右側流程面板 Header 現在只保留可聚焦的目前步驟 `h2`；刪除重複的「創作流程」、播放端同步字樣、步驟數字、大圖示及標題下說明。頂部六步 Steps、內容區任務標題及固定底部保存狀態已能分別承擔導航、操作及狀態資訊。
+- 出場頁刪除父子關係說明卡、物件順序標題說明及整體出場說明；第一屏直接從「物件順序」和父／子卡片開始。
+- 子物件關係列的可見文字由完整句子縮減為「`0.4 秒後隱藏`／`0.7 秒後出現`」；完整父物件、子物件及觸發關係仍保留在 `aria-label`，不犧牲 VoiceOver 資訊。
+- 背景頁刪除「選擇物件」及「選擇出現背景」下方的重複說明，並移除「目前物件＋物件名稱＋已選背景」摘要卡；第二步標題直接改為「`Paper Plane` 出現在哪些背景？」。
+- 「所有背景／指定背景」只保留一行短說明；背景繼承提示縮減為「跟隨父物件／由 `Paper Plane` 統一設定」，操作按鈕縮減為「設定父物件」。
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文同步完成極簡文案；五語新增展開／收起子物件的可存取名稱，插值參數一致且沒有重複鍵。
+
+### 父子鏈展開／收起
+
+- 每個實際擁有子物件的父節點新增展開／收起按鈕，顯示鏈結圖示、子物件數量及方向箭頭；預設全部展開。
+- 收合狀態只保存在 `DynamicCreationFlowPanel` 本地 `Set<string>`，不寫入作品、不進 IndexedDB、不發送至 PC／EXE，也不改變真正的 `linkedAppearance` 關係。
+- 按鈕維持至少 `44px` 觸控區，使用原生 `button`、`aria-expanded`、`aria-controls` 及五語 `aria-label`；收起時子樹使用標準 `hidden`，焦點仍停留在同一按鈕。
+- 點擊「接在此物件後」會先自動展開目前父節點，再開啟原有聯動編輯器，避免新建立的子物件被使用者先前的收合狀態遮住。
+- 多級 `A → B → C` 每一層均可獨立收合；只改畫面呈現，不改延遲排序、循環檢查、背景繼承或播放時間線。
+
+### 舞台背景區簡化
+
+- 背景步驟底部「舞台背景」區已完全移除小型背景縮圖、名稱卡及 BGM 狀態卡；使用者需要查看素材時直接按「編輯背景」進入原有完整背景編輯器。
+- 有背景時只保留一條緊湊管理入口：舞台背景圖示、背景數量及「編輯背景」按鈕；沒有背景時隱藏這條次要入口，避免與第二步內的「先加入舞台背景」主要操作重複。
+- 「指定背景」模式內的背景縮圖選擇網格仍保留，因為該縮圖直接承擔勾選物件出現範圍的任務；被刪除的只有使用者指出的舞台背景重複預覽區。
+- 編輯背景入口新增 `aria-haspopup="dialog"`；背景素材、順序、播放方式、轉場及背景音樂功能均未刪除。
+
+### 驗收與相容性
+
+- 隔離 Edge／CDP 已驗證父節點初始 `aria-expanded="true"`，收起後子清單 `hidden=true` 且按鈕名稱為「展開 2 個子物件」，再次展開後完整恢復；父節點原有兩條關係仍存在。
+- 背景頁驗證 `.dynamic-flow-background-card` 數量為 `0`，舞台背景管理區內圖片／影片數量為 `0`，只保留「舞台背景／共 1 個背景／編輯背景」。
+- 面板 Header 可見文字在背景步驟只剩「背景」，不再重複播放端同步、步驟數字或說明。
+- 重新產生 `1024 × 768` 與 `1366 × 1024` 六張流程截圖；全部保持 `documentWidth === viewportWidth`、`documentHeight === viewportHeight`、零壞圖及 `window.__flowHarnessErrors=[]`。測試 harness 因刻意沒有連接播放端，已在 harness 專用 HTML 隱藏無關的同步錯誤 toast，不影響正式應用錯誤提示。
+- `npm run build` 通過，完成 `1760` 個模組，只保留既有大 chunk 提示；以下回歸命令全部通過：
+
+```text
+npm run test:creation-flow
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+git diff --check
+```
+
+- 本輪仍只調整流程 JSX、CSS 與五語文案，沒有修改 `DynamicGroup`、`DynamicItem`、`linkedAppearance`、`backgroundIds`、IndexedDB 或 PC／EXE 協定，因此不需要重新生成 EXE；最新標準版及完整翻轉版仍以第 25／26 節記錄為準。
+
+## 29. 2026-08-18 聲音步驟線性化、共享音源上載與原位選擇
+
+### 背景音樂入口減量
+
+- 聲音步驟的「背景音樂」不再遍歷舞台背景，也不再顯示背景圖片／影片圖示、UUID、圖片檔名或背景音樂狀態摘要。先前畫面中的兩個奇怪名稱其實是 `background.name`，不是音樂名稱，資訊層級已完全移除。
+- 背景音樂區現在只保留「背景音樂」標題與「設定」按鈕，不顯示用途說明或空狀態文案；按鈕繼續開啟原有完整背景編輯器，背景素材、排序、轉場、播放方式及逐背景 BGM 功能均未刪除。
+- 「設定」維持至少 `44px` 觸控區，使用 `aria-label` 及 `aria-haspopup="dialog"`；在 `1024 × 768` 窄右欄仍保留可見文字，不會退化成只有箭頭的無意義圖示。
+
+### 物件音源改為同頁三步操作
+
+- 「物件音源」不再顯示會跳入二級屬性抽屜的假選擇卡；整個設定改為同一頁面的三個連續任務：
+  1. 選擇物件。
+  2. 為目前物件選擇音源。
+  3. 選擇播放時機。
+- 物件卡現在只負責選取，使用 `role="radiogroup"`、`role="radio"`、`aria-checked`、勾號與邊框共同表達狀態；點擊後右側流程面板保持在「聲音」，不再打開自由編輯的物件音源抽屜。
+- 第二步標題會直接顯示「`Paper Plane` 使用哪個音源？」；其下第一項固定為「無音源」，再列出目前作品共享音源庫中的所有音源。音源名稱、時長、選取勾號及獨立試聽按鈕均在原位可見。
+- 「無音源」本身已清楚表達聲音可選，因此刪除原有綠色「無音源是有效設定，可直接繼續」說明卡。選擇「無音源」只解除目前物件的 `audioId`，不刪除共享音源資產，也不影響背景或其他物件。
+- 選中有效音源後才顯示第三步「播放時機」；可直接選擇「出現時／延遲播放／到達目標」。只有「延遲播放」會顯示秒數輸入，仍沿用 `0–600000ms` 限制；「到達目標」但未設定目標點時只顯示必要的短警告。
+- 聲音面板沒有新增刪除共享音源的高風險快捷鍵；原有自由編輯音源庫仍保留試聽與刪除功能，避免流程首屏增加視覺噪音或誤刪被多個背景／物件共用的資產。
+
+### 共享音源上載語義
+
+- 第二步提供可見的「新增音源」按鈕及專用隱藏檔案輸入，接受 `audio/*`、MP3、M4A、WAV 及 OGG；上載中按鈕會顯示既有進度文字及 `aria-busy`。
+- 流程頁上載只呼叫既有 `addAudioFile()`，因此格式驗證、IndexedDB／本機媒體保存、時長讀取、Unity／Receiver 資產上載、錯誤 toast 與 `GroupStateSync` 全部沿用原邏輯。
+- 與自由編輯的「上載並立即套用」入口不同，流程頁「新增音源」只把檔案加入目前作品的共享 `group.audioLibrary`，不暗中修改任何物件 `audioId` 或背景 `bgmAudioId`。新音源出現在下方列表後，必須由使用者明確點選才建立綁定。
+- 背景音樂與物件音源繼續使用同一個作品級音源庫；同一資產可同時被多個背景和物件引用，不建立重複資料。自由編輯中新增的音源會立即出現在流程頁，流程頁新增的音源也可在背景編輯器與自由編輯物件音源中選取。
+- 流程頁按明確 `itemId` 更新 `audioId`、`audioTrigger` 及 `audioDelayMs`，不依賴可能尚未完成切換的全域 `selectedItem`，避免快速切換兩個物件時把音源綁到上一個物件。
+
+### 五語、相容性與驗收
+
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文新增「設定背景音樂／選擇物件／目前物件使用哪個音源」結構文案；`flow.step5Description` 同步縮短為「選擇音源與播放時機」，聲音面板內不再渲染背景音樂或物件音源的長說明。
+- `DynamicCreationFlowItem` 流程視圖模型只增加既有欄位的讀取：`audioId`、`audioTrigger`、`audioDelayMs`；另加入只供畫面使用的共享音源摘要。沒有新增或修改 `DynamicGroup`、`DynamicItem`、`DynamicBackground` 的持久化欄位。
+- IndexedDB 格式、作品資料、`GroupStateSync`、Unity／PC 協定、背景音樂切換及物件音源播放時間線均未修改，因此不需要重新生成 EXE。最新標準版與完整翻轉版仍是：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```
+
+- 創作流程核心測試新增三組聲音語義回歸：共享庫已有資產但未綁定時聲音步驟仍未配置；同一音源可同時供背景與物件引用；物件與背景懸空音源 ID 均維持可修復提醒。
+- 隔離 Edge／CDP 真實互動驗收通過：切換到 `Starlight` 後原位選擇 `Stage Music` 只更新該物件；播放時機與 `1.2s` 延遲正確寫入；上載 `flow-upload.wav` 後音源庫由 `2` 增至 `3`，全部物件與背景綁定保持不變；明確點選後才綁定，選擇「無音源」後共享庫仍保留 `3` 個資產。
+- `1024 × 768` 與 `1366 × 1024` 驗收均確認：
+  - `documentWidth === viewportWidth`
+  - `documentHeight === viewportHeight`
+  - 背景檔名卡數量為 `0`
+  - 背景音樂說明段落數量為 `0`
+  - 「新增音源」高度為 `44px`
+  - 三個物件與「無音源＋兩個共享音源」均具備正確單選語義
+  - 流程面板與固定 footer 保持 `8px` 間距
+  - 最後一個音源控制可完整滾動至面板可視範圍
+  - `window.__flowHarnessErrors=[]`
+- 已新增兩張聲音步驟驗收截圖：
+
+```text
+test-artifacts/dynamic-flow-20260818/audio-1024x768.png
+test-artifacts/dynamic-flow-20260818/audio-1366x1024.png
+```
+
+- 最終回歸全部通過：
+
+```text
+npm run test:creation-flow
+npm run build
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+git diff --check
+```
+
+- 生產構建完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；五語共 `679` 個靜態鍵，沒有缺漏、重複或 `flow.audioChooseSource` 插值參數不一致。
+- 本輪聲音改版仍位於 `93e50c67e87ad522db94173cf57d7b68b45ba1f4` 回退基線之後的未提交工作樹；`rollback-pre-linear-flow-20260818` 標籤沒有移動。
+
+## 30. 2026-08-18 聲音頁單層工作區、橫向物件軌道與空音源極簡化
+
+### 取消聲音頁內第二套流程
+
+- 實機回饋否定了第 29 節的縱向 `1／2／3` 版面：全域已位於第 5 步「聲音」，頁內再放一套編號流程會製造重複層級，三張大型物件卡也會把真正的音源選擇推到首屏以下。
+- 聲音頁已改為單層屬性工作區，只保留「背景音樂」與「物件音源」兩個區域；頁內全部 `1／2／3` 任務號、重複問題句及大型嵌套 assignment 卡片均已移除。
+- 背景音樂降為一條 `56px` 的整行入口，只顯示音樂圖示、`背景音樂` 與方向箭頭；不顯示背景縮圖、檔名、數量、狀態或用途說明，按下後仍進入原有完整背景編輯器。
+- 「物件音源」內依序直接呈現橫向物件軌道、`選擇音源＋新增音源`、音源列表及有音源時才出現的播放時機，讓使用者在同一視線與同一捲動區完成設定。
+
+### 橫向物件切換與統一音源列表
+
+- 物件由縱向大卡改為單行 `82px` 縮圖軌道；目前物件使用邊框、淡色背景及勾號共同標示，已綁定有效音源與缺少目標點改以縮圖角標呈現，不再增加第二行狀態文字。
+- 軌道使用 `flex + nowrap + overflow-x:auto + scroll-snap`；物件增多時可自然橫向滑動，不建立第二個縱向捲動區，也不使用會阻斷 iPad 頁面上下手勢的 `touch-action: pan-x`。
+- 從其他步驟帶入目前物件或外部切換物件時，選中卡會自動以 `inline: nearest` 進入可視範圍；孤兒 `audioId` 不會再錯誤顯示「已有音源」角標。
+- 可見標題由「`Paper Plane` 使用哪個音源？」縮短為固定的「選擇音源」；目前物件已由上方選中卡表達，完整物件名稱仍保留在音源 `radiogroup` 的可存取名稱中。
+- `新增音源` 固定放在「選擇音源」右側、音源單選群組之外；上載只加入作品共享音源庫，仍不自動綁定任何物件或背景，必須明確點選新音源後才寫入目前物件 `audioId`。
+- 音源選項合併為一個帶分隔線的統一列表，不再把每個音源做成獨立卡片；整行負責選擇，右側獨立 `44px` 按鈕負責試聽／停止，避免嵌套互動元素。
+- 共享音源庫為空時只顯示一個已選中的「無音源」及右上「新增音源」；刪除重複的「尚未加入音源」虛線空狀態。上載完成後仍保持「無音源」選中，直到使用者明確選擇。
+- 播放時機改為純文字分段控制 `出現時／延遲播放／到達目標`，刪除三個重複圖示；只有選中真實有效音源時才顯示，延遲輸入維持至少 `44px` 觸控高度。
+
+### 可存取性、五語與相容性
+
+- 物件軌道、音源列表與播放時機均使用 `radiogroup / radio`、唯一 `aria-checked` 與 roving `tabIndex`；橫向群組支援左右方向鍵，直向音源群組支援上下方向鍵，並共同支援 Home／End 與循環切換。
+- 物件軌道加入 `aria-orientation="horizontal"`、足夠的焦點框留白及自動捲入視野；目標點警告會寫入物件的完整可存取名稱，不只依賴角標顏色。
+- 刪除只重複播報物件檔名的額外 live region；背景音樂入口補齊禁用狀態與「背景音樂，設定」可存取名稱，試聽停止圖示改為清楚的方形停止符號。
+- 音源時長及目標點警告改用更深文字色，維持小字對比度；所有上載、試聽、音源選擇、播放時機與輸入控制均維持至少 `44px` 觸控基線。
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文的 `flow.audioChooseSource` 均改為不含物件名稱插值的短標題，畫面不再殘留 `{{name}}` 或舊「使用哪個音源？」問句。
+- 本輪只重組 iPad 創作流程的 JSX、CSS 與五語顯示文案；共享音源資料、`DynamicItem.audioId/audioTrigger/audioDelayMs`、IndexedDB、`GroupStateSync`、Unity／PC 協定及 EXE 播放語義均未修改，因此不重新生成 EXE。最新標準版與完整翻轉版仍是：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```
+
+### 雙場景、雙尺寸驗收
+
+- `test-artifacts/dynamic-flow-20260818/verify-audio-flow.mjs` 已更新為單次覆蓋 `complete` 與 `audio-empty` 兩種資料場景，以及 `1024 × 768`、`1366 × 1024` 兩種 iPad 橫向尺寸。
+- 四組真實 Edge／CDP 驗收均確認 `documentWidth === viewportWidth`、`documentHeight === viewportHeight`、流程面板與 footer 保持 `8px` 間距、首個音源選項可見且最後控制可完整捲入、`window.__flowHarnessErrors=[]`。
+- 完整音源庫場景固定驗證三個物件 radio、`無音源＋兩個共享音源`、兩個獨立試聽按鈕及三個播放時機 radio；空音源庫場景固定驗證只剩一個已選中的「無音源」、上載入口仍可見且播放時機不渲染。
+- 鍵盤驗收覆蓋 ArrowLeft／ArrowRight、Home、End、焦點跟隨、唯一 Tab 停靠點及切換物件後留在聲音頁原位更新。
+- 空庫上載驗收確認共享庫由 `0 → 1` 後所有物件 `audioId` 與背景 `bgmAudioId` 完全不變；明確點選後才綁定，切回「無音源」只解除目前物件且不刪除共享資產。
+- 已產生四張本輪專用截圖：
+
+```text
+test-artifacts/dynamic-flow-20260818/audio-complete-1024x768.png
+test-artifacts/dynamic-flow-20260818/audio-complete-1366x1024.png
+test-artifacts/dynamic-flow-20260818/audio-empty-1024x768.png
+test-artifacts/dynamic-flow-20260818/audio-empty-1366x1024.png
+```
+
+- 驗證命令全部通過：
+
+```text
+npx tsc --noEmit
+npm run test:creation-flow
+node test-artifacts/dynamic-flow-20260818/verify-audio-flow.mjs
+npm run build
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+git diff --check
+```
+
+- 生產構建仍完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；本輪修改仍在既有回退基線 `93e50c67e87ad522db94173cf57d7b68b45ba1f4` 之後的未提交工作樹中，`rollback-pre-linear-flow-20260818` 標籤沒有移動。

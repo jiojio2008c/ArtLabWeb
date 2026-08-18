@@ -91,6 +91,18 @@ import {
   stopBackgroundTransitionSound
 } from '../services/uiFeedback.ts'
 import { sampleTargetMotionProgress } from '../services/dynamicTargetMotion.ts'
+import {
+  DYNAMIC_CREATION_FLOW_STEPS,
+  convertDynamicPlaybackOrderToLayerOrder,
+  getDynamicCreationFlowSummary,
+  type DynamicCreationFlowExperience,
+  type DynamicCreationFlowSession,
+  type DynamicCreationFlowStepId
+} from '../services/dynamicCreationFlowCore.js'
+import {
+  loadDynamicCreationFlowSession,
+  saveDynamicCreationFlowSession
+} from '../services/dynamicCreationFlowStorage.ts'
 import DynamicAnimationPreview, {
   getDynamicAnimationPreview
 } from './DynamicAnimationPreview.tsx'
@@ -118,11 +130,17 @@ import {
   type DynamicAppearanceSchedule
 } from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
 import { getDynamicBackgroundPlaybackStartIndex } from '../../desktop-runtime/renderer/background-playback-core.js'
+import DynamicCreationFlowPanel, {
+  type DynamicCreationFlowBackground,
+  type DynamicCreationFlowIssue,
+  type DynamicCreationFlowItem
+} from './dynamicFlow/DynamicCreationFlowPanel.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'audio' | 'background' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
 type BackgroundIntervalUnit = 'seconds' | 'minutes'
 type PreviewPanelMode = 'object' | 'layers' | 'collapsed'
+type DynamicFlowDetailSection = '' | 'background' | 'audio'
 
 interface PreviewPanelSnapshot {
   mode: PreviewPanelMode
@@ -231,6 +249,7 @@ interface DynamicControlPageProps {
   onBack: () => void
   onGroupChange: (group: DynamicGroup) => void
   initialItemId?: string
+  initialExperience?: DynamicCreationFlowExperience
   transitionPreparing?: boolean
 }
 
@@ -409,8 +428,9 @@ const itemAudioTriggerOptions: { id: DynamicItemAudioTrigger; labelKey: string }
   { id: 'targetArrival', labelKey: 'control.audioOnArrival' }
 ]
 
-const getInitialItemId = (items: DynamicItem[], itemId = '') => {
-  if (itemId && items.some((item) => item.id === itemId)) return itemId
+const getInitialItemId = (items: DynamicItem[], preferredItemId = '', restoredItemId = '') => {
+  if (preferredItemId && items.some((item) => item.id === preferredItemId)) return preferredItemId
+  if (restoredItemId && items.some((item) => item.id === restoredItemId)) return restoredItemId
   return items[0]?.id ?? ''
 }
 
@@ -1170,6 +1190,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   onBack,
   onGroupChange,
   initialItemId,
+  initialExperience = 'free',
   transitionPreparing = false
 }) => {
   const { t } = useTranslation()
@@ -1181,6 +1202,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const layerItemInputRef = useRef<HTMLInputElement>(null)
   const itemAudioInputRef = useRef<HTMLInputElement>(null)
   const backgroundAudioInputRef = useRef<HTMLInputElement>(null)
+  const flowAudioInputRef = useRef<HTMLInputElement>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const bgmAudioRef = useRef<{ id: string; element: HTMLAudioElement } | null>(null)
   const bgmFadeFrameRef = useRef<number | null>(null)
@@ -1246,7 +1268,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const itemPlaybackEpochCounterRef = useRef(0)
   const itemPlaybackEpochsRef = useRef<Record<string, DynamicItemPlaybackEpoch>>({})
 
-  const [selectedItemId, setSelectedItemId] = useState(() => getInitialItemId(group.items, initialItemId))
+  const [flowSession, setFlowSession] = useState(() => loadDynamicCreationFlowSession(group.id, {
+    itemIds: group.items.map((item) => item.id),
+    defaultExperience: initialExperience
+  }))
+  const [flowDetailSection, setFlowDetailSection] = useState<DynamicFlowDetailSection>('')
+  const [pendingFlowLinkSourceId, setPendingFlowLinkSourceId] = useState('')
+  const [pendingFlowLinkTargetId, setPendingFlowLinkTargetId] = useState('')
+  const [selectedItemId, setSelectedItemId] = useState(() => (
+    getInitialItemId(group.items, initialItemId, flowSession.selectedItemId)
+  ))
   const [toolOpen, setToolOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<ControlTab>('motion')
   const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false)
@@ -1323,6 +1354,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     phase: 'closing' | 'opening'
     key: number
   } | null>(null)
+  const editorExperience = flowSession.experience
+  const flowStep = flowSession.step
+
+  const updateFlowSession = useCallback((patch: Partial<DynamicCreationFlowSession>) => {
+    setFlowSession((currentSession) => saveDynamicCreationFlowSession({
+      ...currentSession,
+      ...patch,
+      groupId: group.id
+    }, {
+      itemIds: latestGroupRef.current.items.map((item) => item.id),
+      defaultExperience: initialExperience
+    }))
+  }, [group.id, initialExperience])
 
   const clearTargetEditing = useCallback(() => {
     const stage = stageRef.current
@@ -1359,12 +1403,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const displayedBackgroundId = displayedBackground?.id ?? ''
   const backgroundScopeActive = advancedFeaturesEnabled
     && Boolean(displayedBackgroundId)
-  const displayedItems = backgroundScopeActive
+  const flowStageShowsAllItems = editorExperience === 'flow'
+    && !previewMode
+    && (
+      flowStep === 'objects'
+      || flowStep === 'layout'
+      || flowStep === 'appearance'
+    )
+  const displayedItems = backgroundScopeActive && !flowStageShowsAllItems
     ? getDynamicPlaybackItemsForBackground(sortedItems, displayedBackgroundId)
     : sortedItems
   const displayedItemIdsKey = displayedItems.map((item) => item.id).join('|')
   const layerItems = [...displayedItems].reverse()
-  const selectedItem = displayedItems.find((item) => item.id === selectedItemId) ?? displayedItems[0]
+  const selectableItems = editorExperience === 'flow' && !previewMode
+    ? sortedItems
+    : displayedItems
+  const selectedItem = selectableItems.find((item) => item.id === selectedItemId) ?? selectableItems[0]
   const displayedItemsAudioKey = displayedItems.map((item) => [
     item.id,
     item.audioId ?? '',
@@ -1413,17 +1467,37 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const someLayersSelected = selectedLayerItemIds.length > 0 && !allLayersSelected
   const allBackgroundsSelected = backgrounds.length > 0 && selectedBackgroundIds.length === backgrounds.length
   const someBackgroundsSelected = selectedBackgroundIds.length > 0 && !allBackgroundsSelected
+  const flowCustomPanelVisible = editorExperience === 'flow' && (
+    flowStep === 'appearance'
+    || flowStep === 'review'
+    || (flowStep === 'backgrounds' && flowDetailSection !== 'background')
+    || (flowStep === 'audio' && flowDetailSection !== 'audio')
+  )
   const rightPanelMode = previewMode
     ? 'preview'
+    : flowCustomPanelVisible
+      ? 'flow'
     : rightPanelCollapsed
       ? 'collapsed'
       : toolOpen && selectedItem
         ? 'object'
         : 'layers'
   const rightPanelVisible = !previewMode && rightPanelMode !== 'collapsed'
-  const visiblePropertyTabs = propertyTabOptions.filter(({ id }) => (
+  const availablePropertyTabs = propertyTabOptions.filter(({ id }) => (
     (advancedFeaturesEnabled ? advancedPropertyTabIds : basicPropertyTabIds).includes(id)
   ))
+  const flowPropertyTabIds: ControlTab[] = flowStep === 'layout'
+    ? ['motion', 'transform', 'animation', 'copy']
+    : flowStep === 'backgrounds'
+      ? ['background']
+      : flowStep === 'audio'
+        ? ['audio']
+        : []
+  const visiblePropertyTabs = editorExperience === 'flow' && flowPropertyTabIds.length > 0
+    ? flowPropertyTabIds
+        .map((tabId) => availablePropertyTabs.find(({ id }) => id === tabId))
+        .filter((tab): tab is typeof availablePropertyTabs[number] => Boolean(tab))
+    : availablePropertyTabs
   const visibleActiveTab = visiblePropertyTabs.some(({ id }) => id === activeTab)
     ? activeTab
     : 'motion'
@@ -1871,6 +1945,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   useEffect(() => {
     clearPreviewPlayback(false)
     stopAudioPreview()
+    const nextFlowSession = loadDynamicCreationFlowSession(group.id, {
+      itemIds: group.items.map((item) => item.id),
+      defaultExperience: initialExperience
+    })
+    setFlowSession(nextFlowSession)
+    setFlowDetailSection('')
+    setPendingFlowLinkSourceId('')
+    setPendingFlowLinkTargetId('')
+    setSelectedItemId(getInitialItemId(group.items, initialItemId, nextFlowSession.selectedItemId))
     setPreviewMode(false)
     previewPanelSnapshotRef.current = null
     setToolOpen(false)
@@ -1906,7 +1989,42 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setSelectedBackgroundIds([])
     setPreviewBackgroundId(group.background?.id ?? '')
     clearTargetEditing()
-  }, [advancedFeaturesEnabled, clearPreviewPlayback, clearTargetEditing, group.id, stopAudioPreview])
+  }, [advancedFeaturesEnabled, clearPreviewPlayback, clearTargetEditing, group.id, initialExperience, initialItemId, stopAudioPreview])
+
+  useEffect(() => {
+    if (flowSession.groupId !== group.id || flowSession.selectedItemId === selectedItemId) return
+    updateFlowSession({ selectedItemId })
+  }, [flowSession.groupId, flowSession.selectedItemId, group.id, selectedItemId, updateFlowSession])
+
+  useEffect(() => {
+    if (previewMode || editorExperience !== 'flow') return
+
+    setRightPanelCollapsed(false)
+    setAppearPanelOpen(false)
+    if (flowStep === 'objects') {
+      setFlowDetailSection('')
+      setToolOpen(false)
+      return
+    }
+
+    if (flowStep === 'layout') {
+      setFlowDetailSection('')
+      setToolOpen(group.items.length > 0)
+      if (!['motion', 'animation', 'transform', 'copy'].includes(activeTab)) setActiveTab('motion')
+      return
+    }
+
+    if (
+      (flowStep === 'backgrounds' && flowDetailSection === 'background')
+      || (flowStep === 'audio' && flowDetailSection === 'audio')
+    ) {
+      setToolOpen(group.items.length > 0)
+      setActiveTab(flowDetailSection)
+      return
+    }
+
+    setToolOpen(false)
+  }, [activeTab, editorExperience, flowDetailSection, flowStep, group.items.length, previewMode])
 
   useEffect(() => {
     setCopyConfirmOpen(false)
@@ -2288,7 +2406,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   useEffect(() => {
     const selectedItemExists = group.items.some((item) => item.id === selectedItemId)
     const selectedItemIsDisplayed = displayedItems.some((item) => item.id === selectedItemId)
-    const selectionMustFollowBackground = !previewMode && backgroundScopeActive && !selectedItemIsDisplayed
+    const selectionMustFollowBackground = editorExperience !== 'flow'
+      && !previewMode
+      && backgroundScopeActive
+      && !selectedItemIsDisplayed
 
     if (!selectedItemExists || selectionMustFollowBackground) {
       setSelectedItemId(displayedItems[0]?.id ?? '')
@@ -2306,6 +2427,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     backgroundScopeActive,
     clearTargetEditing,
     displayedItemIdsKey,
+    editorExperience,
     group.items,
     previewMode,
     selectedItemId
@@ -3254,6 +3376,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
   }
 
+  const handleFlowAudioChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    await addAudioFile(file)
+  }
+
   const toggleAudioPreview = (audio: DynamicAudioMedia) => {
     if (previewingAudioId === audio.id) {
       stopAudioPreview()
@@ -3503,6 +3632,28 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setLinkageErrorKey(eligibleLinkTargetItems.length === 0 ? 'control.linkageTargetMissing' : '')
     setLinkEditorOpen(true)
   }
+
+  useEffect(() => {
+    if (
+      !pendingFlowLinkSourceId
+      || editorExperience !== 'flow'
+      || flowStep !== 'appearance'
+      || selectedItem?.id !== pendingFlowLinkSourceId
+    ) return
+
+    const targetItem = pendingFlowLinkTargetId
+      ? sortedItems.find((item) => item.id === pendingFlowLinkTargetId)
+      : undefined
+    openLinkEditor(targetItem)
+    setPendingFlowLinkSourceId('')
+    setPendingFlowLinkTargetId('')
+  }, [
+    editorExperience,
+    flowStep,
+    pendingFlowLinkSourceId,
+    pendingFlowLinkTargetId,
+    selectedItem?.id
+  ])
 
   const persistLinkedAppearanceRelation = (
     sourceItemId: string,
@@ -4758,10 +4909,299 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const labelKey = trackOptions.find((option) => option.id === track)?.labelKey ?? 'control.trackMiddle'
     return t(labelKey)
   }
+  const flowSummary = getDynamicCreationFlowSummary(group)
+  const flowStepIndex = DYNAMIC_CREATION_FLOW_STEPS.findIndex((step) => step.id === flowStep)
+  const flowStepNumber = Math.max(1, flowStepIndex + 1)
+  const flowStepTitleKey = `flow.step${flowStepNumber}Title`
+  const flowSyncLabel = receiverSyncError
+    ? t('sync.failed')
+    : receiverSyncMessage || t('flow.autoSaved')
+  const flowItems: DynamicCreationFlowItem[] = sortedItems.map((item, index) => {
+    const sourceItem = item.linkedAppearance
+      ? sortedItems.find((entry) => entry.id === item.linkedAppearance?.triggerItemId)
+      : undefined
+    const audio = group.audioLibrary?.find((entry) => entry.id === item.audioId)
+    const audioTriggerKey = item.audioTrigger === 'appearanceDelay'
+      ? 'control.audioAfterDelay'
+      : item.audioTrigger === 'targetArrival'
+        ? 'control.audioOnArrival'
+        : 'control.audioOnAppearance'
+    const backgroundLabel = sourceItem
+      ? t('flow.backgroundFollows', { name: sourceItem.name })
+      : (item.backgroundIds ?? []).length === 0
+        ? t('control.allBackgrounds')
+        : t('control.selectedBackgroundCount', { count: item.backgroundIds?.length ?? 0 })
+
+    return {
+      id: item.id,
+      name: item.name,
+      imageUrl: item.media.url,
+      order: index,
+      moveLabel: getTranslatedMotionLabel(item.moveMode),
+      animationLabel: `${t('control.animationShort')} ${item.animationId}`,
+      targetConfigured: item.targetMode === 'target' && Boolean(item.targetPosition),
+      audioId: item.audioId,
+      audioTrigger: item.audioTrigger ?? 'appearance',
+      audioDelayMs: item.audioDelayMs ?? 0,
+      audioTargetMissing: Boolean(
+        audio
+        && item.audioTrigger === 'targetArrival'
+        && (item.targetMode !== 'target' || !item.targetPosition)
+      ),
+      audioLabel: audio ? `${audio.name} · ${t(audioTriggerKey)}` : t('control.noAudio'),
+      backgroundIds: [...(item.backgroundIds ?? [])],
+      backgroundLabel,
+      linkedAppearance: item.linkedAppearance && sourceItem
+        ? {
+            sourceId: sourceItem.id,
+            sourceName: sourceItem.name,
+            mode: item.linkedAppearance.mode,
+            delayMs: item.linkedAppearance.delayMs
+          }
+        : undefined,
+      linkedTargetCount: sortedItems.filter((entry) => entry.linkedAppearance?.triggerItemId === item.id).length
+    }
+  })
+  const flowBackgrounds: DynamicCreationFlowBackground[] = backgrounds.map((background) => ({
+    id: background.id,
+    name: background.name,
+    previewUrl: background.url,
+    type: background.type
+  }))
+  const flowAudioLibrary = (group.audioLibrary ?? []).map((audio) => ({
+    id: audio.id,
+    name: audio.name,
+    durationLabel: formatAudioDuration(audio.durationMs)
+  }))
+  const relevantFlowIssues = advancedFeaturesEnabled
+    ? flowSummary.issues
+    : flowSummary.issues.filter((issue) => (
+        issue.step !== 'appearance'
+        && issue.step !== 'backgrounds'
+        && issue.step !== 'audio'
+        && issue.code !== 'layout.targetMissing'
+      ))
+  const flowIssues: DynamicCreationFlowIssue[] = relevantFlowIssues.map((issue, index) => {
+    const stepNumber = DYNAMIC_CREATION_FLOW_STEPS.findIndex((step) => step.id === issue.step) + 1
+    return {
+      id: `${issue.code}:${issue.itemId ?? issue.backgroundId ?? index}`,
+      severity: issue.severity === 'blocking' ? 'error' : 'warning',
+      title: t(issue.messageKey, issue.params ?? {}),
+      description: t(`flow.step${Math.max(1, stepNumber)}Description`),
+      step: issue.step,
+      itemId: issue.itemId,
+      actionable: issue.code !== 'review.noVisibleObjects'
+        && issue.code !== 'appearance.missingTrigger'
+    }
+  })
+
+  const setEditorExperience = (experience: DynamicCreationFlowExperience) => {
+    if (previewMode || experience === editorExperience) return
+    stopAudioPreview()
+    clearTargetEditing()
+    setBackgroundPanelOpen(false)
+    setAppearPanelOpen(false)
+    setFlowDetailSection('')
+    setRightPanelCollapsed(false)
+    setToolOpen(experience === 'flow' && flowStep === 'layout' && Boolean(selectedItem))
+    updateFlowSession({ experience })
+  }
+
+  const setCreationFlowStep = (step: DynamicCreationFlowStepId, itemId?: string) => {
+    if (previewMode) return
+    const stepDefinition = DYNAMIC_CREATION_FLOW_STEPS.find((entry) => entry.id === step)
+    if (!stepDefinition || (stepDefinition.requiresItems && sortedItems.length === 0)) return
+
+    stopAudioPreview()
+    clearTargetEditing()
+    setBackgroundPanelOpen(false)
+    setAppearPanelOpen(false)
+    setFlowDetailSection('')
+    setRightPanelCollapsed(false)
+    if (itemId && sortedItems.some((item) => item.id === itemId)) setSelectedItemId(itemId)
+    setToolOpen(step === 'layout' && sortedItems.length > 0)
+    if (step === 'layout' && !['motion', 'animation', 'transform', 'copy'].includes(activeTab)) {
+      setActiveTab('motion')
+    }
+    updateFlowSession({
+      step,
+      selectedItemId: itemId ?? selectedItemId
+    })
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[data-flow-step-heading]')?.focus()
+      })
+    })
+  }
+
+  const moveCreationFlowStep = (offset: -1 | 1) => {
+    const nextStep = DYNAMIC_CREATION_FLOW_STEPS[flowStepIndex + offset]
+    if (!nextStep) {
+      if (offset > 0 && flowStep === 'review') handleControlBack()
+      return
+    }
+    if (offset > 0 && (flowStep === 'backgrounds' || flowStep === 'audio')) {
+      const configured = flowSummary.stepStatus[flowStep].configured
+      const skippedSteps = configured
+        ? flowSession.skippedSteps.filter((stepId) => stepId !== flowStep)
+        : Array.from(new Set([...flowSession.skippedSteps, flowStep]))
+      if (skippedSteps.length !== flowSession.skippedSteps.length
+        || skippedSteps.some((stepId, index) => stepId !== flowSession.skippedSteps[index])) {
+        updateFlowSession({ skippedSteps })
+      }
+    }
+    setCreationFlowStep(nextStep.id)
+  }
+
+  const handleFlowAppearanceMove = (itemId: string, direction: 'up' | 'down') => {
+    const playbackIds = sortedItems.map((item) => item.id)
+    const rootItemIds = flowSummary.relationTree.map((node) => node.itemId)
+    const currentRootIndex = rootItemIds.indexOf(itemId)
+    const nextRootIndex = currentRootIndex + (direction === 'up' ? -1 : 1)
+    if (currentRootIndex < 0 || nextRootIndex < 0 || nextRootIndex >= rootItemIds.length) return
+
+    const currentIndex = playbackIds.indexOf(itemId)
+    const nextIndex = playbackIds.indexOf(rootItemIds[nextRootIndex])
+    if (currentIndex < 0 || nextIndex < 0) return
+
+    const nextPlaybackIds = [...playbackIds]
+    const currentItemId = nextPlaybackIds[currentIndex]
+    nextPlaybackIds[currentIndex] = nextPlaybackIds[nextIndex]
+    nextPlaybackIds[nextIndex] = currentItemId
+    const layerOrderIds = convertDynamicPlaybackOrderToLayerOrder(nextPlaybackIds, playbackIds)
+    const nextGroup = reorderDynamicItems(group.id, layerOrderIds, latestGroupRef.current)
+    if (!nextGroup) return
+
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendGroupStateSync(nextGroup)
+    setSelectedItemId(itemId)
+  }
+
+  const handleFlowAddRelation = (sourceItemId: string) => {
+    if (!advancedFeaturesEnabled) return
+    setPendingFlowLinkTargetId('')
+    selectItem(sourceItemId, false)
+    setPendingFlowLinkSourceId(sourceItemId)
+  }
+
+  const handleFlowEditRelation = (targetItemId: string) => {
+    if (!advancedFeaturesEnabled) return
+    const targetItem = sortedItems.find((item) => item.id === targetItemId)
+    const sourceItemId = targetItem?.linkedAppearance?.triggerItemId
+    if (!sourceItemId || !sortedItems.some((item) => item.id === sourceItemId)) return
+    setPendingFlowLinkTargetId(targetItemId)
+    selectItem(sourceItemId, false)
+    setPendingFlowLinkSourceId(sourceItemId)
+  }
+
+  const handleFlowSetItemBackgrounds = (itemId: string, nextBackgroundIds: string[]) => {
+    if (!advancedFeaturesEnabled) return
+    const currentItem = sortedItems.find((item) => item.id === itemId)
+    if (!currentItem) return
+    const incomingSourceExists = Boolean(
+      currentItem.linkedAppearance
+      && sortedItems.some((item) => item.id === currentItem.linkedAppearance?.triggerItemId)
+    )
+    if (incomingSourceExists) return
+
+    const validBackgroundIds = Array.from(new Set(nextBackgroundIds)).filter((backgroundId) => (
+      backgrounds.some((background) => background.id === backgroundId)
+    ))
+    const currentBackgroundIds = currentItem.backgroundIds ?? []
+    if (
+      currentBackgroundIds.length === validBackgroundIds.length
+      && currentBackgroundIds.every((backgroundId, index) => backgroundId === validBackgroundIds[index])
+    ) {
+      selectItem(itemId, false)
+      return
+    }
+
+    const changedItem = updateItemLocal(itemId, (item) => ({
+      ...item,
+      backgroundIds: validBackgroundIds
+    }), { persist: true, emit: false })
+    if (!changedItem) return
+    selectItem(itemId, false)
+    sendGroupStateSync(latestGroupRef.current)
+  }
+
+  const updateFlowItemAudio = (
+    itemId: string,
+    updater: (item: DynamicItem) => DynamicItem
+  ) => {
+    if (!advancedFeaturesEnabled) return
+    if (!sortedItems.some((item) => item.id === itemId)) return
+    const changedItem = updateItemLocal(itemId, updater, { persist: true, emit: false })
+    if (changedItem) sendGroupStateSync(latestGroupRef.current)
+  }
+
+  const handleFlowSetItemAudio = (itemId: string, audioId?: string) => {
+    const validAudioId = audioId && (group.audioLibrary ?? []).some((audio) => audio.id === audioId)
+      ? audioId
+      : undefined
+    updateFlowItemAudio(itemId, (item) => ({ ...item, audioId: validAudioId }))
+  }
+
+  const handleFlowSetItemAudioTrigger = (itemId: string, audioTrigger: DynamicItemAudioTrigger) => {
+    updateFlowItemAudio(itemId, (item) => ({ ...item, audioTrigger }))
+  }
+
+  const handleFlowSetItemAudioDelay = (itemId: string, delayMs: number) => {
+    const audioDelayMs = clamp(Math.round(delayMs), 0, 600000)
+    updateFlowItemAudio(itemId, (item) => ({ ...item, audioDelayMs }))
+  }
+
+  const handleFlowAudioPreview = (audioId: string) => {
+    const audio = group.audioLibrary?.find((entry) => entry.id === audioId)
+    if (audio) toggleAudioPreview(audio)
+  }
+
+  const handleFlowIssue = (issue: DynamicCreationFlowIssue) => {
+    const issueStep = issue.step as DynamicCreationFlowStepId
+    setCreationFlowStep(issueStep, issue.itemId)
+    if (!issue.itemId || !advancedFeaturesEnabled) return
+    if (issueStep === 'backgrounds') {
+      setFlowDetailSection('background')
+      setActiveTab('background')
+      selectItem(issue.itemId, true)
+    } else if (issueStep === 'audio') {
+      setFlowDetailSection('audio')
+      setActiveTab('audio')
+      selectItem(issue.itemId, true)
+    } else if (issueStep === 'layout') {
+      setActiveTab('motion')
+      selectItem(issue.itemId, true)
+    } else {
+      selectItem(issue.itemId, false)
+    }
+  }
+
+  const handleFlowPreview = () => {
+    const firstBlockingIssue = flowIssues.find((issue) => issue.severity === 'error')
+    if (firstBlockingIssue) {
+      handleFlowIssue(firstBlockingIssue)
+      return
+    }
+    setPreviewModeEnabled(true)
+  }
+
+  const skipCurrentFlowStep = () => {
+    if (flowStep !== 'backgrounds' && flowStep !== 'audio') return
+    moveCreationFlowStep(1)
+  }
+
+  const closeFlowDetail = () => {
+    stopAudioPreview()
+    clearTargetEditing()
+    setFlowDetailSection('')
+    setToolOpen(false)
+  }
+  const flowNextDisabled = sortedItems.length === 0
 
   return (
     <main
-      className={`ipad-screen dynamic-control-screen apple-container ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} ${transitionPreparing ? 'dynamic-transition-prepared' : ''} dynamic-right-panel-${rightPanelMode}`}
+      className={`ipad-screen dynamic-control-screen apple-container ${editorExperience === 'flow' ? 'dynamic-flow-mode' : ''} ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} ${transitionPreparing ? 'dynamic-transition-prepared' : ''} dynamic-right-panel-${rightPanelMode}`}
       aria-hidden={transitionPreparing || undefined}
     >
       <header className="ipad-topbar dynamic-control-topbar">
@@ -4787,7 +5227,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </div>
             </div>
 
-            <div className="dynamic-control-actions">
+            <div className={`dynamic-control-actions ${editorExperience === 'flow' ? 'is-flow-experience' : 'is-free-experience'}`}>
               <input
                 ref={backgroundInputRef}
                 type="file"
@@ -4805,46 +5245,151 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <input
                 ref={itemAudioInputRef}
                 type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.ogg"
                 className="hidden"
                 onChange={handleItemAudioChange}
               />
               <input
                 ref={backgroundAudioInputRef}
                 type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.ogg"
                 className="hidden"
                 onChange={handleBackgroundAudioChange}
               />
-              <button
-                type="button"
-                className={`ipad-button secondary-button control-action-button appear-action ${appearPanelOpen ? 'active-action' : ''}`}
-                onClick={() => {
-                  const nextOpen = !appearPanelOpen
-                  setAppearPanelOpen(nextOpen)
-                  if (nextOpen) {
-                    setToolOpen(false)
-                    setBackgroundPanelOpen(false)
-                    setRightPanelCollapsed(false)
-                  }
-                }}
-              >
-                {t('control.appearanceSettings')}
-              </button>
-              <button
-                type="button"
-                className={`ipad-button secondary-button control-action-button background-action ${backgroundPanelOpen ? 'active-action' : ''}`}
-                onClick={() => backgroundPanelOpen ? closeBackgroundEditor() : openBackgroundEditor()}
-                aria-expanded={backgroundPanelOpen}
-                aria-haspopup="dialog"
-              >
-                {t('control.editBackground')}
-              </button>
-              <button
-                type="button"
-                className="ipad-button preview-action primary-button success-button"
-                onClick={() => setPreviewModeEnabled(true)}
-              >
-                {t('control.preview')}
-              </button>
+              <input
+                ref={flowAudioInputRef}
+                type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.ogg"
+                className="hidden"
+                onChange={handleFlowAudioChange}
+              />
+              {editorExperience === 'flow' && (
+                <nav className="dynamic-flow-step-nav" aria-label={t('flow.openSteps')}>
+                  <ol className={`dynamic-flow-step-list ${DYNAMIC_CREATION_FLOW_STEPS.length > 5 ? 'has-max-count' : ''}`}>
+                    {DYNAMIC_CREATION_FLOW_STEPS.map((step) => {
+                      const isCurrent = step.id === flowStep
+                      const isPast = step.index < flowStepIndex
+                      const stepStatus = flowSummary.stepStatus[step.id]
+                      const hasRelevantBlockingIssue = flowIssues.some((issue) => (
+                        issue.severity === 'error'
+                        && (step.id === 'review' || issue.step === step.id)
+                      ))
+                      const isComplete = isPast && (
+                        (stepStatus.configured && !hasRelevantBlockingIssue)
+                        || (!stepStatus.configured && flowSession.skippedSteps.includes(step.id))
+                      )
+                      const isError = isPast && hasRelevantBlockingIssue
+                      const isDisabled = step.requiresItems && sortedItems.length === 0
+                      const status = isCurrent
+                        ? 'process'
+                        : isDisabled
+                          ? 'disabled'
+                          : isError
+                            ? 'error'
+                            : isComplete
+                              ? 'finish'
+                              : 'wait'
+                      return (
+                        <li key={step.id} className="dynamic-flow-step-item" data-status={status}>
+                          <button
+                            type="button"
+                            className="dynamic-flow-step-button"
+                            onClick={() => {
+                              if (!isDisabled) setCreationFlowStep(step.id)
+                            }}
+                            onKeyDown={(event) => {
+                              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                              event.preventDefault()
+                              const buttons = Array.from(
+                                event.currentTarget.closest('ol')?.querySelectorAll<HTMLButtonElement>('.dynamic-flow-step-button') ?? []
+                              )
+                              const currentIndex = buttons.indexOf(event.currentTarget)
+                              const nextIndex = event.key === 'Home'
+                                ? 0
+                                : event.key === 'End'
+                                  ? buttons.length - 1
+                                  : Math.min(
+                                    buttons.length - 1,
+                                    Math.max(0, currentIndex + (event.key === 'ArrowRight' ? 1 : -1))
+                                  )
+                              buttons[nextIndex]?.focus()
+                            }}
+                            aria-current={isCurrent ? 'step' : undefined}
+                            aria-disabled={isDisabled || undefined}
+                            aria-label={`${t('flow.stepProgress', { current: step.index + 1, total: DYNAMIC_CREATION_FLOW_STEPS.length })}: ${t(`flow.step${step.index + 1}Title`)}`}
+                            title={t(`flow.step${step.index + 1}Description`)}
+                          >
+                            <span className="dynamic-flow-step-index" aria-hidden="true">
+                              {isComplete ? <Check size={13} strokeWidth={2.8} /> : step.index + 1}
+                            </span>
+                            <span className="dynamic-flow-step-label">{t(`flow.step${step.index + 1}Title`)}</span>
+                          </button>
+                          {step.index < DYNAMIC_CREATION_FLOW_STEPS.length - 1 && (
+                            <span className="dynamic-flow-step-connector" aria-hidden="true" />
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </nav>
+              )}
+
+              <div className="dynamic-editor-experience-switch" role="group" aria-label={t('flow.switchMode')}>
+                <button
+                  type="button"
+                  className={editorExperience === 'flow' ? 'is-active' : ''}
+                  aria-pressed={editorExperience === 'flow'}
+                  onClick={() => setEditorExperience('flow')}
+                  title={t('flow.modeGuidedDescription')}
+                >
+                  {t('flow.modeGuided')}
+                </button>
+                <button
+                  type="button"
+                  className={editorExperience === 'free' ? 'is-active' : ''}
+                  aria-pressed={editorExperience === 'free'}
+                  onClick={() => setEditorExperience('free')}
+                  title={t('flow.modeFreeDescription')}
+                >
+                  {t('flow.modeFree')}
+                </button>
+              </div>
+
+              {editorExperience === 'free' && (
+                <>
+                  <button
+                    type="button"
+                    className={`ipad-button secondary-button control-action-button appear-action ${appearPanelOpen ? 'active-action' : ''}`}
+                    onClick={() => {
+                      const nextOpen = !appearPanelOpen
+                      setAppearPanelOpen(nextOpen)
+                      if (nextOpen) {
+                        setToolOpen(false)
+                        setBackgroundPanelOpen(false)
+                        setRightPanelCollapsed(false)
+                      }
+                    }}
+                  >
+                    {t('control.appearanceSettings')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`ipad-button secondary-button control-action-button background-action ${backgroundPanelOpen ? 'active-action' : ''}`}
+                    onClick={() => backgroundPanelOpen ? closeBackgroundEditor() : openBackgroundEditor()}
+                    aria-expanded={backgroundPanelOpen}
+                    aria-haspopup="dialog"
+                  >
+                    {t('control.editBackground')}
+                  </button>
+                  <button
+                    type="button"
+                    className="ipad-button preview-action primary-button success-button"
+                    onClick={() => setPreviewModeEnabled(true)}
+                  >
+                    {t('control.preview')}
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
@@ -5063,7 +5608,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </DynamicStageMotion>
               )
             })}
-            {advancedFeaturesEnabled && !previewMode && toolOpen && selectedStageRelations.length > 0 && (
+            {advancedFeaturesEnabled
+              && !previewMode
+              && (toolOpen || (editorExperience === 'flow' && flowStep === 'appearance'))
+              && selectedStageRelations.length > 0 && (
               <div className="dynamic-linkage-stage-overlay" aria-hidden="true">
                 <svg
                   viewBox={`0 0 ${stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH} ${stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT}`}
@@ -5142,6 +5690,53 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             </div>
           </div>
 
+        {rightPanelMode === 'flow'
+          && (
+            flowStep === 'appearance'
+            || flowStep === 'backgrounds'
+            || flowStep === 'audio'
+            || flowStep === 'review'
+          ) && (
+          <DynamicCreationFlowPanel
+            step={flowStep}
+            items={flowItems}
+            backgrounds={flowBackgrounds}
+            audioLibrary={flowAudioLibrary}
+            selectedItemId={selectedItem?.id ?? null}
+            advancedFeaturesEnabled={advancedFeaturesEnabled}
+            isAddingAudio={isAddingAudio}
+            previewingAudioId={previewingAudioId}
+            appearMode={group.appearMode}
+            appearIntervalMs={appearIntervalMs}
+            appearAnimation={displayedAppearAnimation}
+            appearanceTree={flowSummary.relationTree}
+            summary={{
+              itemCount: flowSummary.itemCount,
+              backgroundCount: flowSummary.backgroundCount,
+              audioCount: flowSummary.itemAudioCount + flowSummary.backgroundAudioCount,
+              relationCount: flowSummary.linkedAppearanceCount
+            }}
+            issues={flowIssues}
+            syncLabel={flowSyncLabel}
+            onSelectItem={(itemId) => selectItem(itemId, false)}
+            onMoveAppearance={handleFlowAppearanceMove}
+            onAddRelation={handleFlowAddRelation}
+            onEditRelation={handleFlowEditRelation}
+            onSetItemBackgrounds={handleFlowSetItemBackgrounds}
+            onManageBackgrounds={openBackgroundEditor}
+            onUploadAudio={() => flowAudioInputRef.current?.click()}
+            onPreviewAudio={handleFlowAudioPreview}
+            onSetItemAudio={handleFlowSetItemAudio}
+            onSetItemAudioTrigger={handleFlowSetItemAudioTrigger}
+            onSetItemAudioDelay={handleFlowSetItemAudioDelay}
+            onSetAppearMode={setAppearMode}
+            onSetAppearInterval={setAppearInterval}
+            onSetAppearAnimation={setAppearAnimation}
+            onStartPreview={handleFlowPreview}
+            onGoToIssue={handleFlowIssue}
+          />
+        )}
+
         {rightPanelMode === 'layers' && (
           <aside
             className="dynamic-layer-panel"
@@ -5150,7 +5745,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             <div className="dynamic-layer-header">
               <div>
                 <p className="eyebrow">{t('control.stageStructure')}</p>
-                <h2>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
+                <h2 data-flow-step-heading tabIndex={-1}>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
               </div>
               <button
                 type="button"
@@ -5168,20 +5763,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               >
                 +
               </button>
-              <button
-                type="button"
-                className="dynamic-panel-collapse-button"
-                onClick={() => {
-                  setRightPanelCollapsed(true)
-                  setToolOpen(false)
-                  setBackgroundPanelOpen(false)
-                  setAppearPanelOpen(false)
-                }}
-                aria-label={t('control.collapseLayers')}
-                title={t('control.collapseLayers')}
-              >
-                <ChevronRight size={22} strokeWidth={2.4} aria-hidden="true" />
-              </button>
+              {editorExperience === 'free' && (
+                <button
+                  type="button"
+                  className="dynamic-panel-collapse-button"
+                  onClick={() => {
+                    setRightPanelCollapsed(true)
+                    setToolOpen(false)
+                    setBackgroundPanelOpen(false)
+                    setAppearPanelOpen(false)
+                  }}
+                  aria-label={t('control.collapseLayers')}
+                  title={t('control.collapseLayers')}
+                >
+                  <ChevronRight size={22} strokeWidth={2.4} aria-hidden="true" />
+                </button>
+              )}
             </div>
 
             <div className="dynamic-layer-bulk-toolbar">
@@ -5248,7 +5845,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <button
                       type="button"
                       className="dynamic-layer-main"
-                      onClick={() => selectItem(item.id, true)}
+                      onClick={() => selectItem(
+                        item.id,
+                        editorExperience !== 'flow' || flowStep !== 'objects'
+                      )}
                       onKeyDown={(event) => {
                         if (event.key === 'ArrowUp') {
                           event.preventDefault()
@@ -5291,7 +5891,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation()
-                          selectItem(item.id, true)
+                          if (editorExperience === 'flow' && flowStep === 'objects') {
+                            setCreationFlowStep('layout', item.id)
+                          } else {
+                            selectItem(item.id, true)
+                          }
                         }}
                         aria-label={t('control.openObjectProperties', { name: item.name })}
                         title={t('control.objectProperties')}
@@ -5336,6 +5940,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           <aside
             className={`dynamic-tool-panel side-right dynamic-property-overlay-panel ${advancedFeaturesEnabled ? 'is-advanced' : ''}`}
             aria-label={t('control.objectProperties')}
+            data-flow-step-heading={editorExperience === 'flow' ? '' : undefined}
+            tabIndex={editorExperience === 'flow' ? -1 : undefined}
           >
             <div className={`dynamic-tool-header ${isEditingItemName ? 'is-renaming' : ''}`}>
               <div className="dynamic-tool-title">
@@ -5424,15 +6030,23 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 type="button"
                 className="dynamic-panel-close"
                 onClick={() => {
-                  clearTargetEditing()
-                  setToolOpen(false)
+                  if (editorExperience === 'flow' && flowDetailSection) {
+                    closeFlowDetail()
+                  } else {
+                    clearTargetEditing()
+                    setToolOpen(false)
+                  }
                   setBackgroundPanelOpen(false)
                   setRightPanelCollapsed(false)
                   setIsEditingItemName(false)
                   setItemNameErrorKey('')
                 }}
-                aria-label={t('control.backToLayers')}
-                title={t('control.backToLayers')}
+                aria-label={editorExperience === 'flow' && flowDetailSection
+                  ? t('flow.returnToEditing')
+                  : t('control.backToLayers')}
+                title={editorExperience === 'flow' && flowDetailSection
+                  ? t('flow.returnToEditing')
+                  : t('control.backToLayers')}
               >
                 <X size={18} strokeWidth={2.4} aria-hidden="true" />
               </button>
@@ -6203,6 +6817,51 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           </aside>
         )}
 
+        {editorExperience === 'flow' && !previewMode && (
+          <footer className="dynamic-flow-footer" aria-label={t('flow.modeGuided')}>
+            <button
+              type="button"
+              className="dynamic-flow-footer-button is-secondary"
+              onClick={() => moveCreationFlowStep(-1)}
+              disabled={flowStepIndex <= 0}
+            >
+              <ChevronLeft size={17} strokeWidth={2.5} aria-hidden="true" />
+              <span>{t('flow.previous')}</span>
+            </button>
+
+            <div className="dynamic-flow-footer-status">
+              {flowDetailSection ? (
+                <button type="button" onClick={closeFlowDetail} title={t('flow.returnToEditing')}>
+                  <ChevronLeft size={15} strokeWidth={2.5} aria-hidden="true" />
+                  <span>{t(flowStepTitleKey)}</span>
+                </button>
+              ) : (flowStep === 'backgrounds' || flowStep === 'audio') ? (
+                <button type="button" onClick={skipCurrentFlowStep}>
+                  <span>{t('flow.skip')}</span>
+                </button>
+              ) : (
+                <span role="status" aria-live="polite">
+                  <CheckCircle2 size={15} strokeWidth={2.4} aria-hidden="true" />
+                  <span>
+                    <strong>{t(flowStepTitleKey)}</strong>
+                    <small>{t('flow.autoSaved')}</small>
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="dynamic-flow-footer-button is-primary"
+              onClick={() => moveCreationFlowStep(1)}
+              disabled={flowNextDisabled}
+            >
+              <span>{flowStep === 'review' ? t('flow.finishEditing') : t('flow.next')}</span>
+              <ChevronRight size={17} strokeWidth={2.5} aria-hidden="true" />
+            </button>
+          </footer>
+        )}
+
         </div>
       </section>
 
@@ -6896,6 +7555,7 @@ const areDynamicControlPropsEqual = (
   && previous.dynamicPort === next.dynamicPort
   && previous.advancedFeaturesEnabled === next.advancedFeaturesEnabled
   && previous.initialItemId === next.initialItemId
+  && previous.initialExperience === next.initialExperience
   && previous.transitionPreparing === next.transitionPreparing
 
 export default memo(DynamicControlPage, areDynamicControlPropsEqual)
