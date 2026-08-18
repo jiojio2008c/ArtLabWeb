@@ -1,6 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { DynamicArtworkTransitionRequest, DynamicTransitionOrigin } from './types.ts'
+import {
+  waitForElement,
+  waitForMediaElements,
+  waitForStablePaint
+} from '../../services/transitionPerformance.ts'
 
 interface DynamicArtworkTransitionProps {
   request: DynamicArtworkTransitionRequest
@@ -22,87 +27,15 @@ const getRect = (element: Element | null | undefined): DynamicTransitionOrigin |
   return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
 }
 
-const waitForElement = <T extends Element>(selector: string, attempts = 24): Promise<T | null> => new Promise((resolve) => {
-  const inspect = (remaining: number) => {
-    const element = document.querySelector<T>(selector)
-    if (element || remaining <= 0) {
-      resolve(element)
-      return
-    }
-    window.requestAnimationFrame(() => inspect(remaining - 1))
-  }
-  inspect(attempts)
-})
-
-const waitForPaint = () => new Promise<void>((resolve) => {
-  window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))
-})
-
-const waitForImage = (image: HTMLImageElement, timeoutMs: number) => new Promise<void>((resolve) => {
-  let settled = false
-  const finish = () => {
-    if (settled) return
-    settled = true
-    window.clearTimeout(timeout)
-    image.removeEventListener('load', handleLoad)
-    image.removeEventListener('error', finish)
-    resolve()
-  }
-  const decode = () => {
-    const decodePromise = image.decode?.()
-    if (decodePromise) {
-      void decodePromise.catch(() => undefined).then(finish)
-    } else {
-      finish()
-    }
-  }
-  const handleLoad = () => decode()
-  const timeout = window.setTimeout(finish, timeoutMs)
-
-  if (image.complete) {
-    if (image.naturalWidth > 0) decode()
-    else finish()
-    return
-  }
-
-  image.addEventListener('load', handleLoad, { once: true })
-  image.addEventListener('error', finish, { once: true })
-})
-
-const waitForVideo = (video: HTMLVideoElement, timeoutMs: number) => new Promise<void>((resolve) => {
-  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-    resolve()
-    return
-  }
-
-  let settled = false
-  const finish = () => {
-    if (settled) return
-    settled = true
-    window.clearTimeout(timeout)
-    video.removeEventListener('loadedmetadata', finish)
-    video.removeEventListener('error', finish)
-    resolve()
-  }
-  const timeout = window.setTimeout(finish, timeoutMs)
-  video.addEventListener('loadedmetadata', finish, { once: true })
-  video.addEventListener('error', finish, { once: true })
-})
-
-const waitForMediaElements = async (
-  elements: Array<HTMLImageElement | HTMLVideoElement>,
-  timeoutMs: number
-) => {
-  await Promise.all(elements.map((element) => (
-    element instanceof HTMLImageElement
-      ? waitForImage(element, timeoutMs)
-      : waitForVideo(element, timeoutMs)
-  )))
-}
-
 const waitForStageMedia = async (stage: HTMLElement) => {
   const media = Array.from(stage.querySelectorAll<HTMLImageElement | HTMLVideoElement>('img, video'))
-  await waitForMediaElements(media, 900)
+  await waitForMediaElements(media, 1200)
+}
+
+const waitForFrameMedia = async (media: HTMLElement | null) => {
+  if (media instanceof HTMLImageElement || media instanceof HTMLVideoElement) {
+    await waitForMediaElements([media], 1200)
+  }
 }
 
 const waitForLibraryMedia = async (library: HTMLElement, groupId: string) => {
@@ -123,7 +56,7 @@ const waitForLibraryMedia = async (library: HTMLElement, groupId: string) => {
       && rect.left <= window.innerWidth + 80
   })
   const media = Array.from(new Set([...targetMedia, ...visibleMedia])).slice(0, 12)
-  await waitForMediaElements(media, 700)
+  await waitForMediaElements(media, 900)
 }
 
 const buildStageProxy = (stage: HTMLElement, proxy: HTMLElement) => {
@@ -236,7 +169,7 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
     completeRef.current = onComplete
   }, [onComplete, onSceneSwitch])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const frameMotion = frameMotionRef.current
     const frame = frameRef.current
     const workspace = workspaceRef.current
@@ -274,18 +207,33 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
     }
 
     const preparedLibraryMountPromise = request.direction === 'backward'
-      ? waitForElement<HTMLElement>('.dynamic-library-screen.dynamic-transition-prepared')
+      ? waitForElement<HTMLElement>(() => document.querySelector<HTMLElement>('.dynamic-library-screen.dynamic-transition-prepared'))
         .then(async (library) => {
           if (!library || cancelled) return library
-          await waitForPaint()
+          await waitForStablePaint(2)
           return library
         })
       : Promise.resolve(null)
     const preparedLibraryPromise = preparedLibraryMountPromise.then(async (library) => {
       if (!library || cancelled) return library
       await waitForLibraryMedia(library, request.groupId)
+      await waitForStablePaint(2)
       return library
     })
+    const preparedControlPromise = request.direction === 'forward'
+      ? waitForElement<HTMLElement>(() => document.querySelector<HTMLElement>('.dynamic-control-screen.dynamic-transition-prepared'))
+        .then(async (control) => {
+          if (!control || cancelled) return control
+          await waitForStablePaint(1)
+          const stage = control.querySelector<HTMLElement>('.dynamic-stage')
+          if (stage) {
+            await waitForStageMedia(stage)
+            if (!cancelled) buildStageProxy(stage, stageProxy)
+          }
+          await waitForStablePaint(2)
+          return control
+        })
+      : Promise.resolve(null)
 
     const finish = () => {
       if (cancelled || finishScheduled) return
@@ -314,7 +262,8 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
 
     const runForwardReveal = async () => {
       switchScene()
-      const control = await waitForElement<HTMLElement>('.dynamic-control-screen')
+      const control = await preparedControlPromise
+        ?? await waitForElement<HTMLElement>(() => document.querySelector<HTMLElement>('.dynamic-control-screen'))
       if (!control || cancelled) {
         finish()
         return
@@ -331,9 +280,9 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         return
       }
 
-      await waitForPaint()
+      await waitForStablePaint(1)
       await waitForStageMedia(stage)
-      await waitForPaint()
+      await waitForStablePaint(2)
       if (cancelled) return
 
       const targetRect = getRect(stage) ?? {
@@ -342,7 +291,7 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         width: window.innerWidth * 0.7,
         height: window.innerWidth * 0.7 * 9 / 16
       }
-      buildStageProxy(stage, stageProxy)
+      if (!stageProxy.firstElementChild) buildStageProxy(stage, stageProxy)
       remember(control, stage, stageShell, topbar, panel, statusToast, ...items)
 
       gsap.set(control, { opacity: 1 })
@@ -429,7 +378,7 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
       gsap.set(media, { opacity: request.previewUrl ? 1 : 0, y: 0, filter: 'none' })
 
       switchScene()
-      await waitForPaint()
+      await waitForStablePaint(2)
       if (cancelled) return
 
       const targetRect = getRect(targetCard) ?? request.origin ?? getFallbackOrigin()
@@ -484,7 +433,7 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
       gsap.set(tears, { opacity: 0 })
       gsap.set(tearPieces, { opacity: 1, x: 0, y: 0, rotation: 0 })
 
-      const timeline = gsap.timeline()
+      const timeline = gsap.timeline({ paused: true })
         .to(sourceCard ?? frame, {
           scale: 1.025,
           boxShadow: '0 0 0 2px #fff, 0 0 24px rgba(255,255,255,.96)',
@@ -516,6 +465,14 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         .to(sourcePage, { opacity: 0, duration: 0.24 }, 0.34)
         .call(() => { void runForwardReveal() }, [], 0.52)
       timelines.push(timeline)
+      void (async () => {
+        await Promise.all([
+          waitForFrameMedia(media),
+          preparedControlPromise
+        ])
+        await waitForStablePaint(1)
+        if (!cancelled) timeline.play(0)
+      })()
     } else {
       gsap.set([frame, workspace, tears], { opacity: 0 })
 
@@ -532,7 +489,12 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         const items = Array.from(document.querySelectorAll<HTMLElement>('.dynamic-control-screen .dynamic-stage-item-motion'))
         const origin = getRect(stage) ?? request.origin ?? getFallbackOrigin()
         remember(stage, stageShell, topbar, panel, statusToast, ...items)
-        if (stage) buildStageProxy(stage, stageProxy)
+        if (stage) {
+          await waitForStageMedia(stage)
+          await waitForStablePaint(1)
+          if (cancelled) return
+          buildStageProxy(stage, stageProxy)
+        }
 
         const viewportRect = getViewportFrameRect()
         setFrameFlip(frameMotion, origin, viewportRect)
@@ -554,7 +516,7 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
           rotation: (index) => getPieceOffset(index).rotation
         })
 
-        const timeline = gsap.timeline()
+      const timeline = gsap.timeline({ paused: true })
           .to(frame, { opacity: 1, duration: 0.12 }, 0)
           .to(frame, {
             rotationX: 76,
@@ -598,7 +560,12 @@ const DynamicArtworkTransition: React.FC<DynamicArtworkTransitionProps> = ({
         if (statusToast) {
           timeline.to(statusToast, { opacity: 0, y: -8, duration: 0.16 }, 0)
         }
-        timelines.push(timeline)
+      timelines.push(timeline)
+      void (async () => {
+        await waitForFrameMedia(media)
+        await waitForStablePaint(1)
+        if (!cancelled) timeline.play(0)
+      })()
       }
 
       void runBackwardExit()

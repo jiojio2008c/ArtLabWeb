@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import LoginPage from './components/LoginPage.tsx'
 import EntryPage from './components/EntryPage.tsx'
+import RemoteKeyboardPage from './components/RemoteKeyboardPage.tsx'
 import UploadPage from './components/UploadPage.tsx'
 import DirectUploadCompletePage from './components/DirectUploadCompletePage.tsx'
 import DirectUploadSelectPage from './components/DirectUploadSelectPage.tsx'
@@ -29,11 +30,19 @@ import {
   loadDynamicGroups,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
+import {
+  captureDynamicArchiveSourceSnapshot,
+  makeDynamicArchiveReplayId,
+  sendDynamicArchiveEnter,
+  sendDynamicArchiveReturn,
+  type DynamicArchiveSourceSnapshot
+} from './services/dynamicArtArchiveSync.ts'
 import { markDynamicReceiverNeedsResync } from './services/dynamicArtReceiverSync.ts'
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 import { getCurrentSession, logoutCurrentSession, subscribeToAuthChanges } from './services/authService.ts'
 import { loadCurrentUserAccount, type UserAccount } from './services/userProfileService.ts'
 import { sendAppLaunchCommand, sendQrCodeCommand } from './services/unityBridge.ts'
+import { preloadImage } from './services/transitionPerformance.ts'
 
 interface ImageData {
   name: string
@@ -47,6 +56,7 @@ interface DirectThemeUploadTransitionRequest {
 
 type Page =
   | 'entry'
+  | 'remoteKeyboard'
   | 'dynamicBackground'
   | 'dynamicGroups'
   | 'dynamicItems'
@@ -59,6 +69,7 @@ type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated'
 
 const pageOrder: Record<Page, number> = {
   entry: 0,
+  remoteKeyboard: 1,
   dynamicGroups: 1,
   dynamicBackground: 2,
   dynamicItems: 3,
@@ -83,6 +94,7 @@ function App() {
   const [directThemeUploadTransition, setDirectThemeUploadTransition] = useState<DirectThemeUploadTransitionRequest | null>(null)
   const [directThemeUploadReturnTransition, setDirectThemeUploadReturnTransition] = useState(false)
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
+  const [dynamicArchiveGroups, setDynamicArchiveGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
@@ -90,7 +102,10 @@ function App() {
   const [interactivePortalOrigin, setInteractivePortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
   const [dynamicArchiveReturnActive, setDynamicArchiveReturnActive] = useState(false)
+  const [dynamicArchiveReplayId, setDynamicArchiveReplayId] = useState('')
   const dynamicArchiveReturnTimerRef = useRef<number | null>(null)
+  const dynamicArchiveSyncTimerRefs = useRef<number[]>([])
+  const dynamicArchiveOpeningRef = useRef(false)
   const entryRootRef = useRef<HTMLElement>(null)
   const dynamicEntryCardRef = useRef<HTMLButtonElement>(null)
   const interactiveEntryCardRef = useRef<HTMLButtonElement>(null)
@@ -98,6 +113,33 @@ function App() {
   const directUploadRootRef = useRef<HTMLElement>(null)
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
+
+  const mergeDynamicArchiveGroups = (currentGroups: DynamicGroup[], nextGroups: DynamicGroup[]) => {
+    const currentById = new Map(currentGroups.map((group) => [group.id, group]))
+    const getMediaSignature = (media: DynamicGroup['thumbnail'] | DynamicGroup['background']) => media
+      ? [media.id, media.name, media.type, media.url, media.width ?? 0, media.height ?? 0].join(':')
+      : ''
+    const getGroupSignature = (group: DynamicGroup) => JSON.stringify([
+      group.id,
+      group.name,
+      group.folderId ?? '',
+      group.libraryOrder ?? -1,
+      group.activeBackgroundId ?? '',
+      getMediaSignature(group.thumbnail),
+      getMediaSignature(group.background),
+      (group.backgrounds ?? []).map((background) => getMediaSignature(background)),
+      group.items.map((item) => [item.id, item.name, getMediaSignature(item.media)])
+    ])
+    const mergedGroups = nextGroups.map((group) => {
+      const currentGroup = currentById.get(group.id)
+      return currentGroup && getGroupSignature(currentGroup) === getGroupSignature(group)
+        ? currentGroup
+        : group
+    })
+    const unchanged = mergedGroups.length === currentGroups.length
+      && mergedGroups.every((group, index) => group === currentGroups[index])
+    return unchanged ? currentGroups : mergedGroups
+  }
 
   const navigateTo = (nextPage: Page) => {
     const nextDirection =
@@ -110,10 +152,39 @@ function App() {
     setCurrentPage(nextPage)
   }
 
+  const clearDynamicArchiveSyncTimers = () => {
+    dynamicArchiveSyncTimerRefs.current.forEach((timerId) => window.clearTimeout(timerId))
+    dynamicArchiveSyncTimerRefs.current = []
+  }
+
+  const syncDynamicArchiveEnter = (
+    replayId: string,
+    startedAt: number,
+    source?: DynamicArchiveSourceSnapshot
+  ) => {
+    clearDynamicArchiveSyncTimers()
+
+    const sendArchive = () => {
+      sendDynamicArchiveEnter(
+        networkSettings.wsIp,
+        networkSettings.dynamicPort,
+        replayId,
+        startedAt,
+        source
+      )
+    }
+
+    sendArchive()
+    dynamicArchiveSyncTimerRefs.current = [700, 1700, 3200, 5200, 8000].map((delay) => (
+      window.setTimeout(sendArchive, delay)
+    ))
+  }
+
   useEffect(() => () => {
     if (dynamicArchiveReturnTimerRef.current !== null) {
       window.clearTimeout(dynamicArchiveReturnTimerRef.current)
     }
+    clearDynamicArchiveSyncTimers()
   }, [])
 
   useEffect(() => {
@@ -252,19 +323,37 @@ function App() {
   }
 
   const handleOpenDynamicArt = () => {
-    sendAppLaunchCommand(networkSettings.wsIp, networkSettings.interactivePort, 'dynamic-art')
-
-    if (dynamicGroupsLoaded) {
-      openDynamicArtWithGroups(dynamicGroups)
-      return
-    }
+    if (dynamicArchiveOpeningRef.current) return
+    dynamicArchiveOpeningRef.current = true
 
     void (async () => {
-      const groups = await loadDynamicGroups()
-      setDynamicGroups(groups)
-      setDynamicGroupsLoaded(true)
+      const sourceRoot = entryRootRef.current
+      const sourceCard = dynamicEntryCardRef.current
+      const groupsPromise = dynamicGroupsLoaded
+        ? Promise.resolve(dynamicGroups)
+        : loadDynamicGroups()
+      const sourcePromise = sourceRoot && sourceCard
+        ? captureDynamicArchiveSourceSnapshot(sourceRoot, sourceCard).catch((error) => {
+            console.warn('Dynamic archive source mirror capture failed:', error)
+            return undefined
+          })
+        : Promise.resolve(undefined)
+      const [groups, source] = await Promise.all([groupsPromise, sourcePromise])
+
+      if (!dynamicGroupsLoaded) {
+        setDynamicGroups(groups)
+        setDynamicGroupsLoaded(true)
+      }
+
+      const replayId = makeDynamicArchiveReplayId()
+      const startedAt = Date.now()
+      setDynamicArchiveReplayId(replayId)
+      sendAppLaunchCommand(networkSettings.wsIp, networkSettings.interactivePort, 'dynamic-art')
+      syncDynamicArchiveEnter(replayId, startedAt, source)
       openDynamicArtWithGroups(groups)
-    })()
+    })().finally(() => {
+      dynamicArchiveOpeningRef.current = false
+    })
   }
 
   const handleOpenInteractiveArt = () => {
@@ -306,7 +395,8 @@ function App() {
     })
   }
 
-  const handleDirectUploadSuccess = (data: ImageData) => {
+  const handleDirectUploadSuccess = async (data: ImageData) => {
+    await preloadImage(data.url, 1500)
     setDirectUploadResult(data)
     navigateTo('directComplete')
   }
@@ -334,6 +424,8 @@ function App() {
   }
 
   const beginDynamicArtworkTransition = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
+    clearDynamicArchiveSyncTimers()
+    setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
     const preview = group.thumbnail ?? group.background ?? group.items[0]?.media
@@ -388,6 +480,8 @@ function App() {
 
   const handleReturnFromDynamicControl = () => {
     if (!selectedDynamicGroup || dynamicArtworkTransition) return
+    setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
+    setDynamicArchiveReplayId(makeDynamicArchiveReplayId())
     const preview = selectedDynamicGroup.thumbnail ?? selectedDynamicGroup.background ?? selectedDynamicGroup.items[0]?.media
     setDynamicArtworkTransition({
       direction: 'backward',
@@ -440,7 +534,7 @@ function App() {
 
   if (authStatus !== 'authenticated') {
     return (
-      <div className="min-h-screen bg-white" onPointerDown={handleGlobalButtonPointerDown}>
+      <div className="app-shell magic-floor-route-surface min-h-screen" onPointerDown={handleGlobalButtonPointerDown}>
         {portraitLock}
         <div className="page-frame auth-page-frame">
           <LoginPage
@@ -465,16 +559,25 @@ function App() {
         : ''
 
   const backwardDynamicArtworkTransition = dynamicArtworkTransition?.direction === 'backward'
-  const shouldRenderDynamicGroups = currentPage === 'dynamicGroups' || backwardDynamicArtworkTransition
+  const forwardDynamicArtworkTransition = dynamicArtworkTransition?.direction === 'forward'
+  const shouldRenderDynamicGroups = currentPage === 'dynamicGroups'
+    || currentPage === 'dynamicControl'
+    || Boolean(dynamicArtworkTransition)
   const shouldRenderDynamicControl = Boolean(
     selectedDynamicGroup
-    && (currentPage === 'dynamicControl' || backwardDynamicArtworkTransition)
+    && (currentPage === 'dynamicControl' || Boolean(dynamicArtworkTransition))
   )
   const dualDynamicArtworkRoute = Boolean(
-    backwardDynamicArtworkTransition
-    && shouldRenderDynamicGroups
+    shouldRenderDynamicGroups
     && shouldRenderDynamicControl
   )
+  const archiveTransitionPrepared = backwardDynamicArtworkTransition
+    || (currentPage === 'dynamicControl' && !forwardDynamicArtworkTransition)
+  const renderedDynamicArchiveGroups = currentPage === 'dynamicGroups' && !dynamicArtworkTransition
+    ? dynamicGroups
+    : dynamicArchiveGroups.length > 0
+      ? dynamicArchiveGroups
+      : dynamicGroups
   const dynamicArtSurfaceActive = Boolean(
     dynamicPortalOrigin
     || dynamicArtworkTransition
@@ -483,9 +586,12 @@ function App() {
     || currentPage === 'dynamicItems'
     || currentPage === 'dynamicControl'
   )
+  const magicFloorSurfaceActive = currentPage === 'entry'
+    || currentPage === 'directSelect'
+    || currentPage === 'remoteKeyboard'
 
   return (
-    <div className={`min-h-screen bg-white ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''} ${dynamicArtSurfaceActive ? 'dynamic-art-route-surface' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
+    <div className={`app-shell min-h-screen ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''} ${dynamicArtSurfaceActive ? 'dynamic-art-route-surface' : ''} ${magicFloorSurfaceActive ? 'magic-floor-route-surface' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
       {portraitLock}
 
       <div className={`page-frame page-${transitionDirection} page-view-${currentPage} ${dualDynamicArtworkRoute ? 'dynamic-story-dual-route' : ''}`}>
@@ -494,7 +600,7 @@ function App() {
             {shouldRenderDynamicGroups && (
               <DynamicGroupsPage
                 key="dynamic-groups-route"
-                groups={dynamicGroups}
+                groups={renderedDynamicArchiveGroups}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
                 onBack={handleReturnFromDynamicGroups}
@@ -503,7 +609,8 @@ function App() {
                 onDeleteGroup={handleDeleteDynamicGroup}
                 onSelectGroup={handleSelectDynamicGroup}
                 portalArrival={Boolean(dynamicPortalOrigin)}
-                transitionPrepared={Boolean(backwardDynamicArtworkTransition && currentPage !== 'dynamicGroups')}
+                transitionPrepared={Boolean(archiveTransitionPrepared)}
+                archiveReplayId={dynamicArchiveReplayId}
               />
             )}
             {shouldRenderDynamicControl && selectedDynamicGroup && (
@@ -512,9 +619,11 @@ function App() {
                 group={selectedDynamicGroup}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
+                advancedFeaturesEnabled={networkSettings.advancedFeaturesEnabled}
                 onBack={handleReturnFromDynamicControl}
                 onGroupChange={updateDynamicGroupState}
                 initialItemId={selectedDynamicItemId}
+                transitionPreparing={Boolean(forwardDynamicArtworkTransition)}
               />
             )}
           </>
@@ -525,12 +634,19 @@ function App() {
             onOpenDynamicArt={handleOpenDynamicArt}
             onOpenDynamicGroup={handleSelectDynamicGroup}
             onOpenInteractiveArt={handleOpenInteractiveArt}
+            onOpenRemoteKeyboard={() => navigateTo('remoteKeyboard')}
             onOpenSettings={() => setSettingsOpen(true)}
             rootRef={entryRootRef}
             dynamicCardRef={dynamicEntryCardRef}
             interactiveCardRef={interactiveEntryCardRef}
             transitioning={Boolean(dynamicPortalOrigin || interactivePortalOrigin)}
             transitionType={dynamicPortalOrigin ? 'dynamic' : interactivePortalOrigin ? 'interactive' : undefined}
+          />
+        ) : currentPage === 'remoteKeyboard' ? (
+          <RemoteKeyboardPage
+            wsIp={networkSettings.wsIp}
+            port={networkSettings.interactivePort}
+            onBack={() => navigateTo('entry')}
           />
         ) : currentPage === 'dynamicBackground' && selectedDynamicGroup ? (
           <DynamicBackgroundPage
@@ -573,6 +689,8 @@ function App() {
             shouldCacheArtwork={false}
             maskOptions={getDirectMasksForTheme(selectedDirectTheme)}
             directThemeName={t(selectedDirectTheme.labelKey)}
+            directThemeAccent={selectedDirectTheme.accent}
+            directThemeSecondary={selectedDirectTheme.secondary}
             openMaskSelector={directUploadOpenMaskSelector}
           />
         ) : currentPage === 'directComplete' ? (
@@ -588,6 +706,7 @@ function App() {
             onOpenDynamicArt={handleOpenDynamicArt}
             onOpenDynamicGroup={handleSelectDynamicGroup}
             onOpenInteractiveArt={handleOpenInteractiveArt}
+            onOpenRemoteKeyboard={() => navigateTo('remoteKeyboard')}
             onOpenSettings={() => setSettingsOpen(true)}
             rootRef={entryRootRef}
             dynamicCardRef={dynamicEntryCardRef}
@@ -660,6 +779,13 @@ function App() {
         <DynamicArtworkTransition
           request={dynamicArtworkTransition}
           onSceneSwitch={() => {
+            if (dynamicArtworkTransition.direction === 'backward') {
+              sendDynamicArchiveReturn(
+                networkSettings.wsIp,
+                networkSettings.dynamicPort,
+                dynamicArchiveReplayId
+              )
+            }
             flushSync(() => {
               setTransitionDirection(dynamicArtworkTransition.direction === 'forward' ? 'forward' : 'backward')
               setCurrentPage(dynamicArtworkTransition.direction === 'forward' ? 'dynamicControl' : 'dynamicGroups')

@@ -1,4 +1,8 @@
 import type { PointerEvent } from 'react'
+import {
+  createBackgroundTransitionAudio,
+  type BackgroundTransitionSoundKind
+} from '../../desktop-runtime/renderer/background-transition-audio.js'
 
 type UiSoundKind = 'tap' | 'success' | 'danger' | 'shutter' | 'artwork-send' | 'artwork-arrived'
 
@@ -14,6 +18,16 @@ const getAudioContext = () => {
     void audioContext.resume()
   }
   return audioContext
+}
+
+const backgroundTransitionAudio = createBackgroundTransitionAudio(getAudioContext)
+
+const playBackgroundTransitionSound = (kind: BackgroundTransitionSoundKind) => (
+  backgroundTransitionAudio.play(kind)
+)
+
+const stopBackgroundTransitionSound = () => {
+  backgroundTransitionAudio.stop()
 }
 
 const playUiSound = (kind: UiSoundKind = 'tap') => {
@@ -167,6 +181,7 @@ const handleGlobalButtonPointerDown = (event: PointerEvent<HTMLElement>) => {
   const target = event.target as HTMLElement
   const button = target.closest<HTMLButtonElement>('button')
   if (!button || button.disabled || !event.currentTarget.contains(button)) return
+  if (button.dataset.uiFeedback === 'none') return
 
   pulseButton(button)
   if (button.dataset.silent !== 'true') {
@@ -174,8 +189,10 @@ const handleGlobalButtonPointerDown = (event: PointerEvent<HTMLElement>) => {
   }
 }
 
-export type { UiSoundKind }
+export type { BackgroundTransitionSoundKind, UiSoundKind }
 export {
   handleGlobalButtonPointerDown,
-  playUiSound
+  playBackgroundTransitionSound,
+  playUiSound,
+  stopBackgroundTransitionSound
 }

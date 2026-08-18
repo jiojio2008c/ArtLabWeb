@@ -1,3 +1,5 @@
+import { createBackgroundTransitionAudio } from './background-transition-audio.js'
+
 export const createInteractionAudio = () => {
   let audioContext = null
   let activeVoices = 0
@@ -15,6 +17,8 @@ export const createInteractionAudio = () => {
     }
     return audioContext
   }
+
+  const backgroundTransitionAudio = createBackgroundTransitionAudio(getContext)
 
   const unlock = () => {
     const context = getContext()
@@ -69,8 +73,14 @@ export const createInteractionAudio = () => {
     playTone(animationId)
   }
 
+  const playBackgroundTransition = (kind) => backgroundTransitionAudio.play(kind)
+  const stopBackgroundTransition = () => backgroundTransitionAudio.stop()
+
   return {
     unlock,
-    playImageClick
+    playImageClick,
+    playBackgroundTransition,
+    playShutter: () => playBackgroundTransition('cameraFlash'),
+    stopBackgroundTransition
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { useTranslation } from 'react-i18next'
 import {
@@ -36,6 +36,11 @@ import {
   type DynamicLibraryViewMode
 } from '../services/dynamicFolderStorage.ts'
 import { sendDynamicEvent } from '../services/unityBridge.ts'
+import {
+  captureDynamicArchiveSnapshot,
+  sendDynamicArchiveSnapshot
+} from '../services/dynamicArtArchiveSync.ts'
+import { waitForContainerMedia, waitForStablePaint } from '../services/transitionPerformance.ts'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
 
 interface DynamicGroupsPageProps {
@@ -49,6 +54,7 @@ interface DynamicGroupsPageProps {
   onSelectGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
   portalArrival?: boolean
   transitionPrepared?: boolean
+  archiveReplayId?: string
 }
 
 interface MenuPosition {
@@ -120,7 +126,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onDeleteGroup,
   onSelectGroup,
   portalArrival = false,
-  transitionPrepared = false
+  transitionPrepared = false,
+  archiveReplayId = ''
 }) => {
   const { t, i18n } = useTranslation()
   const initialPreferencesRef = useRef(loadDynamicLibraryPreferences())
@@ -133,8 +140,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const suppressClickRef = useRef(false)
   const folderTimelineRef = useRef<gsap.core.Timeline | null>(null)
   const folderFrameRef = useRef<number | null>(null)
+  const folderTargetIdRef = useRef<string | null>(null)
   const currentLayerRef = useRef<HTMLDivElement>(null)
   const incomingLayerRef = useRef<HTMLDivElement>(null)
+  const libraryScreenRef = useRef<HTMLElement>(null)
+  const archiveCaptureSequenceRef = useRef(0)
 
   const [folders, setFolders] = useState<DynamicFolder[]>(() => loadDynamicFolders())
   const [currentFolderId, setCurrentFolderId] = useState(initialPreferencesRef.current.currentFolderId ?? '')
@@ -164,6 +174,29 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
   const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const currentFolder = currentFolderId ? folderById.get(currentFolderId) : undefined
+  const archiveMirrorSignature = useMemo(() => JSON.stringify({
+    currentFolderId,
+    viewMode,
+    sortMode,
+    language: i18n.resolvedLanguage ?? i18n.language,
+    folders: folders.map((folder) => [
+      folder.id,
+      folder.name,
+      folder.parentId ?? '',
+      folder.order,
+      folder.updatedAt
+    ]),
+    groups: groups.map((group) => [
+      group.id,
+      group.name,
+      group.folderId ?? '',
+      group.libraryOrder ?? 0,
+      group.items.length,
+      group.thumbnail?.id ?? '',
+      group.background?.id ?? '',
+      group.updatedAt
+    ])
+  }), [currentFolderId, folders, groups, i18n.language, i18n.resolvedLanguage, sortMode, viewMode])
 
   useEffect(() => {
     if (currentFolderId && !folderById.has(currentFolderId)) {
@@ -179,6 +212,65 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     })
   }, [currentFolderId, sortMode, viewMode])
 
+  useEffect(() => {
+    if (transitionPrepared || folderTransitioning || !archiveReplayId) return
+
+    const root = libraryScreenRef.current
+    if (!root) return
+
+    const captureSequence = ++archiveCaptureSequenceRef.current
+    const retryTimers: number[] = []
+    let initialTimer = 0
+    let cancelled = false
+
+    const captureAndSend = async () => {
+      await waitForStablePaint(2)
+      await waitForContainerMedia(root, {
+        selector: 'img, video',
+        timeoutMs: 1200,
+        maxElements: 16,
+        visibleOnly: true
+      })
+      if (cancelled || captureSequence !== archiveCaptureSequenceRef.current) return
+
+      try {
+        const snapshot = await captureDynamicArchiveSnapshot(root)
+        if (cancelled || captureSequence !== archiveCaptureSequenceRef.current) return
+
+        const sendSnapshot = () => sendDynamicArchiveSnapshot(
+          wsIp,
+          dynamicPort,
+          archiveReplayId,
+          snapshot
+        )
+        sendSnapshot()
+        ;[1800, 4200, 7600].forEach((delay) => {
+          retryTimers.push(window.setTimeout(sendSnapshot, delay))
+        })
+      } catch (error) {
+        console.warn('Dynamic archive mirror capture failed:', error)
+      }
+    }
+
+    // During the home-to-library portal, the target page has finished its own
+    // reveal by this point. Sending this frame before the portal exits lets the
+    // desktop renderer hand off directly to the iPad image without a gap.
+    initialTimer = window.setTimeout(() => { void captureAndSend() }, portalArrival ? 700 : 140)
+    return () => {
+      cancelled = true
+      window.clearTimeout(initialTimer)
+      retryTimers.forEach((timerId) => window.clearTimeout(timerId))
+    }
+  }, [
+    archiveMirrorSignature,
+    archiveReplayId,
+    dynamicPort,
+    folderTransitioning,
+    portalArrival,
+    transitionPrepared,
+    wsIp
+  ])
+
   const clearLongPressTimer = () => {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current)
@@ -188,6 +280,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
   useEffect(() => () => {
     clearLongPressTimer()
+    folderTargetIdRef.current = null
     folderTimelineRef.current?.kill()
     if (folderFrameRef.current !== null) window.cancelAnimationFrame(folderFrameRef.current)
   }, [])
@@ -256,11 +349,6 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       return
     }
 
-    sendDynamicEvent(wsIp, dynamicPort, 'GroupSelect', {
-      groupId: group.id,
-      name: group.name,
-      itemCount: group.items.length
-    })
     const sourceCard = sourceElement?.closest<HTMLElement>('.dynamic-library-icon-card, .dynamic-library-detail-row')
     const rect = sourceCard?.getBoundingClientRect()
     onSelectGroup(group, rect ? {
@@ -569,17 +657,19 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
     closeEntityMenu()
     clearLongPressTimer()
+    folderTargetIdRef.current = folderId
     setFolderTransitioning(true)
     setIncomingFolderId(folderId)
 
     const direction = requestedDirection ?? (sourceElement ? 'forward' : 'backward')
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    const runFolderTransition = () => {
+    const runFolderTransition = async () => {
       folderFrameRef.current = null
       const currentLayer = currentLayerRef.current
       const incomingLayer = incomingLayerRef.current
       if (!currentLayer || !incomingLayer) {
+        folderTargetIdRef.current = null
         setCurrentFolderId(folderId)
         setIncomingFolderId(null)
         setFolderTransitioning(false)
@@ -600,9 +690,18 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       const otherCards = sourceCard ? currentCards.filter((card) => card !== sourceCard) : currentCards
       const folderLid = sourceCard?.querySelector<HTMLElement>('.dynamic-folder-lid')
 
+      await waitForContainerMedia(incomingLayer, {
+        selector: 'img, video',
+        timeoutMs: 900,
+        maxElements: 12,
+        visibleOnly: false
+      })
+      await waitForStablePaint(1)
+      if (folderTargetIdRef.current !== folderId) return
       gsap.set(incomingLayer, { visibility: 'visible', pointerEvents: 'none' })
 
       const completeTransition = () => {
+        folderTargetIdRef.current = null
         setCurrentFolderId(folderId)
         setIncomingFolderId(null)
         setFolderTransitioning(false)
@@ -692,7 +791,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     }
 
     folderFrameRef.current = window.requestAnimationFrame(() => {
-      folderFrameRef.current = window.requestAnimationFrame(runFolderTransition)
+      folderFrameRef.current = window.requestAnimationFrame(() => { void runFolderTransition() })
     })
   }
 
@@ -734,7 +833,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           src={preview.url}
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
           aria-label={t('groups.preview', { name: group.name })}
           onError={() => markPreviewFailed(group.id)}
         />
@@ -911,6 +1010,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
   return (
     <main
+      ref={libraryScreenRef}
       className={`ipad-screen dynamic-screen dynamic-library-screen apple-container ${portalArrival ? 'dynamic-portal-arriving' : ''} ${folderTransitioning ? 'folder-transitioning' : ''} ${transitionPrepared ? 'dynamic-transition-prepared' : ''}`}
       aria-busy={folderTransitioning || transitionPrepared}
       aria-hidden={transitionPrepared || undefined}
@@ -1167,4 +1267,14 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   )
 }
 
-export default DynamicGroupsPage
+const areDynamicGroupsPropsEqual = (
+  previous: DynamicGroupsPageProps,
+  next: DynamicGroupsPageProps
+) => previous.groups === next.groups
+  && previous.wsIp === next.wsIp
+  && previous.dynamicPort === next.dynamicPort
+  && previous.portalArrival === next.portalArrival
+  && previous.transitionPrepared === next.transitionPrepared
+  && previous.archiveReplayId === next.archiveReplayId
+
+export default memo(DynamicGroupsPage, areDynamicGroupsPropsEqual)

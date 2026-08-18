@@ -1,8 +1,13 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { Plus } from 'lucide-react'
 import { gsap } from 'gsap'
 import { useTranslation } from 'react-i18next'
 import type { DirectUploadTheme } from '../../services/directUploadThemes.ts'
+import {
+  waitForContainerMedia,
+  waitForImageElement,
+  waitForStablePaint
+} from '../../services/transitionPerformance.ts'
 
 interface DirectThemeUploadReturnTransitionProps {
   theme: DirectUploadTheme
@@ -50,7 +55,7 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
     onCompleteRef.current = onComplete
   }, [onComplete, onSceneSwitch])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current
     const wash = washRef.current
     const clone = cloneRef.current
@@ -86,21 +91,6 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
     let destinationHeader: HTMLElement | null = null
     let cancelled = false
 
-    const waitForCloneImage = async () => {
-      if (cloneImage.complete && cloneImage.naturalWidth > 0) {
-        await cloneImage.decode?.().catch(() => undefined)
-        return
-      }
-
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          cloneImage.addEventListener('load', () => resolve(), { once: true })
-          cloneImage.addEventListener('error', () => resolve(), { once: true })
-        }),
-        new Promise<void>((resolve) => window.setTimeout(resolve, 450))
-      ])
-    }
-
     const findDestination = async () => {
       for (let attempt = 0; attempt < 12; attempt += 1) {
         const target = targetRootRef.current
@@ -131,7 +121,7 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
     gsap.set(cloneCopy, { opacity: 0, y: 8 })
 
     const run = async () => {
-      await waitForCloneImage()
+      await waitForImageElement(cloneImage, 900)
       if (cancelled) return
 
       gsap.set(root, { visibility: 'visible' })
@@ -184,6 +174,20 @@ const DirectThemeUploadReturnTransition: React.FC<DirectThemeUploadReturnTransit
         onCompleteRef.current()
         return
       }
+
+      // Decode all theme covers before measuring the returning cards. This
+      // keeps the existing return choreography attached to stable geometry.
+      const destinationRoot = targetRootRef.current
+      if (destinationRoot) {
+        await waitForContainerMedia(destinationRoot, {
+          selector: '.direct-theme-image',
+          timeoutMs: 1100,
+          maxElements: 8,
+          visibleOnly: false
+        })
+      }
+      await waitForStablePaint(2)
+      if (cancelled) return
 
       const { selectedCard, selectedCardMotion, header, cardMotions } = destination
       destinationCardMotions = cardMotions

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Languages, LogOut, QrCode } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Languages, LogOut, QrCode, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   LANGUAGE_OPTIONS,
@@ -47,6 +47,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [wsIp, setWsIp] = useState(settings.wsIp)
   const [dynamicPort, setDynamicPort] = useState(String(settings.dynamicPort))
   const [interactivePort, setInteractivePort] = useState(String(settings.interactivePort))
+  const [advancedFeaturesEnabled, setAdvancedFeaturesEnabled] = useState(settings.advancedFeaturesEnabled)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState(false)
   const [avatarFailed, setAvatarFailed] = useState(false)
@@ -60,7 +61,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     onSave({
       wsIp: wsIp.trim() || settings.wsIp,
       dynamicPort: normalizePortInput(dynamicPort, settings.dynamicPort),
-      interactivePort: normalizePortInput(interactivePort, settings.interactivePort)
+      interactivePort: normalizePortInput(interactivePort, settings.interactivePort),
+      advancedFeaturesEnabled
     })
     onClose()
   }
@@ -189,6 +191,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </span>
                   <ChevronRight aria-hidden="true" />
                 </button>
+
+                <label className="settings-advanced-row">
+                  <span className="settings-row-icon" aria-hidden="true"><SlidersHorizontal /></span>
+                  <span className="settings-language-copy">
+                    <strong>{t('settings.advancedFeatures')}</strong>
+                    <small>{t('settings.advancedFeaturesSummary')}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={advancedFeaturesEnabled}
+                    onChange={(event) => setAdvancedFeaturesEnabled(event.target.checked)}
+                  />
+                  <span className="settings-switch" aria-hidden="true" />
+                </label>
 
                 <label className="settings-field">
                   <span>{t('settings.galleryIp')}</span>

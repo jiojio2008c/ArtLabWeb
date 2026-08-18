@@ -4,11 +4,17 @@ const fs = require('fs')
 const http = require('http')
 const os = require('os')
 const path = require('path')
+const {
+  DEFAULT_ITEM_SETTINGS_COPY_FIELDS,
+  applyItemSettingsCopy
+} = require('./renderer/item-settings-copy-core.cjs')
 
 const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
 const DEFAULT_GROUP_ID = 'default_group'
 const VERTICAL_DISPLAY_FLIP = process.env.MAGICFLOOR_VERTICAL_FLIP === '1'
+
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 let mainWindow = null
 let server = null
@@ -22,6 +28,27 @@ const runtimeState = {
   activeGroupId: null,
   groups: {},
   assets: {},
+  view: {
+    mode: 'archive',
+    mirror: {
+      replayId: null,
+      startedAt: 0,
+      elapsedMs: 0,
+      receivedAt: 0,
+      capturedAt: 0,
+      transition: 'none',
+      width: 0,
+      height: 0,
+      snapshotDataUrl: '',
+      source: {
+        dataUrl: '',
+        width: 0,
+        height: 0,
+        capturedAt: 0,
+        origin: null
+      }
+    }
+  },
   preview: {
     enabled: false,
     groupId: null,
@@ -47,6 +74,132 @@ const makeId = (prefix) => {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`
 }
 
+const normalizeAppearAnimation = (value) => (
+  value === 'drop' || value === 'trackSlide' ? value : 'none'
+)
+
+const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 3
+
+const normalizeBackgroundTransition = (value, fallback = 'none') => (
+  value === 'curtain' || value === 'cameraFlash' || value === 'shadowPlay' || value === 'none'
+    ? value
+    : fallback
+)
+
+const normalizeLinkedAppearance = (value, itemId, validItemIds) => {
+  if (!value || typeof value !== 'object') return null
+  const triggerItemId = String(value.triggerItemId ?? '').trim()
+  const mode = value.mode === 'showAfter' || value.mode === 'hideAfter' ? value.mode : 'none'
+  if (!triggerItemId || triggerItemId === itemId || mode === 'none') return null
+  if (validItemIds && !validItemIds.has(triggerItemId)) return null
+  return {
+    triggerItemId,
+    mode,
+    delayMs: Math.min(600000, Math.max(0, Math.round(Number(value.delayMs) || 0)))
+  }
+}
+
+const normalizeGroupItemLinks = (items = []) => {
+  const validItemIds = new Set(items.map((item) => item.itemId).filter(Boolean))
+  const nextItems = items.map((item) => ({
+    ...item,
+    linkedAppearance: normalizeLinkedAppearance(item.linkedAppearance, item.itemId, validItemIds)
+  }))
+  const linkByItemId = new Map(nextItems
+    .filter((item) => item.linkedAppearance)
+    .map((item) => [item.itemId, item.linkedAppearance]))
+
+  const hasCycle = (itemId) => {
+    const visited = new Set([itemId])
+    let currentId = itemId
+    while (linkByItemId.has(currentId)) {
+      const triggerItemId = linkByItemId.get(currentId).triggerItemId
+      if (visited.has(triggerItemId)) return true
+      visited.add(triggerItemId)
+      currentId = triggerItemId
+    }
+    return false
+  }
+
+  const validatedItems = nextItems.map((item) => ({
+    ...item,
+    linkedAppearance: item.linkedAppearance && !hasCycle(item.itemId)
+      ? item.linkedAppearance
+      : null
+  }))
+
+  const itemById = new Map(validatedItems.map((item) => [item.itemId, item]).filter(([itemId]) => itemId))
+  const validLinkByItemId = new Map(validatedItems
+    .filter((item) => item.linkedAppearance)
+    .map((item) => [item.itemId, item.linkedAppearance]))
+  const effectiveBackgroundIds = new Map()
+  const normalizeBackgroundIds = (value) => (
+    Array.isArray(value)
+      ? Array.from(new Set(value.map((backgroundId) => String(backgroundId ?? '').trim()).filter(Boolean)))
+      : []
+  )
+  const resolveBackgroundIds = (itemId, visited = new Set()) => {
+    if (effectiveBackgroundIds.has(itemId)) return effectiveBackgroundIds.get(itemId)
+    const item = itemById.get(itemId)
+    if (!item) return []
+
+    const ownBackgroundIds = normalizeBackgroundIds(item.backgroundIds)
+    if (visited.has(itemId)) return ownBackgroundIds
+    const link = validLinkByItemId.get(itemId)
+    const resolvedIds = link && itemById.has(link.triggerItemId)
+      ? resolveBackgroundIds(link.triggerItemId, new Set([...visited, itemId]))
+      : ownBackgroundIds
+    effectiveBackgroundIds.set(itemId, resolvedIds)
+    return resolvedIds
+  }
+
+  return validatedItems.map((item) => (
+    item.linkedAppearance
+      ? { ...item, backgroundIds: [...resolveBackgroundIds(item.itemId)] }
+      : item
+  ))
+}
+
+const normalizeGroupItemLinksForModel = (group, items = []) => {
+  if (Number(group.linkedAppearanceModelVersion) === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
+    return normalizeGroupItemLinks(items)
+  }
+
+  const validItemIds = new Set(items.map((item) => item.itemId).filter(Boolean))
+  const migratedItems = items.map((item) => ({ ...item, linkedAppearance: null }))
+  const targetIndexById = new Map(migratedItems.map((item, index) => [item.itemId, index]))
+
+  items
+    .map((sourceItem) => ({
+      sourceItem,
+      legacyLink: normalizeLinkedAppearance(
+        sourceItem.linkedAppearance,
+        sourceItem.itemId,
+        validItemIds
+      )
+    }))
+    .filter(({ legacyLink }) => legacyLink)
+    .sort((left, right) => (
+      (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
+      || (left.sourceItem.order ?? 0) - (right.sourceItem.order ?? 0)
+    ))
+    .forEach(({ sourceItem, legacyLink }) => {
+      const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
+      if (targetIndex === undefined || migratedItems[targetIndex].linkedAppearance) return
+      migratedItems[targetIndex] = {
+        ...migratedItems[targetIndex],
+        linkedAppearance: {
+          triggerItemId: sourceItem.itemId,
+          mode: legacyLink.mode,
+          delayMs: legacyLink.delayMs
+        }
+      }
+    })
+
+  group.linkedAppearanceModelVersion = DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
+  return normalizeGroupItemLinks(migratedItems)
+}
+
 const getLocalAddresses = () => {
   const interfaces = os.networkInterfaces()
   const addresses = []
@@ -68,12 +221,19 @@ const getExtension = (name, mimeType) => {
   if (mimeType === 'image/jpeg') return '.jpg'
   if (mimeType === 'image/webp') return '.webp'
   if (mimeType === 'image/gif') return '.gif'
+  if (mimeType === 'audio/mpeg') return '.mp3'
+  if (mimeType === 'audio/mp4' || mimeType === 'audio/x-m4a') return '.m4a'
+  if (mimeType === 'audio/wav' || mimeType === 'audio/x-wav') return '.wav'
+  if (mimeType === 'audio/ogg') return '.ogg'
+  if (String(mimeType || '').startsWith('audio/')) return '.m4a'
   if (mimeType === 'video/quicktime') return '.mov'
   if (String(mimeType || '').startsWith('video/')) return '.mp4'
   return '.png'
 }
 
 const detectMediaType = (mimeType, name) => {
+  if (String(mimeType || '').startsWith('audio/')) return 'audio'
+  if (/\.(mp3|m4a|wav|ogg|aac)$/i.test(name || '')) return 'audio'
   if (String(mimeType || '').startsWith('video/')) return 'video'
   if (/\.(mp4|mov|webm)$/i.test(name || '')) return 'video'
   return 'image'
@@ -93,6 +253,27 @@ const loadState = () => {
     runtimeState.activeGroupId = loaded.activeGroupId ?? null
     runtimeState.groups = loaded.groups ?? {}
     runtimeState.assets = loaded.assets ?? {}
+    runtimeState.view = {
+      mode: 'archive',
+      mirror: {
+        replayId: null,
+        startedAt: 0,
+        elapsedMs: 0,
+        receivedAt: 0,
+        capturedAt: 0,
+        transition: 'none',
+        width: 0,
+        height: 0,
+        snapshotDataUrl: '',
+        source: {
+          dataUrl: '',
+          width: 0,
+          height: 0,
+          capturedAt: 0,
+          origin: null
+        }
+      }
+    }
     runtimeState.preview = {
       ...runtimeState.preview,
       ...(loaded.preview ?? {}),
@@ -146,10 +327,25 @@ const getPublicState = () => {
     }
   })
 
+  const publicView = runtimeState.view.mode === 'stage'
+    ? {
+        ...runtimeState.view,
+        mirror: {
+          ...runtimeState.view.mirror,
+          snapshotDataUrl: '',
+          source: {
+            ...runtimeState.view.mirror.source,
+            dataUrl: ''
+          }
+        }
+      }
+    : runtimeState.view
+
   return {
     activeGroupId: runtimeState.activeGroupId,
     groups: runtimeState.groups,
     assets,
+    view: publicView,
     preview: runtimeState.preview,
     server: runtimeState.server,
     lastEvent: lastDynamicEvent
@@ -177,9 +373,14 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       backgrounds: [],
       backgroundPlayMode: 'fixed',
       backgroundIntervalMs: 5000,
+      backgroundTransition: 'none',
+      advancedFeaturesEnabled: false,
+      linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
+      audioLibrary: [],
       items: [],
       appearMode: 'all',
       appearIntervalMs: 800,
+      appearAnimation: 'none',
       updatedAt: Date.now()
     }
   }
@@ -208,6 +409,14 @@ const defaultItem = (payload, order = 0) => {
     movePercent: payload.movePercent ?? 50,
     moveSpeed: payload.moveSpeed ?? 50,
     moveTrack: payload.moveTrack ?? 'middle',
+    targetMode: payload.targetMode === 'target' && payload.targetPosition ? 'target' : 'loop',
+    targetLoop: payload.targetLoop === true,
+    targetPosition: payload.targetPosition ?? null,
+    audioId: payload.audioId ?? null,
+    audioTrigger: payload.audioTrigger ?? 'appearance',
+    audioDelayMs: Math.max(0, Number(payload.audioDelayMs) || 0),
+    linkedAppearance: normalizeLinkedAppearance(payload.linkedAppearance, payload.itemId),
+    backgroundIds: Array.isArray(payload.backgroundIds) ? payload.backgroundIds.filter(Boolean) : [],
     isVisible: payload.isVisible ?? true,
     order: payload.order ?? order,
     updatedAt: Date.now()
@@ -216,9 +425,22 @@ const defaultItem = (payload, order = 0) => {
 
 const normalizeStoredRuntimeState = () => {
   Object.values(runtimeState.groups).forEach((group) => {
-    group.items = (group.items ?? []).map((item, index) => (
-      defaultItem(item, item.order ?? index)
-    ))
+    group.advancedFeaturesEnabled = group.advancedFeaturesEnabled === true
+    group.appearAnimation = normalizeAppearAnimation(group.appearAnimation)
+    group.backgroundTransition = normalizeBackgroundTransition(group.backgroundTransition)
+    group.audioLibrary = Array.isArray(group.audioLibrary) ? group.audioLibrary : []
+    group.backgrounds = (group.backgrounds ?? []).map((background) => ({
+      ...background,
+      backgroundTransition: normalizeBackgroundTransition(
+        background.backgroundTransition,
+        group.backgroundTransition
+      ),
+      appearAnimation: undefined
+    }))
+    group.items = normalizeGroupItemLinksForModel(
+      group,
+      (group.items ?? []).map((item, index) => defaultItem(item, item.order ?? index))
+    )
   })
 }
 
@@ -241,7 +463,12 @@ const upsertBackground = (group, payload) => {
     assetId: payload.assetId,
     name: payload.name ?? payload.assetId,
     mediaType: payload.mediaType ?? payload.type ?? 'image',
-    mimeType: payload.mimeType ?? ''
+    mimeType: payload.mimeType ?? '',
+    bgmAudioId: payload.bgmAudioId ?? null,
+    backgroundTransition: normalizeBackgroundTransition(
+      payload.backgroundTransition,
+      group.backgroundTransition
+    )
   }
 
   group.backgrounds = [
@@ -282,8 +509,125 @@ const setActiveGroup = (groupId, name) => {
   return group
 }
 
+const normalizeArchiveReplayId = (value) => String(value || '').trim().slice(0, 160)
+
+const clearArchiveSnapshot = () => {
+  runtimeState.view.mirror.snapshotDataUrl = ''
+  runtimeState.view.mirror.capturedAt = 0
+  runtimeState.view.mirror.width = 0
+  runtimeState.view.mirror.height = 0
+}
+
+const clearArchiveSource = () => {
+  runtimeState.view.mirror.source = {
+    dataUrl: '',
+    width: 0,
+    height: 0,
+    capturedAt: 0,
+    origin: null
+  }
+}
+
+const normalizeArchiveSource = (value) => {
+  const dataUrl = typeof value?.dataUrl === 'string' ? value.dataUrl : ''
+  if (!dataUrl.startsWith('data:image/') || dataUrl.length > 24 * 1024 * 1024) return null
+
+  const width = Math.max(1, Number(value.width) || 1)
+  const height = Math.max(1, Number(value.height) || 1)
+  const origin = value.origin ?? {}
+  return {
+    dataUrl,
+    width,
+    height,
+    capturedAt: Number(value.capturedAt) || Date.now(),
+    origin: {
+      left: Math.max(0, Number(origin.left) || 0),
+      top: Math.max(0, Number(origin.top) || 0),
+      width: Math.max(1, Number(origin.width) || 1),
+      height: Math.max(1, Number(origin.height) || 1)
+    }
+  }
+}
+
 const applyDynamicEvent = (eventName, payload) => {
   switch (eventName) {
+    case 'ArchiveEnter': {
+      const replayId = normalizeArchiveReplayId(payload.replayId)
+      if (!replayId) break
+
+      const duplicateReplay = runtimeState.view.mirror.replayId === replayId
+      if (duplicateReplay) return
+
+      runtimeState.view.mode = 'archive'
+      if (!duplicateReplay) {
+        clearArchiveSnapshot()
+        clearArchiveSource()
+      }
+      runtimeState.view.mirror.replayId = replayId
+      runtimeState.view.mirror.startedAt = Number(payload.startedAt) || Date.now()
+      runtimeState.view.mirror.elapsedMs = Math.max(0, Number(payload.elapsedMs) || 0)
+      runtimeState.view.mirror.receivedAt = Date.now()
+      runtimeState.view.mirror.transition = 'portal'
+      runtimeState.view.mirror.source = normalizeArchiveSource(payload.source)
+        ?? runtimeState.view.mirror.source
+      runtimeState.preview.enabled = false
+      break
+    }
+
+    case 'ArchiveReturn': {
+      const replayId = normalizeArchiveReplayId(payload.replayId)
+      if (!replayId) break
+      if (
+        runtimeState.view.mode === 'archive'
+        && runtimeState.view.mirror.replayId === replayId
+        && runtimeState.view.mirror.transition === 'none'
+      ) return
+
+      runtimeState.view.mode = 'archive'
+      runtimeState.view.mirror.replayId = replayId
+      runtimeState.view.mirror.startedAt = Number(payload.startedAt) || Date.now()
+      runtimeState.view.mirror.elapsedMs = 0
+      runtimeState.view.mirror.receivedAt = Date.now()
+      runtimeState.view.mirror.transition = 'none'
+      runtimeState.preview.enabled = false
+      break
+    }
+
+    case 'ArchiveSnapshot': {
+      const replayId = normalizeArchiveReplayId(payload.replayId)
+      const snapshotDataUrl = typeof payload.dataUrl === 'string' ? payload.dataUrl : ''
+      if (!replayId || !snapshotDataUrl.startsWith('data:image/') || snapshotDataUrl.length > 24 * 1024 * 1024) break
+
+      const duplicateReplay = runtimeState.view.mirror.replayId === replayId
+      const capturedAt = Number(payload.capturedAt) || Date.now()
+      if (duplicateReplay && runtimeState.view.mode === 'stage') return
+      if (duplicateReplay && runtimeState.view.mirror.snapshotDataUrl === snapshotDataUrl) return
+      if (
+        !duplicateReplay
+        && runtimeState.view.mode === 'archive'
+        && runtimeState.view.mirror.replayId
+      ) return
+      if (
+        !duplicateReplay
+        && runtimeState.view.mode === 'stage'
+        && capturedAt <= runtimeState.view.mirror.capturedAt
+      ) return
+
+      if (!duplicateReplay) {
+        runtimeState.view.mode = 'archive'
+        runtimeState.view.mirror.replayId = replayId
+        runtimeState.view.mirror.startedAt = capturedAt
+        runtimeState.view.mirror.receivedAt = Date.now()
+        runtimeState.view.mirror.transition = payload.transition === 'portal' ? 'portal' : 'none'
+      }
+      runtimeState.view.mirror.snapshotDataUrl = snapshotDataUrl
+      runtimeState.view.mirror.capturedAt = capturedAt
+      runtimeState.view.mirror.width = Math.max(1, Number(payload.width) || 1)
+      runtimeState.view.mirror.height = Math.max(1, Number(payload.height) || 1)
+      runtimeState.preview.enabled = false
+      break
+    }
+
     case 'GroupCreate': {
       const group = ensureGroup(payload.groupId, payload.name)
       group.name = payload.name ?? group.name
@@ -317,11 +661,19 @@ const applyDynamicEvent = (eventName, payload) => {
     case 'GroupSelectAndSync':
     case 'GroupStateSync': {
       const group = setActiveGroup(payload.groupId, payload.name)
+      runtimeState.view.mode = 'stage'
       group.name = payload.name ?? group.name
+      group.linkedAppearanceModelVersion = Number(payload.linkedAppearanceModelVersion) || 0
+      group.advancedFeaturesEnabled = payload.advancedFeaturesEnabled === true
       group.appearMode = payload.appearMode ?? group.appearMode ?? 'all'
       group.appearIntervalMs = payload.appearIntervalMs ?? group.appearIntervalMs ?? 800
+      group.appearAnimation = normalizeAppearAnimation(payload.appearAnimation ?? group.appearAnimation)
       group.backgroundPlayMode = payload.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
       group.backgroundIntervalMs = payload.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000
+      group.backgroundTransition = normalizeBackgroundTransition(
+        payload.backgroundTransition,
+        group.backgroundTransition ?? 'none'
+      )
       group.activeBackgroundId = payload.activeBackgroundId ?? group.activeBackgroundId
 
       const backgrounds = Array.isArray(payload.backgrounds)
@@ -345,7 +697,32 @@ const applyDynamicEvent = (eventName, payload) => {
             assetId: background.assetId,
             name: background.name ?? background.assetId,
             mediaType: background.mediaType ?? background.type ?? 'image',
-            mimeType: background.mimeType ?? ''
+            mimeType: background.mimeType ?? '',
+            bgmAudioId: background.bgmAudioId ?? null,
+            backgroundTransition: normalizeBackgroundTransition(
+              background.backgroundTransition,
+              group.backgroundTransition
+            )
+          }
+        })
+
+      group.audioLibrary = (payload.audioLibrary ?? [])
+        .filter((audio) => audio?.assetId)
+        .map((audio) => {
+          upsertAssetMetadata({
+            assetId: audio.assetId,
+            role: 'audio',
+            groupId: group.groupId,
+            name: audio.name ?? audio.assetId,
+            mediaType: 'audio',
+            mimeType: audio.mimeType ?? ''
+          })
+          return {
+            assetId: audio.assetId,
+            name: audio.name ?? audio.assetId,
+            mediaType: 'audio',
+            mimeType: audio.mimeType ?? '',
+            durationMs: audio.durationMs ?? null
           }
         })
 
@@ -354,7 +731,7 @@ const applyDynamicEvent = (eventName, payload) => {
       }
 
       const existingItems = new Map(group.items.map((item) => [item.itemId, item]))
-      group.items = (payload.items ?? []).map((itemPayload, index) => {
+      const incomingItems = (payload.items ?? []).map((itemPayload, index) => {
         const existing = existingItems.get(itemPayload.itemId) ?? {}
         const nextItem = defaultItem({
           ...existing,
@@ -373,6 +750,7 @@ const applyDynamicEvent = (eventName, payload) => {
 
         return nextItem
       })
+      group.items = normalizeGroupItemLinksForModel(group, incomingItems)
       group.updatedAt = Date.now()
       break
     }
@@ -391,14 +769,18 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.preview = {
         enabled: Boolean(payload.enabled),
         groupId,
+        advancedFeaturesEnabled: payload.advancedFeaturesEnabled === true,
         appearMode: payload.appearMode ?? ensureGroup(groupId).appearMode ?? 'all',
         intervalMs: payload.intervalMs ?? ensureGroup(groupId).appearIntervalMs ?? 800,
+        appearAnimation: payload.appearAnimation ?? ensureGroup(groupId).appearAnimation ?? 'none',
         backgroundPlayMode: payload.backgroundPlayMode ?? ensureGroup(groupId).backgroundPlayMode ?? 'fixed',
         backgroundIntervalMs: payload.backgroundIntervalMs ?? ensureGroup(groupId).backgroundIntervalMs ?? 5000,
+        backgroundTransition: payload.backgroundTransition ?? ensureGroup(groupId).backgroundTransition ?? 'none',
         replayId: payload.replayId ?? runtimeState.preview.replayId + 1,
         resolvedAnimationIds: payload.resolvedAnimationIds ?? {},
         startedAt: Date.now()
       }
+      runtimeState.view.mode = 'stage'
       break
     }
 
@@ -470,7 +852,14 @@ const applyDynamicEvent = (eventName, payload) => {
 
     case 'ItemDelete': {
       const group = ensureGroup(payload.groupId)
-      group.items = group.items.filter((item) => item.itemId !== payload.itemId)
+      group.items = group.items
+        .filter((item) => item.itemId !== payload.itemId)
+        .map((item) => ({
+          ...item,
+          linkedAppearance: item.linkedAppearance?.triggerItemId === payload.itemId
+            ? null
+            : item.linkedAppearance
+        }))
       group.items.forEach((item, index) => {
         item.order = index
       })
@@ -533,6 +922,9 @@ const applyDynamicEvent = (eventName, payload) => {
         item.movePercent = payload.percent ?? payload.movePercent ?? item.movePercent
         item.moveSpeed = payload.speed ?? payload.moveSpeed ?? item.moveSpeed
         item.moveTrack = payload.track ?? payload.moveTrack ?? item.moveTrack
+        if (Object.prototype.hasOwnProperty.call(payload, 'targetMode')) item.targetMode = payload.targetMode
+        if (Object.prototype.hasOwnProperty.call(payload, 'targetLoop')) item.targetLoop = payload.targetLoop === true
+        if (Object.prototype.hasOwnProperty.call(payload, 'targetPosition')) item.targetPosition = payload.targetPosition
         item.updatedAt = Date.now()
       }
       break
@@ -543,23 +935,13 @@ const applyDynamicEvent = (eventName, payload) => {
       const source = findItem(group, payload.sourceItemId)
       const target = findItem(group, payload.targetItemId)
       if (source && target) {
-        const fields = payload.fields ?? [
-          'scale',
-          'rotation',
-          'flipX',
-          'flipY',
-          'animationMode',
-          'animationId',
-          'clickAnimationIds',
-          'moveMode',
-          'movePercent',
-          'moveSpeed',
-          'moveTrack'
-        ]
-        fields.forEach((field) => {
-          if (field in source) target[field] = source[field]
-        })
+        applyItemSettingsCopy(
+          source,
+          target,
+          payload.fields ?? DEFAULT_ITEM_SETTINGS_COPY_FIELDS
+        )
         target.updatedAt = Date.now()
+        group.items = normalizeGroupItemLinksForModel(group, group.items)
       }
       break
     }
@@ -577,7 +959,9 @@ const applyDynamicEvent = (eventName, payload) => {
     replayId: eventName === 'PreviewMode' ? payload.replayId ?? runtimeState.preview.replayId : undefined
   }
 
-  saveState()
+  if (!['ArchiveEnter', 'ArchiveReturn', 'ArchiveSnapshot'].includes(eventName)) {
+    saveState()
+  }
   broadcastState()
 }
 
@@ -709,6 +1093,16 @@ const handleUpload = (buffer, contentType) => {
       mediaType,
       mimeType
     })
+  } else if (asset.role === 'audio') {
+    group.audioLibrary = [
+      {
+        assetId,
+        name,
+        mediaType: 'audio',
+        mimeType
+      },
+      ...(group.audioLibrary ?? []).filter((audio) => audio.assetId !== assetId)
+    ]
   } else if (asset.role === 'item' && fields.itemId) {
     const item = findItem(group, fields.itemId)
     if (item) {

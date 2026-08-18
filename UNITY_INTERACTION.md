@@ -1,6 +1,6 @@
 # MagicFloor Unity 交互文档
 
-更新时间：2026-07-28
+更新时间：2026-08-14
 
 本文档用于 Unity 端实现 MagicFloor 当前与下一版动态艺术功能的接收协议。前端仍以 HTTP 为主，Unity 端只需要监听对应端口，处理 `multipart/form-data` 文件上传和 `text/plain` 控制指令。
 
@@ -54,15 +54,63 @@ onBeautifulOceanLaunch
 
 Unity 專案可把既有無參數喚醒方法綁定到對應事件。腳本的程式碼預設端口是 `11701`，但已掛載組件的序列化 Inspector 值可能仍是舊端口，部署前必須人工核對。
 
-### 1.2 iPad 本地作品檔案資料夾
+### 1.2 iPad 作品檔案與資料夾同步
 
-作品檔案頁的 `資料夾 / 子資料夾` 是 iPad 本地素材整理功能，不是接收端的場景層級或協議實體：
+作品檔案頁的 `資料夾 / 子資料夾` 仍是 iPad 的素材整理結構，不是動態舞台中的場景層級。為了讓 Windows 動態藝術程式與 iPad 顯示相同的作品檔案頁，iPad 會用 `ArchiveView` 傳送一份輕量索引：
 
-- 資料夾只保存在 iPad 本地，不建立新的 HTTP 事件。
-- `folderId` 和素材庫排序偏好不會發送給 PC / Unity。
-- PC / Unity 仍只按既有 `groupId` 區分作品，繼續處理 `GroupCreate`、`GroupSelect`、`GroupSelectAndSync`、`GroupStateSync`、`GroupDelete` 等事件。
-- 把作品移入、移出或跨資料夾整理時，不會觸發組切換、媒體重傳或場景重建。
-- 沒有本地 `folderId` 的舊作品會顯示在 iPad 素材庫根目錄，對接收端沒有任何差異。
+- 索引包含目前路徑、資料夾階層、作品名稱、排序、物件數量及可用的封面素材 ID。
+- `ArchiveView` 只切換並更新 PC 的作品檔案畫面，不上傳素材，也不載入或重建舞台。
+- PC 冷啟動預設停留在作品檔案畫面；iPad 從首頁開啟動態藝術後會立即同步索引，並在 EXE 啟動期間短暫重送。
+- 使用者在 iPad 選取作品後，`GroupSelect` 會把 PC 切換到舞台；控制頁原有的 `GroupStateSync` / `GroupSelectAndSync` 再負責傳送完整舞台資料。
+- 把作品移入、移出或跨資料夾整理時，只會更新作品檔案索引，不會觸發媒體重傳或場景重建。
+- 沒有 `folderId` 的舊作品會顯示在素材庫根目錄，舞台仍只以既有 `groupId` 區分作品。
+
+### 1.3 11701 遠端鍵盤控制指令
+
+Unity 團隊可直接使用獨立交付文件 [`UNITY_REMOTE_KEYBOARD.md`](./UNITY_REMOTE_KEYBOARD.md)，其中包含完整按鍵表、旋鈕方向、JSON 結構、主執行緒接入方式、C# 解析骨架、Windows 部署要求及聯調驗收清單。本節保留協議摘要。
+
+首頁的鍵盤入口會開啟一個單向機械鍵盤控制頁。所有操作沿用目前設定中的藝術畫廊 IP 與互動藝術端口（預設 `11701`），使用 `Content-Type: text/plain` 發送；iPad 不等待回覆、不重試，也不顯示接收狀態。
+
+按鍵格式：
+
+```text
+MF|RemoteKeyboard|Press|{"keys":["Escape"]}
+MF|RemoteKeyboard|Press|{"keys":["LeftControl","LeftShift"]}
+MF|RemoteKeyboard|Press|{"keys":["LeftAlt","F4"]}
+MF|RemoteKeyboard|Press|{"keys":["LeftControl","LeftAlt","Alpha1"]}
+```
+
+完整按鍵對照：
+
+| 面板位置 | `keys` |
+| ---: | --- |
+| 1 | `["Escape"]` |
+| 2 | `["Home"]` |
+| 3 | `["LeftControl","LeftShift"]` |
+| 4 | `["LeftAlt","F4"]` |
+| 5 | `["Space","N"]` |
+| 6 | `["Space","F"]` |
+| 7 | `["End"]` |
+| 8 | `["PageDown"]` |
+| 9 - 16 | `["LeftControl","LeftAlt","Alpha1"]` 到 `["LeftControl","LeftAlt","Alpha8"]` |
+
+组合键是一条不可拆分的原子指令。Unity 的实际按键执行器应依次执行：修饰键按下、主键按下与释放、修饰键按相反顺序释放。即使执行过程发生异常，也必须在 `finally` 中释放所有已经按下的修饰键，避免 `Control` 或 `Alt` 卡住。
+
+旋钮格式：
+
+```text
+MF|RemoteKeyboard|Turn|{"control":"volume","key":"Plus","steps":2}
+```
+
+| 旋钮 | 逆时针 | 顺时针 |
+| --- | --- | --- |
+| `volume` | `Minus` | `Plus` |
+| `vertical` | `UpArrow` | `DownArrow` |
+| `horizontal` | `LeftArrow` | `RightArrow` |
+
+`steps` 表示旋钮档位数，范围为 `1 - 32`。iPad 每 `15deg` 产生一个档位，并会短暂合并同方向的连续档位，Unity 执行器应按 `steps` 次数重复对应按键。
+
+根目录的 `ImageFileSaveHttpServer.cs` 会在 HTTP 监听线程完成格式和白名单校验，再把完整规范化指令放入线程安全队列；`onRemoteKeyboardCommand(string)` 只在 Unity 主线程的 `Update()` 中触发。该事件应连接到现有 Windows 按键模拟脚本，HTTP 接收脚本本身不直接注入系统按键。
 
 ## 2. HTTP 基础规则
 
@@ -122,6 +170,26 @@ MF|DynamicArt|ItemTransform|{"groupId":"group_a","itemId":"item_1","gridIndex":7
 
 说明：前端 UI 统一称为“作品檔案”，协议事件名和字段名继续沿用 `Group*` / `groupId`，避免接收端大范围改名。
 
+#### ArchiveView
+
+打开或更新 PC 端作品档案页。此事件只同步资料夹与作品索引，不代表选择作品，也不得触发舞台素材加载。
+
+```text
+MF|DynamicArt|ArchiveView|{"version":1,"currentFolderId":"folder_a","folders":[{"folderId":"folder_a","name":"我們這一家","parentFolderId":null,"order":0,"updatedAt":1750000000000}],"groups":[{"groupId":"group_a","name":"森林作品檔案","folderId":"folder_a","order":0,"itemCount":6,"previewAssetId":"media_thumb_1","previewAssetIds":["media_thumb_1","media_bg_1"],"updatedAt":1750000000000}],"requestedAt":1750000001000}
+```
+
+字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `currentFolderId` | string \| null | iPad 当前打开的资料夹；根目录为 `null` |
+| `folders` | array | 资料夹索引，包含 `folderId`、名称、父层、排序和更新时间 |
+| `groups` | array | 作品索引，包含 `groupId`、名称、所属资料夹、排序、物件数量和封面候选素材 ID |
+| `previewAssetIds` | string[] | PC 可从本机既有素材缓存中选择的封面候选，不要求重新上传 |
+| `requestedAt` | number | iPad 发出同步时的毫秒时间戳 |
+
+接收 `ArchiveView` 后应关闭预览并显示作品档案页。PC 冷启动也应默认显示该页；只有收到 `GroupSelect`、`GroupStateSync`、`GroupSelectAndSync` 或启用 `PreviewMode` 后才进入舞台。
+
 #### GroupCreate
 
 创建一个作品檔案。
@@ -169,7 +237,7 @@ MF|DynamicArt|GroupDelete|{"groupId":"group_a"}
 
 #### GroupSelect
 
-进入或切换到某个作品檔案。
+在作品档案页选中作品并准备进入舞台。接收端收到后可切换到舞台画面；随后控制页会按既有流程发送完整作品状态与必要素材。
 
 ```text
 MF|DynamicArt|GroupSelect|{"groupId":"group_a","name":"森林作品檔案","itemCount":6}

@@ -1,7 +1,12 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { gsap } from 'gsap'
 import { createDynamicPortalWorld } from './DynamicPortalWorld.ts'
 import type { DynamicPortalVariant, DynamicTransitionOrigin } from './types.ts'
+import {
+  waitForContainerMedia,
+  waitForElement,
+  waitForStablePaint
+} from '../../services/transitionPerformance.ts'
 
 interface DynamicPortalTransitionProps {
   origin: DynamicTransitionOrigin
@@ -59,7 +64,7 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
     completeRef.current = onComplete
   }, [onComplete, onSceneSwitch])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current
     const backdrop = backdropRef.current
     const binary = binaryRef.current
@@ -88,10 +93,13 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
     let cancelled = false
     let firstStableFrame = 0
     let secondStableFrame = 0
-    let targetRevealFrame = 0
     let targetRevealTimeline: gsap.core.Timeline | null = null
     let revealedTargetRoot: HTMLElement | null = null
     let revealedTargetElements: HTMLElement[] = []
+    let targetPreparationPromise: Promise<void> | null = null
+    let targetReady = false
+    let targetGateActive = false
+    let mainTimeline: gsap.core.Timeline | null = null
 
     const switchScene = () => {
       if (sceneSwitched) return
@@ -99,44 +107,90 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       sceneSwitchRef.current()
     }
 
-    const revealTarget = () => {
-      switchScene()
-      if (!targetRootRef || !targetRevealSelector) return
+    const getPortalTargetRoot = () => targetRootRef?.current ?? document.querySelector<HTMLElement>(
+      variant === 'dynamic'
+        ? '.page-view-dynamicGroups .dynamic-library-screen'
+        : '.page-view-directSelect .direct-select-screen'
+    )
 
-      const prepareTarget = (attempt = 0) => {
-        targetRevealFrame = window.requestAnimationFrame(() => {
-          if (cancelled) return
-          const targetRoot = targetRootRef.current
-          if (!targetRoot) {
-            if (attempt < 8) prepareTarget(attempt + 1)
-            return
-          }
+    const releaseTargetGate = () => {
+      targetReady = true
+      if (targetGateActive && mainTimeline && !cancelled) {
+        targetGateActive = false
+        mainTimeline.resume()
+      }
+    }
 
-          const targetElements = Array.from(targetRoot.querySelectorAll<HTMLElement>(targetRevealSelector))
-          revealedTargetRoot = targetRoot
-          revealedTargetElements = targetElements
-          gsap.killTweensOf([targetRoot, ...targetElements])
-          gsap.set(targetRoot, { opacity: 0 })
-          gsap.set(targetElements, { opacity: 0, y: 24, scale: 0.975 })
-
-          targetRevealTimeline = gsap.timeline()
-            .to(targetRoot, {
-              opacity: 1,
-              duration: reducedMotion ? 0.28 : 0.66,
-              ease: 'power2.out'
-            }, 0)
-            .to(targetElements, {
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              duration: reducedMotion ? 0.24 : 0.5,
-              stagger: reducedMotion ? 0.025 : 0.055,
-              ease: 'power2.out'
-            }, reducedMotion ? 0.04 : 0.14)
-        })
+    const prepareTarget = async () => {
+      const targetRoot = await waitForElement(getPortalTargetRoot, 1200)
+      if (!targetRoot || cancelled) {
+        releaseTargetGate()
+        return
       }
 
-      prepareTarget()
+      await waitForStablePaint(1)
+      await waitForContainerMedia(targetRoot, {
+        selector: 'img, video',
+        timeoutMs: 1100,
+        maxElements: variant === 'dynamic' ? 12 : 8,
+        visibleOnly: variant === 'dynamic'
+      })
+      await waitForStablePaint(2)
+      if (cancelled) return
+
+      if (!targetRootRef || !targetRevealSelector) {
+        releaseTargetGate()
+        return
+      }
+
+      const targetElements = Array.from(targetRoot.querySelectorAll<HTMLElement>(targetRevealSelector))
+      if (targetElements.length === 0) {
+        releaseTargetGate()
+        return
+      }
+
+      revealedTargetRoot = targetRoot
+      revealedTargetElements = targetElements
+      gsap.killTweensOf([targetRoot, ...targetElements])
+      gsap.set(targetRoot, { opacity: 0 })
+      gsap.set(targetElements, { opacity: 0, y: 24, scale: 0.975 })
+
+      targetRevealTimeline = gsap.timeline({ onComplete: releaseTargetGate })
+        .to(targetRoot, {
+          opacity: 1,
+          duration: reducedMotion ? 0.28 : 0.66,
+          ease: 'power2.out'
+        }, 0)
+        .to(targetElements, {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: reducedMotion ? 0.24 : 0.5,
+          stagger: reducedMotion ? 0.025 : 0.055,
+          ease: 'power2.out'
+        }, reducedMotion ? 0.04 : 0.14)
+      targetRevealTimeline.play(0)
+    }
+
+    const beginTargetPreparation = () => {
+      if (targetPreparationPromise) return
+      targetPreparationPromise = prepareTarget().catch(() => {
+        // A failed optional preview must never prevent the route from
+        // completing. The existing placeholder/fallback remains visible.
+        releaseTargetGate()
+      })
+    }
+
+    const revealTarget = () => {
+      switchScene()
+      beginTargetPreparation()
+    }
+
+    const gateTarget = () => {
+      beginTargetPreparation()
+      if (targetReady || !mainTimeline) return
+      targetGateActive = true
+      mainTimeline.pause()
     }
 
     const finishAfterStablePaint = () => {
@@ -152,17 +206,20 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
 
     if (reducedMotion) {
       gsap.set([canvas, binary, matrix, shardsContainer], { display: 'none' })
-      const reducedTimeline = gsap.timeline({ onComplete: finishAfterStablePaint })
+      const reducedTimeline = gsap.timeline({ paused: true, onComplete: finishAfterStablePaint })
+      mainTimeline = reducedTimeline
+      reducedTimeline
         .to(sourceRoot, { opacity: 0, duration: 0.18, ease: 'power1.out' }, 0)
         .call(revealTarget, [], 0.14)
         .to(backdrop, { opacity: 0, duration: 0.18 }, 0.18)
+        .call(gateTarget, [], 0.3)
         .to({}, { duration: 0.18 }, 0.36)
+      reducedTimeline.play(0)
 
       return () => {
         cancelled = true
         window.cancelAnimationFrame(firstStableFrame)
         window.cancelAnimationFrame(secondStableFrame)
-        window.cancelAnimationFrame(targetRevealFrame)
         reducedTimeline.kill()
         targetRevealTimeline?.kill()
         gsap.set([sourceRoot, sourceCard, ...sourceFadeElements], { clearProps: 'all' })
@@ -175,6 +232,7 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       defaults: { overwrite: 'auto' },
       onComplete: finishAfterStablePaint
     })
+    mainTimeline = timeline
 
     timeline
       .to(canvas, { opacity: 1, duration: 0.16, ease: 'power1.out' }, 0.08)
@@ -216,6 +274,7 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       }, 0.4)
       .to(sourceRoot, { opacity: 0, duration: 0.48, ease: 'power2.in' }, 1.02)
       .call(revealTarget, [], 1.08)
+      .call(gateTarget, [], 1.7)
       .to(worldState, { progress: 0.92, duration: 0.66, ease: 'power2.inOut' }, 1.18)
       .to([binary, matrix], { opacity: 0, duration: 0.42, ease: 'power1.out' }, 1.72)
       .to(canvas, { opacity: 0, duration: 0.42, ease: 'power1.out' }, 1.78)
@@ -227,7 +286,6 @@ const DynamicPortalTransition: React.FC<DynamicPortalTransitionProps> = ({
       cancelled = true
       window.cancelAnimationFrame(firstStableFrame)
       window.cancelAnimationFrame(secondStableFrame)
-      window.cancelAnimationFrame(targetRevealFrame)
       timeline.kill()
       targetRevealTimeline?.kill()
       world?.destroy()

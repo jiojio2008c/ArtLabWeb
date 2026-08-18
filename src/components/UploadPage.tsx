@@ -7,11 +7,12 @@ import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
 import type { UploadMaskOption } from '../services/directUploadThemes.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
+import ArtworkLaunchTransition from './interactiveTransitions/ArtworkLaunchTransition.tsx'
 
 type UploadMode = 'control' | 'direct'
 type ImageGestureMode = 'none' | 'drag' | 'pinch'
 type DirectMediaSource = 'camera' | 'file'
-type DirectUploadPhase = 'idle' | 'focusing' | 'departing' | 'returning'
+type DirectUploadPhase = 'idle' | 'launching' | 'holding' | 'returning'
 type DirectInternalReturnPhase = 'idle' | 'exiting' | 'entering'
 
 type TorchCapabilities = MediaTrackCapabilities & { torch?: boolean }
@@ -20,16 +21,6 @@ type TorchConstraintSet = MediaTrackConstraintSet & { torch: boolean }
 interface Point {
   x: number
   y: number
-}
-
-interface DirectSendGeometry {
-  left: number
-  top: number
-  width: number
-  height: number
-  targetX: number
-  targetY: number
-  targetScale: number
 }
 
 const MIN_UPLOAD_SCALE = 0.4
@@ -54,7 +45,7 @@ const DIRECT_FALLBACK_MASK_OPTIONS: UploadMaskOption[] = [
 interface UploadPageProps {
   rootRef?: RefObject<HTMLElement>
   mode?: UploadMode
-  onUploadSuccess: (data: { name: string; url: string }) => void
+  onUploadSuccess: (data: { name: string; url: string }) => void | Promise<void>
   wsIp: string
   onWsIpChange: (ip: string) => void
   selectedName: string
@@ -65,6 +56,8 @@ interface UploadPageProps {
   shouldCacheArtwork?: boolean
   maskOptions?: UploadMaskOption[]
   directThemeName?: string
+  directThemeAccent?: string
+  directThemeSecondary?: string
   openMaskSelector?: boolean
 }
 
@@ -129,6 +122,8 @@ const UploadPage: React.FC<UploadPageProps> = ({
   shouldCacheArtwork = true,
   maskOptions,
   directThemeName,
+  directThemeAccent = '#76efff',
+  directThemeSecondary = '#3b75ff',
   openMaskSelector = false
 }) => {
   const { t } = useTranslation()
@@ -164,8 +159,6 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [directMediaSource, setDirectMediaSource] = useState<DirectMediaSource>('file')
   const [directUploadPhase, setDirectUploadPhase] = useState<DirectUploadPhase>('idle')
   const [directInternalReturnPhase, setDirectInternalReturnPhase] = useState<DirectInternalReturnPhase>('idle')
-  const [directSendPreviewUrl, setDirectSendPreviewUrl] = useState<string | null>(null)
-  const [directSendGeometry, setDirectSendGeometry] = useState<DirectSendGeometry | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -184,10 +177,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const cameraFlashTimerRef = useRef<number | null>(null)
-  const directTransitionTimerRef = useRef<number | null>(null)
   const directInternalReturnTimerRef = useRef<number | null>(null)
-  const directTransitionStartedAtRef = useRef(0)
-  const directSendPreviewUrlRef = useRef<string | null>(null)
+  const directLaunchPromiseRef = useRef<Promise<void> | null>(null)
+  const directLaunchResolveRef = useRef<(() => void) | null>(null)
+  const directReturnPromiseRef = useRef<Promise<void> | null>(null)
+  const directReturnResolveRef = useRef<(() => void) | null>(null)
 
   const selectedMaskOption = activeMaskOptions.find((option) => option.id === selectedMask) ?? activeMaskOptions[0]
   const selectedMaskLabel = selectedMaskOption ? t(selectedMaskOption.labelKey) : t('upload.mask')
@@ -207,111 +201,44 @@ const UploadPage: React.FC<UploadPageProps> = ({
           : {})
       } as CSSProperties)
     : undefined
-  const directSendStyle = directSendGeometry
-    ? ({
-        '--send-source-left': `${directSendGeometry.left}px`,
-        '--send-source-top': `${directSendGeometry.top}px`,
-        '--send-source-width': `${directSendGeometry.width}px`,
-        '--send-source-height': `${directSendGeometry.height}px`,
-        '--send-target-x': `${directSendGeometry.targetX}px`,
-        '--send-target-y': `${directSendGeometry.targetY}px`,
-        '--send-target-scale': String(directSendGeometry.targetScale)
-      } as CSSProperties)
-    : undefined
-
   useEffect(() => {
     setSelectedMask(defaultMaskId)
   }, [defaultMaskId])
 
-  const replaceDirectSendPreview = (nextUrl: string | null) => {
-    const previousUrl = directSendPreviewUrlRef.current
-    if (previousUrl && previousUrl !== nextUrl) {
-      URL.revokeObjectURL(previousUrl)
-    }
-    directSendPreviewUrlRef.current = nextUrl
-    setDirectSendPreviewUrl(nextUrl)
-  }
-
-  const getDirectSendGeometry = (): DirectSendGeometry => {
-    const source = alignmentContainerRef.current ?? directPreviewImageRef.current
-    const sourceRect = source?.getBoundingClientRect()
-    const screen = source?.closest<HTMLElement>('.ipad-screen')
-    const topbar = screen?.querySelector<HTMLElement>('.ipad-topbar')
-    const screenStyle = screen ? window.getComputedStyle(screen) : null
-    const paddingLeft = Number.parseFloat(screenStyle?.paddingLeft ?? '') || 24
-    const paddingRight = Number.parseFloat(screenStyle?.paddingRight ?? '') || 24
-    const paddingBottom = Number.parseFloat(screenStyle?.paddingBottom ?? '') || 22
-    const fallbackWidth = Math.min(window.innerWidth * 0.58, 720)
-    const width = Math.max(1, sourceRect?.width ?? fallbackWidth)
-    const height = Math.max(1, sourceRect?.height ?? fallbackWidth / (directMaskAspectRatio ?? 1.414))
-    const left = sourceRect?.left ?? (window.innerWidth - width) / 2
-    const top = sourceRect?.top ?? (window.innerHeight - height) / 2
-
-    if (window.innerWidth <= 1080) {
-      return { left, top, width, height, targetX: 0, targetY: 0, targetScale: 0.96 }
-    }
-
-    const resultSummaryWidth = 340
-    const resultGap = 18
-    const resultPanelPadding = 18
-    const resultBottomReserve = 80
-    const resultTop = (topbar?.getBoundingClientRect().bottom ?? 92) + 16
-    const resultPanelWidth = Math.max(1, window.innerWidth - paddingLeft - paddingRight - resultSummaryWidth - resultGap)
-    const resultPanelHeight = Math.max(1, window.innerHeight - resultTop - paddingBottom - resultBottomReserve)
-    const resultInnerWidth = Math.max(1, resultPanelWidth - resultPanelPadding * 2)
-    const resultInnerHeight = Math.max(1, resultPanelHeight - resultPanelPadding * 2)
-    const targetScale = Math.min(resultInnerWidth / width, resultInnerHeight / height, 1)
-    const targetWidth = width * targetScale
-    const targetHeight = height * targetScale
-    const targetLeft = paddingLeft + resultPanelPadding + (resultInnerWidth - targetWidth) / 2
-    const targetTop = resultTop + resultPanelPadding + (resultInnerHeight - targetHeight) / 2
-
-    return {
-      left,
-      top,
-      width,
-      height,
-      targetX: targetLeft - left,
-      targetY: targetTop - top,
-      targetScale
-    }
-  }
-
-  const waitForDirectTransition = (milliseconds: number) => new Promise<void>((resolve) => {
-    if (directTransitionTimerRef.current !== null) {
-      window.clearTimeout(directTransitionTimerRef.current)
-    }
-    directTransitionTimerRef.current = window.setTimeout(() => {
-      directTransitionTimerRef.current = null
-      resolve()
-    }, Math.max(0, milliseconds))
-  })
-
   const startDirectSendTransition = () => {
     playUiSound('artwork-send')
-    replaceDirectSendPreview(null)
-    setDirectSendGeometry(getDirectSendGeometry())
-    directTransitionStartedAtRef.current = performance.now()
-    setDirectUploadPhase('focusing')
+    directReturnResolveRef.current?.()
+    directReturnResolveRef.current = null
+    directReturnPromiseRef.current = null
+    directLaunchPromiseRef.current = new Promise<void>((resolve) => {
+      directLaunchResolveRef.current = resolve
+    })
+    setDirectUploadPhase('launching')
   }
 
   const finishDirectSendTransition = async () => {
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const minimumFocusTime = reducedMotion ? 80 : 300
-    const departureTime = reducedMotion ? 180 : 700
-    const elapsed = performance.now() - directTransitionStartedAtRef.current
-
-    if (elapsed < minimumFocusTime) {
-      await waitForDirectTransition(minimumFocusTime - elapsed)
-    }
-
-    setDirectUploadPhase('departing')
-    await waitForDirectTransition(departureTime)
+    await directLaunchPromiseRef.current
   }
 
   const reverseDirectSendTransition = async () => {
+    directLaunchResolveRef.current?.()
+    directLaunchResolveRef.current = null
+    directReturnPromiseRef.current = new Promise<void>((resolve) => {
+      directReturnResolveRef.current = resolve
+    })
     setDirectUploadPhase('returning')
-    await waitForDirectTransition(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 100 : 240)
+    await directReturnPromiseRef.current
+  }
+
+  const handleDirectLaunchComplete = () => {
+    setDirectUploadPhase('holding')
+    directLaunchResolveRef.current?.()
+    directLaunchResolveRef.current = null
+  }
+
+  const handleDirectLaunchReturnComplete = () => {
+    directReturnResolveRef.current?.()
+    directReturnResolveRef.current = null
   }
 
   useEffect(() => {
@@ -397,12 +324,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
       if (cameraFlashTimerRef.current !== null) {
         window.clearTimeout(cameraFlashTimerRef.current)
       }
-      if (directTransitionTimerRef.current !== null) {
-        window.clearTimeout(directTransitionTimerRef.current)
-      }
       if (directInternalReturnTimerRef.current !== null) {
         window.clearTimeout(directInternalReturnTimerRef.current)
       }
+      directLaunchResolveRef.current?.()
+      directReturnResolveRef.current?.()
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = null
 
@@ -713,8 +639,6 @@ const UploadPage: React.FC<UploadPageProps> = ({
     setUploadError(null)
     setUploadSuccess(null)
     setIsDragging(false)
-    replaceDirectSendPreview(null)
-    setDirectSendGeometry(null)
     setDirectUploadPhase('idle')
 
     if (fileInputRef.current) {
@@ -1057,7 +981,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
       await saveThumbnailForObject(wsIp.trim(), selectedObjectIndex, url, name, blob)
     }
 
-    onUploadSuccess({ name, url })
+    await onUploadSuccess({ name, url })
   }
 
   const handleScreenshotAndUpload = async () => {
@@ -1143,10 +1067,6 @@ const UploadPage: React.FC<UploadPageProps> = ({
       if (!blob) throw new Error('Screenshot generation failed')
 
       const processedPreviewUrl = URL.createObjectURL(blob)
-      if (isDirectMode) {
-        replaceDirectSendPreview(processedPreviewUrl)
-      }
-
       const processedName = `${selectedFile?.name.replace(/\.[^/.]+$/, '') || 'processed_image'}.png`
       const processedFile = new File([blob], processedName, { type: 'image/png' })
 
@@ -1168,7 +1088,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
         if (shouldCacheArtwork) {
           await saveThumbnailForObject(wsIp.trim(), selectedObjectIndex, response.data.media_url, processedName)
         }
-        onUploadSuccess({ name: processedName, url: response.data.media_url })
+        await onUploadSuccess({ name: processedName, url: response.data.media_url })
       }
 
       if (isDirectMode) {
@@ -1193,13 +1113,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
         setUploadError('upload.imageNetworkFailed')
       }
     } finally {
-      if (directTransitionTimerRef.current !== null) {
-        window.clearTimeout(directTransitionTimerRef.current)
-        directTransitionTimerRef.current = null
-      }
       setIsUploading(false)
       setDirectUploadPhase('idle')
-      setDirectSendGeometry(null)
+      directLaunchPromiseRef.current = null
+      directReturnPromiseRef.current = null
       if (!isDirectMode) {
         setShowMaskPanel(false)
       }
@@ -1237,12 +1154,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
         if (shouldCacheArtwork) {
           await saveThumbnailForObject(wsIp.trim(), selectedObjectIndex, response.data.media_url, selectedFile.name)
         }
-        onUploadSuccess({ name: selectedFile.name, url: response.data.media_url })
+        await onUploadSuccess({ name: selectedFile.name, url: response.data.media_url })
       }
 
       if (isDirectMode) {
         directFilePreviewUrl = URL.createObjectURL(selectedFile)
-        replaceDirectSendPreview(directFilePreviewUrl)
         sendDirectHttpImage(selectedFile)
         await finishDirectSendTransition()
       } else {
@@ -1268,13 +1184,10 @@ const UploadPage: React.FC<UploadPageProps> = ({
         setUploadError('upload.ipNetworkFailed')
       }
     } finally {
-      if (directTransitionTimerRef.current !== null) {
-        window.clearTimeout(directTransitionTimerRef.current)
-        directTransitionTimerRef.current = null
-      }
       setIsUploading(false)
       setDirectUploadPhase('idle')
-      setDirectSendGeometry(null)
+      directLaunchPromiseRef.current = null
+      directReturnPromiseRef.current = null
     }
   }
 
@@ -1323,33 +1236,21 @@ const UploadPage: React.FC<UploadPageProps> = ({
         </div>
       )}
 
-      {isDirectMode && isUploading && (
-        <div
-          className={`direct-send-overlay is-${directUploadPhase}`}
-          aria-hidden="true"
-        >
-          <div className="direct-send-scrim" />
-          <div className="direct-send-artwork" style={directSendStyle}>
-            <div className="direct-send-artwork-frame">
-              <img
-                src={directSendPreviewUrl ?? previewUrl ?? ''}
-                className={`direct-send-artwork-image ${directSendPreviewUrl ? 'is-composited' : 'is-source'}`}
-                style={!directSendPreviewUrl
-                  ? { transform: `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})` }
-                  : undefined}
-                alt=""
-              />
-              {!directSendPreviewUrl && selectedMaskOption?.src && (
-                <img
-                  src={selectedMaskOption.src}
-                  className="direct-send-artwork-mask"
-                  alt=""
-                />
-              )}
-              <span className="direct-send-light-sweep" />
-            </div>
-          </div>
-        </div>
+      {isDirectMode && isUploading && directUploadPhase !== 'idle' && previewUrl && (
+        <ArtworkLaunchTransition
+          sourceRef={showMaskPanel ? alignmentContainerRef : directPreviewImageRef}
+          sourceUrl={previewUrl}
+          maskUrl={showMaskPanel ? selectedMaskOption?.src : undefined}
+          imageTransform={showMaskPanel
+            ? `translate(-50%, -50%) translate(${imagePosition.x}px, ${imagePosition.y}px) scale(${imageScale})`
+            : undefined}
+          imageMode={showMaskPanel ? 'positioned' : 'contain'}
+          accent={directThemeAccent}
+          secondary={directThemeSecondary}
+          returning={directUploadPhase === 'returning'}
+          onComplete={handleDirectLaunchComplete}
+          onReturnComplete={handleDirectLaunchReturnComplete}
+        />
       )}
 
       <input

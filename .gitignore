@@ -1,5 +1,11 @@
 desktop-runtime/node_modules/
 desktop-runtime/release*/
 node_modules/
+.codex-build/
+.codex-panel-build/
+test-artifacts/
+test-results/
+*.log
+desktop-runtime/archive-view-check.png
 .env.local
 .env.*.local

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import HomeScene from './components/HomeScene.tsx'
+import KeyboardControllerPrototype from './components/KeyboardControllerPrototype.tsx'
 import InteractiveThemeScene from './components/InteractiveThemeScene.tsx'
 import InteractiveUploadScene from './components/InteractiveUploadScene.tsx'
 import LibraryScene from './components/LibraryScene.tsx'
@@ -18,7 +19,7 @@ import type {
   TransitionMode
 } from './types.ts'
 
-const App = () => {
+const PortalPrototypeApp = () => {
   const [view, setView] = useState<PreviewView>('home')
   const [transitionMode, setTransitionMode] = useState<TransitionMode>('shared')
   const [interactiveCardSize, setInteractiveCardSize] = useState<InteractiveCardSize>('compact')
@@ -267,6 +268,12 @@ const App = () => {
       </aside>
     </main>
   )
+}
+
+const App = () => {
+  const prototype = new URLSearchParams(window.location.search).get('prototype')
+  if (prototype === 'keyboard') return <KeyboardControllerPrototype />
+  return <PortalPrototypeApp />
 }
 
 export default App

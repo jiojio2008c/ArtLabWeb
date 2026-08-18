@@ -20,6 +20,122 @@ body {
   transform-origin: center;
 }
 
+.archive-view {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  color: #172522;
+  background-color: #69bbd6;
+  background-image:
+    linear-gradient(180deg, rgba(12, 34, 38, 0.08), rgba(255, 255, 255, 0.06) 42%, rgba(15, 39, 31, 0.18)),
+    url("./assets/magic-floor-background.webp");
+  background-position: center, center bottom;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 260ms ease, visibility 0s linear 260ms;
+}
+
+.archive-view::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 28%, transparent 72%, rgba(255, 255, 255, 0.08)),
+    linear-gradient(180deg, rgba(9, 31, 36, 0.08), transparent 34%, rgba(12, 30, 24, 0.12));
+}
+
+.display-root.is-archive-view .archive-view {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 260ms ease;
+}
+
+.display-root.is-archive-view .stage-canvas,
+.display-root.is-archive-view #stage,
+.display-root.is-archive-view .status-panel {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.archive-mirror-fallback,
+.archive-source-image,
+.archive-mirror-image,
+.archive-portal-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.archive-source-image {
+  z-index: 4;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  background: #69bbd6;
+}
+
+.archive-mirror-fallback.has-source .archive-source-image {
+  opacity: 1;
+}
+
+.archive-mirror-fallback.has-source > :not(.archive-source-image) {
+  visibility: hidden;
+}
+
+.archive-mirror-fallback {
+  z-index: 1;
+  overflow: hidden;
+  transition: opacity 420ms ease;
+}
+
+.archive-view.is-transitioning .archive-mirror-fallback {
+  filter: saturate(0.45) brightness(0.68);
+}
+
+.archive-mirror-image {
+  z-index: 2;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  background: #dbecef;
+  transition: opacity 520ms ease;
+}
+
+.archive-view.has-snapshot .archive-mirror-image {
+  opacity: 1;
+}
+
+.archive-view.has-snapshot:not(.is-transitioning) .archive-mirror-fallback {
+  opacity: 0;
+}
+
+.archive-view.is-transitioning.has-snapshot .archive-mirror-image {
+  opacity: clamp(0, calc((var(--archive-transition-progress) - 0.46) * 2.1), 1);
+}
+
+.archive-portal-canvas {
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.archive-portal-fallback-canvas {
+  z-index: 4;
+}
+
+.archive-portal-canvas.is-active {
+  opacity: 1;
+}
+
 .display-root.is-horizontal-flipped {
   transform: scaleX(-1);
 }
@@ -39,6 +155,12 @@ body {
   display: block;
   width: 100vw;
   height: 100vh;
+}
+
+.stage-canvas,
+#stage,
+.status-panel {
+  transition: opacity 220ms ease, visibility 0s linear 220ms;
 }
 
 .background-stage {
@@ -79,6 +201,10 @@ body {
 .status-panel.is-hidden {
   opacity: 0;
   transform: translateY(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .archive-view, .stage-canvas, #stage, .status-panel { transition-duration: 80ms; }
 }
 
 .brand {

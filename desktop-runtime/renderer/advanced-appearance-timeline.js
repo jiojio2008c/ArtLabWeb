@@ -1,0 +1,329 @@
+export const DYNAMIC_LINKED_APPEARANCE_MODES = Object.freeze(['none', 'showAfter', 'hideAfter'])
+
+export const APPEARANCE_FADE_DURATION_MS = 420
+export const APPEARANCE_DROP_DURATION_MS = 620
+export const APPEARANCE_TRACK_SLIDE_DURATION_MS = 560
+export const MAX_LINKED_APPEARANCE_DELAY_MS = 600000
+
+const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value))
+
+const getItemId = (item) => String(item?.id ?? item?.itemId ?? '')
+
+export const normalizeDynamicAppearAnimation = (value) => (
+  value === 'drop' || value === 'trackSlide' ? value : 'none'
+)
+
+export const getDynamicAppearanceDurationMs = (appearAnimation) => {
+  const normalized = normalizeDynamicAppearAnimation(appearAnimation)
+  if (normalized === 'drop') return APPEARANCE_DROP_DURATION_MS
+  if (normalized === 'trackSlide') return APPEARANCE_TRACK_SLIDE_DURATION_MS
+  return APPEARANCE_FADE_DURATION_MS
+}
+
+export const normalizeDynamicLinkedAppearance = (
+  value,
+  itemId = '',
+  validItemIds
+) => {
+  if (!value || typeof value !== 'object') return undefined
+
+  const triggerItemId = String(value.triggerItemId ?? '').trim()
+  const mode = value.mode === 'showAfter' || value.mode === 'hideAfter'
+    ? value.mode
+    : 'none'
+  if (!triggerItemId || triggerItemId === itemId || mode === 'none') return undefined
+  if (validItemIds && !validItemIds.has(triggerItemId)) return undefined
+
+  const delayValue = Number(value.delayMs)
+  const delayMs = clamp(
+    Number.isFinite(delayValue) ? Math.round(delayValue) : 0,
+    0,
+    MAX_LINKED_APPEARANCE_DELAY_MS
+  )
+  return { triggerItemId, mode, delayMs }
+}
+
+const getNormalizedLinkMap = (items) => {
+  const validItemIds = new Set(items.map(getItemId).filter(Boolean))
+  return new Map(items.map((item) => {
+    const itemId = getItemId(item)
+    return [
+      itemId,
+      normalizeDynamicLinkedAppearance(item?.linkedAppearance, itemId, validItemIds)
+    ]
+  }).filter(([itemId, link]) => itemId && link))
+}
+
+const linkPathHasCycle = (itemId, linkByItemId) => {
+  const visited = new Set([itemId])
+  let currentId = itemId
+
+  while (linkByItemId.has(currentId)) {
+    const triggerItemId = linkByItemId.get(currentId).triggerItemId
+    if (visited.has(triggerItemId)) return true
+    visited.add(triggerItemId)
+    currentId = triggerItemId
+  }
+  return false
+}
+
+const getValidNormalizedLinkMap = (items) => {
+  const candidateLinkByItemId = getNormalizedLinkMap(items)
+  return new Map(
+    Array.from(candidateLinkByItemId.entries()).filter(([itemId]) => (
+      !linkPathHasCycle(itemId, candidateLinkByItemId)
+    ))
+  )
+}
+
+export const isDynamicItemBoundToBackground = (item, backgroundId = '') => (
+  !Array.isArray(item?.backgroundIds)
+  || item.backgroundIds.length === 0
+  || item.backgroundIds.includes(backgroundId)
+)
+
+const normalizeBackgroundIds = (value) => (
+  Array.isArray(value)
+    ? Array.from(new Set(value.map((backgroundId) => String(backgroundId ?? '').trim()).filter(Boolean)))
+    : []
+)
+
+const backgroundIdsMatch = (left, right) => (
+  left.length === right.length
+  && left.every((backgroundId, index) => backgroundId === right[index])
+)
+
+const getEffectiveBackgroundState = (items) => {
+  const itemById = new Map(items.map((item) => [getItemId(item), item]).filter(([itemId]) => itemId))
+  const validLinkByTargetId = getValidNormalizedLinkMap(items)
+  const effectiveIdsByItemId = new Map()
+
+  const resolveBackgroundIds = (itemId, visited = new Set()) => {
+    if (effectiveIdsByItemId.has(itemId)) return effectiveIdsByItemId.get(itemId)
+
+    const item = itemById.get(itemId)
+    if (!item) return []
+
+    const ownBackgroundIds = normalizeBackgroundIds(item.backgroundIds)
+    if (visited.has(itemId)) return ownBackgroundIds
+
+    const link = validLinkByTargetId.get(itemId)
+    const inheritedBackgroundIds = link && itemById.has(link.triggerItemId)
+      ? resolveBackgroundIds(link.triggerItemId, new Set([...visited, itemId]))
+      : ownBackgroundIds
+    effectiveIdsByItemId.set(itemId, inheritedBackgroundIds)
+    return inheritedBackgroundIds
+  }
+
+  itemById.forEach((_item, itemId) => resolveBackgroundIds(itemId))
+  return { effectiveIdsByItemId, validLinkByTargetId }
+}
+
+export const getDynamicEffectiveBackgroundIds = (items = [], itemId = '') => {
+  const validItems = Array.isArray(items) ? items.filter((item) => getItemId(item)) : []
+  const { effectiveIdsByItemId } = getEffectiveBackgroundState(validItems)
+  return [...(effectiveIdsByItemId.get(String(itemId ?? '')) ?? [])]
+}
+
+export const synchronizeDynamicLinkedBackgrounds = (items = []) => {
+  const sourceItems = Array.isArray(items) ? items : []
+  const validItems = sourceItems.filter((item) => getItemId(item))
+  const { effectiveIdsByItemId, validLinkByTargetId } = getEffectiveBackgroundState(validItems)
+
+  return sourceItems.map((item) => {
+    const itemId = getItemId(item)
+    if (!itemId || !validLinkByTargetId.has(itemId)) return item
+
+    const inheritedBackgroundIds = [...(effectiveIdsByItemId.get(itemId) ?? [])]
+    const currentBackgroundIds = normalizeBackgroundIds(item.backgroundIds)
+    return backgroundIdsMatch(currentBackgroundIds, inheritedBackgroundIds)
+      ? item
+      : { ...item, backgroundIds: inheritedBackgroundIds }
+  })
+}
+
+export const getDynamicPlaybackItemsForBackground = (items = [], backgroundId = '') => {
+  const validItems = Array.isArray(items) ? items.filter((item) => getItemId(item)) : []
+  const { effectiveIdsByItemId } = getEffectiveBackgroundState(validItems)
+
+  return validItems.filter((item) => {
+    const effectiveBackgroundIds = effectiveIdsByItemId.get(getItemId(item)) ?? []
+    return effectiveBackgroundIds.length === 0 || effectiveBackgroundIds.includes(backgroundId)
+  })
+}
+
+export const wouldCreateDynamicLinkedAppearanceCycle = (
+  items,
+  itemId,
+  triggerItemId
+) => {
+  if (!itemId || !triggerItemId || itemId === triggerItemId) return true
+
+  const linkByItemId = getNormalizedLinkMap(items)
+  linkByItemId.set(itemId, {
+    triggerItemId,
+    mode: 'showAfter',
+    delayMs: 0
+  })
+  return linkPathHasCycle(itemId, linkByItemId)
+}
+
+export const buildDynamicAppearanceTimeline = ({
+  items = [],
+  appearMode = 'all',
+  intervalMs = 800,
+  appearAnimation = 'none',
+  activeItemIds = []
+} = {}) => {
+  const normalizedAnimation = normalizeDynamicAppearAnimation(appearAnimation)
+  const entranceDurationMs = getDynamicAppearanceDurationMs(normalizedAnimation)
+  const normalizedIntervalMs = clamp(Number(intervalMs) || 800, 100, 5000)
+  const itemById = new Map(items.map((item) => [getItemId(item), item]).filter(([itemId]) => itemId))
+  const alreadyActiveItemIds = activeItemIds instanceof Set
+    ? activeItemIds
+    : new Set(activeItemIds)
+  const validLinkByItemId = getValidNormalizedLinkMap(items)
+  const normalItemIds = items
+    .map(getItemId)
+    .filter((itemId) => (
+      itemId
+      && !alreadyActiveItemIds.has(itemId)
+      && !validLinkByItemId.has(itemId)
+    ))
+  const normalIndexByItemId = new Map(normalItemIds.map((itemId, index) => [itemId, index]))
+  const timelineByItemId = new Map()
+
+  const resolveSchedule = (itemId) => {
+    const existing = timelineByItemId.get(itemId)
+    if (existing) return existing
+
+    const item = itemById.get(itemId)
+    if (!item) return undefined
+
+    const link = validLinkByItemId.get(itemId)
+
+    if (alreadyActiveItemIds.has(itemId) && !link) {
+      const schedule = {
+        itemId,
+        kind: 'normal',
+        linked: false,
+        triggerItemId: null,
+        delayMs: 0,
+        appearAnimation: 'none',
+        entranceStartMs: 0,
+        entranceDurationMs: 0,
+        appearanceCompleteMs: 0,
+        activeStartMs: 0,
+        hideStartMs: null,
+        hideCompleteMs: null,
+        sequenceIndex: -1
+      }
+      timelineByItemId.set(itemId, schedule)
+      return schedule
+    }
+
+    if (link) {
+      const triggerSchedule = resolveSchedule(link.triggerItemId)
+      if (triggerSchedule) {
+        if (link.mode === 'showAfter') {
+          const entranceStartMs = triggerSchedule.appearanceCompleteMs + link.delayMs
+          const schedule = {
+            itemId,
+            kind: 'showAfter',
+            linked: true,
+            triggerItemId: link.triggerItemId,
+            delayMs: link.delayMs,
+            appearAnimation: 'none',
+            entranceStartMs,
+            entranceDurationMs: APPEARANCE_FADE_DURATION_MS,
+            appearanceCompleteMs: entranceStartMs + APPEARANCE_FADE_DURATION_MS,
+            activeStartMs: entranceStartMs,
+            hideStartMs: null,
+            hideCompleteMs: null,
+            sequenceIndex: -1
+          }
+          timelineByItemId.set(itemId, schedule)
+          return schedule
+        }
+
+        const hideStartMs = triggerSchedule.appearanceCompleteMs + link.delayMs
+        const schedule = {
+          itemId,
+          kind: 'hideAfter',
+          linked: true,
+          triggerItemId: link.triggerItemId,
+          delayMs: link.delayMs,
+          appearAnimation: 'none',
+          entranceStartMs: 0,
+          entranceDurationMs: 0,
+          appearanceCompleteMs: 0,
+          activeStartMs: 0,
+          hideStartMs,
+          hideCompleteMs: hideStartMs + APPEARANCE_FADE_DURATION_MS,
+          sequenceIndex: -1
+        }
+        timelineByItemId.set(itemId, schedule)
+        return schedule
+      }
+    }
+
+    const sequenceIndex = normalIndexByItemId.get(itemId) ?? 0
+    const entranceStartMs = appearMode === 'sequence'
+      ? sequenceIndex * normalizedIntervalMs
+      : 0
+    const schedule = {
+      itemId,
+      kind: 'normal',
+      linked: false,
+      triggerItemId: null,
+      delayMs: 0,
+      appearAnimation: normalizedAnimation,
+      entranceStartMs,
+      entranceDurationMs,
+      appearanceCompleteMs: entranceStartMs + entranceDurationMs,
+      activeStartMs: entranceStartMs,
+      hideStartMs: null,
+      hideCompleteMs: null,
+      sequenceIndex
+    }
+    timelineByItemId.set(itemId, schedule)
+    return schedule
+  }
+
+  items.forEach((item) => resolveSchedule(getItemId(item)))
+  return Object.fromEntries(timelineByItemId)
+}
+
+const smoothstep = (value) => {
+  const ratio = clamp(value, 0, 1)
+  return ratio * ratio * (3 - 2 * ratio)
+}
+
+export const sampleDynamicAppearanceTimeline = (schedule, elapsedMs) => {
+  if (!schedule) {
+    return { alpha: 1, active: true, interactive: true, animationElapsedMs: Math.max(0, elapsedMs) }
+  }
+
+  const elapsed = Number(elapsedMs) || 0
+  if (schedule.kind === 'hideAfter') {
+    const alpha = schedule.hideStartMs === null
+      ? 1
+      : 1 - smoothstep((elapsed - schedule.hideStartMs) / APPEARANCE_FADE_DURATION_MS)
+    return {
+      alpha,
+      active: elapsed >= 0 && alpha > 0.001,
+      interactive: alpha > 0.04,
+      animationElapsedMs: Math.max(0, elapsed)
+    }
+  }
+
+  const alpha = schedule.entranceDurationMs <= 0
+    ? (elapsed >= schedule.entranceStartMs ? 1 : 0)
+    : smoothstep((elapsed - schedule.entranceStartMs) / schedule.entranceDurationMs)
+  return {
+    alpha,
+    active: elapsed >= schedule.activeStartMs,
+    interactive: alpha > 0.04,
+    animationElapsedMs: Math.max(0, elapsed - schedule.activeStartMs)
+  }
+}

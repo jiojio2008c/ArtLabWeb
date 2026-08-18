@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { setDynamicBackground, type DynamicBackground, type DynamicGroup } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+import { buildGroupSyncPayload } from '../services/dynamicArtReceiverSync.ts'
 
 interface DynamicBackgroundPageProps {
   wsIp: string
@@ -31,37 +32,6 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
   useEffect(() => {
     setUploadedGroup(undefined)
   }, [group.id])
-
-  const buildGroupSyncPayload = (nextGroup: DynamicGroup) => {
-    const backgrounds = getBackgrounds(nextGroup)
-    const activeBackground = getActiveBackground(nextGroup)
-
-    return {
-      groupId: nextGroup.id,
-      name: nextGroup.name,
-      appearMode: nextGroup.appearMode,
-      appearIntervalMs: nextGroup.appearIntervalMs,
-      activeBackgroundId: nextGroup.activeBackgroundId ?? activeBackground?.id,
-      background: toBackgroundPayload(activeBackground),
-      backgrounds: backgrounds.map((background) => toBackgroundPayload(background)),
-      items: nextGroup.items.map((item) => ({
-        itemId: item.id,
-        assetId: item.media.id,
-        gridIndex: item.gridIndex,
-        position: item.position,
-        scale: item.scale,
-        rotation: item.rotation,
-        flipX: item.flipX ?? false,
-        flipY: item.flipY ?? false,
-        animationId: item.animationId,
-        moveMode: item.moveMode,
-        movePercent: item.movePercent,
-        moveSpeed: item.moveSpeed,
-        moveTrack: item.moveTrack,
-        order: item.order
-      }))
-    }
-  }
 
   const syncGroupToPc = (nextGroup: DynamicGroup, eventName: 'GroupStateSync' | 'GroupSelectAndSync' = 'GroupStateSync') => {
     sendDynamicEvent(wsIp, dynamicPort, eventName, buildGroupSyncPayload(nextGroup))
@@ -181,21 +151,5 @@ const getActiveBackground = (group: DynamicGroup): DynamicBackground | undefined
     ?? group.backgrounds?.find((background) => background.id === group.activeBackgroundId)
     ?? group.backgrounds?.[0]
 }
-
-const getBackgrounds = (group: DynamicGroup) => {
-  if (group.backgrounds?.length) return group.backgrounds
-  return group.background ? [group.background] : []
-}
-
-const toBackgroundPayload = (background?: DynamicBackground) => (
-  background
-    ? {
-        assetId: background.id,
-        name: background.name,
-        mediaType: background.type,
-        mimeType: background.mimeType
-      }
-    : null
-)
 
 export default DynamicBackgroundPage

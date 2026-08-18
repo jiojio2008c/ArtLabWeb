@@ -9,12 +9,19 @@ import {
   normalizeDynamicAnimationMode,
   type DynamicAnimationMode
 } from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
+import {
+  normalizeDynamicAppearAnimation,
+  normalizeDynamicLinkedAppearance,
+  synchronizeDynamicLinkedBackgrounds,
+  wouldCreateDynamicLinkedAppearanceCycle
+} from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
 
 const DYNAMIC_GROUPS_KEY = 'magicfloor_dynamic_groups_v1'
 const DYNAMIC_DB_NAME = 'magicfloor_dynamic_media'
 const DYNAMIC_DB_VERSION = 1
 const DYNAMIC_STORE_NAME = 'media'
 const DYNAMIC_DIRECTORY = Directory.Data
+const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 3
 const MAX_DYNAMIC_ITEMS_PER_GROUP = 30
 const GRID_COLUMNS = 16
 const GRID_ROWS = 9
@@ -27,11 +34,23 @@ const MAX_DYNAMIC_BACKGROUND_INTERVAL_MS = 600000
 const DEFAULT_DYNAMIC_MOVE_SPEED = 50
 
 type DynamicMediaType = 'image' | 'video'
+type DynamicStoredMediaType = DynamicMediaType | 'audio'
 type DynamicMoveMode = 'none' | 'verticalWave' | 'left' | 'right' | 'orbit' | 'random'
 type DynamicMoveTrack = 'top' | 'middle' | 'bottom'
 type DynamicAppearMode = 'sequence' | 'all'
+type DynamicAppearAnimation = 'none' | 'drop' | 'trackSlide'
 type DynamicBackgroundPlayMode = 'fixed' | 'random' | 'sequence'
-type DynamicCopyField = 'motion' | 'animation' | 'size' | 'deform'
+type DynamicBackgroundTransition = 'none' | 'curtain' | 'cameraFlash' | 'shadowPlay'
+type DynamicTargetMode = 'loop' | 'target'
+type DynamicItemAudioTrigger = 'appearance' | 'appearanceDelay' | 'targetArrival'
+type DynamicLinkedAppearanceMode = 'none' | 'showAfter' | 'hideAfter'
+type DynamicCopyField = 'motion' | 'animation' | 'size' | 'deform' | 'audio' | 'background' | 'linkage'
+
+interface DynamicLinkedAppearance {
+  triggerItemId: string
+  mode: Exclude<DynamicLinkedAppearanceMode, 'none'>
+  delayMs: number
+}
 
 interface DynamicMedia {
   id: string
@@ -46,7 +65,17 @@ interface DynamicMedia {
   updatedAt: number
 }
 
-interface DynamicBackground extends DynamicMedia {}
+interface DynamicAudioMedia extends Omit<DynamicMedia, 'type'> {
+  type: 'audio'
+  durationMs?: number
+}
+
+type DynamicStoredMedia = DynamicMedia | DynamicAudioMedia
+
+interface DynamicBackground extends DynamicMedia {
+  bgmAudioId?: string
+  backgroundTransition?: DynamicBackgroundTransition
+}
 
 interface DynamicItem {
   id: string
@@ -68,6 +97,17 @@ interface DynamicItem {
   movePercent: number
   moveSpeed: number
   moveTrack: DynamicMoveTrack
+  targetMode?: DynamicTargetMode
+  targetLoop?: boolean
+  targetPosition?: {
+    x: number
+    y: number
+  }
+  audioId?: string
+  audioTrigger?: DynamicItemAudioTrigger
+  audioDelayMs?: number
+  linkedAppearance?: DynamicLinkedAppearance
+  backgroundIds?: string[]
   isVisible: boolean
   order: number
   createdAt: number
@@ -87,6 +127,10 @@ interface DynamicGroup {
   backgroundIntervalMs: number
   appearMode: DynamicAppearMode
   appearIntervalMs: number
+  appearAnimation?: DynamicAppearAnimation
+  backgroundTransition?: DynamicBackgroundTransition
+  audioLibrary?: DynamicAudioMedia[]
+  linkedAppearanceModelVersion?: number
   items: DynamicItem[]
   createdAt: number
   updatedAt: number
@@ -100,7 +144,7 @@ interface DynamicGroupOrganization {
 interface DynamicMediaRecord {
   key: string
   name: string
-  type: DynamicMediaType
+  type: DynamicStoredMediaType
   mimeType: string
   blob: Blob
   width?: number
@@ -117,7 +161,37 @@ const generateId = (prefix: string) => {
 
 const safePathSegment = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'default'
 
-const getMediaType = (file: File): DynamicMediaType => file.type.startsWith('video/') ? 'video' : 'image'
+const getMediaType = (file: File): DynamicMediaType => {
+  if (file.type.startsWith('video/')) return 'video'
+  return 'image'
+}
+
+const getStoredMediaType = (file: File): DynamicStoredMediaType => (
+  file.type.startsWith('audio/') ? 'audio' : getMediaType(file)
+)
+
+const DYNAMIC_AUDIO_MIME_BY_EXTENSION: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg'
+}
+
+const normalizeDynamicAudioFile = (file: File): File | undefined => {
+  const extension = file.name.match(/\.([^.]+)$/)?.[1]?.toLowerCase() ?? ''
+  const normalizedMimeType = file.type.trim().toLowerCase().split(';', 1)[0]
+  const extensionMimeType = DYNAMIC_AUDIO_MIME_BY_EXTENSION[extension]
+
+  if (!extensionMimeType && !normalizedMimeType.startsWith('audio/')) return undefined
+
+  const targetMimeType = extensionMimeType ?? normalizedMimeType
+  if (targetMimeType === file.type) return file
+
+  return new File([file], file.name, {
+    type: targetMimeType,
+    lastModified: file.lastModified
+  })
+}
 
 const getFileExtension = (file: File) => {
   const extension = file.name.split('.').pop()?.toLowerCase()
@@ -126,6 +200,11 @@ const getFileExtension = (file: File) => {
   if (file.type === 'image/jpeg') return 'jpg'
   if (file.type === 'image/webp') return 'webp'
   if (file.type === 'image/gif') return 'gif'
+  if (file.type === 'audio/mpeg') return 'mp3'
+  if (file.type === 'audio/mp4') return 'm4a'
+  if (file.type === 'audio/wav' || file.type === 'audio/x-wav') return 'wav'
+  if (file.type === 'audio/ogg') return 'ogg'
+  if (file.type.startsWith('audio/')) return 'm4a'
   if (file.type === 'video/quicktime') return 'mov'
   if (file.type.startsWith('video/')) return 'mp4'
   return 'png'
@@ -172,6 +251,133 @@ const getDynamicBackgroundPlayModeFromGroup = (group: DynamicGroup): DynamicBack
     return group.backgroundPlayMode
   }
   return 'fixed'
+}
+
+const getDynamicAppearAnimationFromGroup = (group: DynamicGroup): DynamicAppearAnimation => {
+  return normalizeDynamicAppearAnimation(group.appearAnimation)
+}
+
+const getDynamicBackgroundTransitionFromGroup = (group: DynamicGroup): DynamicBackgroundTransition => {
+  if (
+    group.backgroundTransition === 'curtain'
+    || group.backgroundTransition === 'cameraFlash'
+    || group.backgroundTransition === 'shadowPlay'
+  ) {
+    return group.backgroundTransition
+  }
+  return 'none'
+}
+
+const getDynamicBackgroundTransitionFromBackground = (
+  background: DynamicBackground,
+  fallback: DynamicBackgroundTransition = 'none'
+): DynamicBackgroundTransition => {
+  if (
+    background.backgroundTransition === 'curtain'
+    || background.backgroundTransition === 'cameraFlash'
+    || background.backgroundTransition === 'shadowPlay'
+  ) {
+    return background.backgroundTransition
+  }
+  return background.backgroundTransition === 'none' ? 'none' : fallback
+}
+
+const getDynamicTargetModeFromItem = (item: DynamicItem): DynamicTargetMode => (
+  item.targetMode === 'target' && item.targetPosition ? 'target' : 'loop'
+)
+
+const getDynamicAudioTriggerFromItem = (item: DynamicItem): DynamicItemAudioTrigger => {
+  if (item.audioTrigger === 'appearanceDelay' || item.audioTrigger === 'targetArrival') {
+    return item.audioTrigger
+  }
+  return 'appearance'
+}
+
+const normalizeDynamicPosition = (position?: { x: number; y: number }) => {
+  if (!position) return undefined
+  const x = Number(position.x)
+  const y = Number(position.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined
+  return {
+    x: Math.min(1, Math.max(0, x)),
+    y: Math.min(1, Math.max(0, y))
+  }
+}
+
+const normalizeDynamicItemLinks = (items: DynamicItem[]) => {
+  const validItemIds = new Set(items.map((item) => item.id).filter(Boolean))
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    linkedAppearance: normalizeDynamicLinkedAppearance(
+      item.linkedAppearance,
+      item.id,
+      validItemIds
+    )
+  }))
+
+  const validatedItems = normalizedItems.map((item) => ({
+    ...item,
+    linkedAppearance: item.linkedAppearance && !wouldCreateDynamicLinkedAppearanceCycle(
+      normalizedItems,
+      item.id,
+      item.linkedAppearance.triggerItemId
+    )
+      ? item.linkedAppearance
+      : undefined
+  }))
+
+  return synchronizeDynamicLinkedBackgrounds(validatedItems)
+}
+
+const migrateDynamicLinkedAppearanceModel = (group: DynamicGroup): DynamicGroup => {
+  const sourceItems = Array.isArray(group.items) ? group.items : []
+  if (group.linkedAppearanceModelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
+    return {
+      ...group,
+      items: normalizeDynamicItemLinks(sourceItems)
+    }
+  }
+
+  const validItemIds = new Set(sourceItems.map((item) => item.id).filter(Boolean))
+  const migratedItems: DynamicItem[] = sourceItems.map((item) => ({
+    ...item,
+    linkedAppearance: undefined
+  }))
+  const targetIndexById = new Map(migratedItems.map((item, index) => [item.id, index]))
+
+  sourceItems
+    .map((sourceItem) => ({
+      sourceItem,
+      legacyLink: normalizeDynamicLinkedAppearance(
+        sourceItem.linkedAppearance,
+        sourceItem.id,
+        validItemIds
+      )
+    }))
+    .filter((entry): entry is { sourceItem: DynamicItem; legacyLink: DynamicLinkedAppearance } => Boolean(entry.legacyLink))
+    .sort((left, right) => (
+      (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
+      || left.sourceItem.order - right.sourceItem.order
+    ))
+    .forEach(({ sourceItem, legacyLink }) => {
+      const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
+      if (targetIndex === undefined || migratedItems[targetIndex].linkedAppearance) return
+
+      migratedItems[targetIndex] = {
+        ...migratedItems[targetIndex],
+        linkedAppearance: {
+          triggerItemId: sourceItem.id,
+          mode: legacyLink.mode,
+          delayMs: legacyLink.delayMs
+        }
+      }
+    })
+
+  return {
+    ...group,
+    linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
+    items: normalizeDynamicItemLinks(migratedItems)
+  }
 }
 
 const blobToBase64 = (blob: Blob) => {
@@ -303,7 +509,7 @@ const saveFileToFilesystem = async (file: File, mediaId: string, scope: string) 
   return path
 }
 
-const resolveMediaUrl = async (media: DynamicMedia): Promise<DynamicMedia> => {
+const resolveMediaUrl = async <T extends DynamicStoredMedia>(media: T): Promise<T> => {
   if (media.filePath && isNativeStorage()) {
     try {
       if (media.type === 'video') {
@@ -327,7 +533,7 @@ const resolveMediaUrl = async (media: DynamicMedia): Promise<DynamicMedia> => {
         ? URL.createObjectURL(result.data)
         : toDataUrl(result.data, media.mimeType)
 
-      return { ...media, url }
+      return { ...media, url } as T
     } catch (error) {
       console.error('Failed to resolve dynamic media file:', error)
     }
@@ -343,7 +549,7 @@ const resolveMediaUrl = async (media: DynamicMedia): Promise<DynamicMedia> => {
           type: media.type || record.type,
           mimeType: media.mimeType || record.mimeType,
           url: URL.createObjectURL(record.blob)
-        }
+        } as T
       }
     } catch (error) {
       console.error('Failed to resolve dynamic media blob:', error)
@@ -353,19 +559,20 @@ const resolveMediaUrl = async (media: DynamicMedia): Promise<DynamicMedia> => {
   return {
     ...media,
     url: media.url ?? ''
-  }
+  } as T
 }
 
 const loadRawGroups = (): DynamicGroup[] => {
   try {
     const raw = localStorage.getItem(DYNAMIC_GROUPS_KEY)
-    return raw ? JSON.parse(raw) : []
+    const groups = raw ? JSON.parse(raw) as DynamicGroup[] : []
+    return groups.map(migrateDynamicLinkedAppearanceModel)
   } catch {
     return []
   }
 }
 
-const serializeMediaForStorage = <T extends DynamicMedia>(media?: T): T | undefined => {
+const serializeMediaForStorage = <T extends DynamicStoredMedia>(media?: T): T | undefined => {
   if (!media) return undefined
 
   const { url: _url, ...storedMedia } = media
@@ -375,12 +582,21 @@ const serializeMediaForStorage = <T extends DynamicMedia>(media?: T): T | undefi
   } as T
 }
 
+const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicBackground | undefined => {
+  if (!background) return undefined
+  const { appearAnimation: _legacyAppearAnimation, ...nextBackground } = background as DynamicBackground & {
+    appearAnimation?: DynamicAppearAnimation
+  }
+  return serializeMediaForStorage(nextBackground as DynamicBackground) as DynamicBackground
+}
+
 const serializeGroupForStorage = (group: DynamicGroup): DynamicGroup => ({
   ...group,
   thumbnail: serializeMediaForStorage(group.thumbnail),
-  background: serializeMediaForStorage(group.background),
-  backgrounds: getGroupBackgrounds(group).map((background) => (
-    serializeMediaForStorage(background) as DynamicBackground
+  background: serializeBackgroundForStorage(group.background),
+  backgrounds: getGroupBackgrounds(group).map((background) => serializeBackgroundForStorage(background) as DynamicBackground),
+  audioLibrary: group.audioLibrary?.map((audio) => (
+    serializeMediaForStorage(audio) as DynamicAudioMedia
   )),
   items: group.items.map((item) => ({
     ...item,
@@ -398,7 +614,7 @@ const getGroupBackgrounds = (group: DynamicGroup) => {
   return group.background ? [group.background] : []
 }
 
-const mergeMediaPersistentFields = <T extends DynamicMedia>(media?: T, existingMedia?: DynamicMedia): T | undefined => {
+const mergeMediaPersistentFields = <T extends DynamicStoredMedia>(media?: T, existingMedia?: DynamicStoredMedia): T | undefined => {
   if (!media) return undefined
   if (!existingMedia || existingMedia.id !== media.id) return media
 
@@ -414,13 +630,14 @@ const mergeMediaPersistentFields = <T extends DynamicMedia>(media?: T, existingM
 const mergeGroupPersistentMedia = (group: DynamicGroup, existingGroup?: DynamicGroup): DynamicGroup => {
   if (!existingGroup) return group
 
-  const existingMediaById = new Map<string, DynamicMedia>()
-  const collectMedia = (media?: DynamicMedia) => {
+  const existingMediaById = new Map<string, DynamicStoredMedia>()
+  const collectMedia = (media?: DynamicStoredMedia) => {
     if (media) existingMediaById.set(media.id, media)
   }
 
   collectMedia(existingGroup.thumbnail)
   getGroupBackgrounds(existingGroup).forEach(collectMedia)
+  existingGroup.audioLibrary?.forEach(collectMedia)
   existingGroup.items.forEach((item) => collectMedia(item.media))
 
   return {
@@ -429,6 +646,9 @@ const mergeGroupPersistentMedia = (group: DynamicGroup, existingGroup?: DynamicG
     background: mergeMediaPersistentFields(group.background, group.background ? existingMediaById.get(group.background.id) : undefined),
     backgrounds: getGroupBackgrounds(group).map((background) => (
       mergeMediaPersistentFields(background, existingMediaById.get(background.id)) as DynamicBackground
+    )),
+    audioLibrary: group.audioLibrary?.map((audio) => (
+      mergeMediaPersistentFields(audio, existingMediaById.get(audio.id)) as DynamicAudioMedia
     )),
     items: group.items.map((item) => ({
       ...item,
@@ -445,9 +665,18 @@ const getActiveBackground = (group: DynamicGroup, backgrounds = getGroupBackgrou
 
 const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
   const sourceBackgrounds = getGroupBackgrounds(group)
-  const [thumbnail, backgrounds, items] = await Promise.all([
+  const groupAppearAnimation = getDynamicAppearAnimationFromGroup(group)
+  const groupBackgroundTransition = getDynamicBackgroundTransitionFromGroup(group)
+  const [thumbnail, resolvedBackgrounds, audioLibrary, resolvedItems] = await Promise.all([
     group.thumbnail ? resolveMediaUrl(group.thumbnail) : Promise.resolve(undefined),
-    Promise.all(sourceBackgrounds.map(resolveMediaUrl)),
+    Promise.all(sourceBackgrounds.map(async (background) => ({
+      ...await resolveMediaUrl(background),
+      backgroundTransition: getDynamicBackgroundTransitionFromBackground(background, groupBackgroundTransition),
+      appearAnimation: undefined
+    }))),
+    Promise.all((group.audioLibrary ?? []).map(async (audio) => (
+      await resolveMediaUrl(audio) as DynamicAudioMedia
+    ))),
     Promise.all(
       group.items.map(async (item) => ({
         ...item,
@@ -458,10 +687,21 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
         animationId: normalizeDynamicAnimationId(item.animationId),
         clickAnimationIds: getDynamicClickAnimationIds(item),
         moveSpeed: getDynamicMoveSpeedFromItem(item),
-        moveTrack: item.moveTrack ?? getDynamicMoveTrackFromPosition(item.position.y)
+        moveTrack: item.moveTrack ?? getDynamicMoveTrackFromPosition(item.position.y),
+        targetMode: getDynamicTargetModeFromItem(item),
+        targetLoop: item.targetLoop === true,
+        targetPosition: normalizeDynamicPosition(item.targetPosition),
+        audioTrigger: getDynamicAudioTriggerFromItem(item),
+        audioDelayMs: Math.max(0, Math.round(Number(item.audioDelayMs) || 0)),
+        backgroundIds: Array.isArray(item.backgroundIds)
+          ? Array.from(new Set(item.backgroundIds.filter(Boolean)))
+          : []
       }))
     )
   ])
+
+  const backgrounds = resolvedBackgrounds as DynamicBackground[]
+  const items = normalizeDynamicItemLinks(resolvedItems)
 
   const background = getActiveBackground(group, backgrounds)
 
@@ -474,6 +714,9 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
     backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
     backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
+    appearAnimation: groupAppearAnimation,
+    backgroundTransition: groupBackgroundTransition,
+    audioLibrary,
     items
   }
 }
@@ -486,10 +729,10 @@ const loadDynamicGroups = async () => {
   return Promise.all(groups.map(hydrateGroup))
 }
 
-const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMedia> => {
+const persistDynamicAsset = async (file: File, scope: string): Promise<DynamicStoredMedia> => {
   const mediaId = generateId('media')
-  const type = getMediaType(file)
-  const mimeType = file.type || (type === 'video' ? 'video/mp4' : 'image/png')
+  const type = getStoredMediaType(file)
+  const mimeType = file.type || (type === 'video' ? 'video/mp4' : type === 'audio' ? 'audio/mp4' : 'image/png')
   const dimensions = await readImageDimensions(file)
   let filePath: string | undefined
   let storageKey: string | undefined
@@ -533,7 +776,32 @@ const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMe
   }
 }
 
-const getDynamicMediaFile = async (media: DynamicMedia): Promise<File | undefined> => {
+const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMedia> => {
+  const media = await persistDynamicAsset(file, scope)
+  if (media.type === 'audio') {
+    await deleteDynamicMedia(media)
+    throw new Error('Audio files cannot be used as dynamic visual media')
+  }
+  return media
+}
+
+const persistDynamicAudio = async (file: File, scope: string): Promise<DynamicAudioMedia> => {
+  const normalizedFile = normalizeDynamicAudioFile(file)
+  if (!normalizedFile) throw new Error('The selected file is not a supported audio file')
+
+  const media = await persistDynamicAsset(normalizedFile, scope)
+  if (media.type !== 'audio') {
+    await deleteDynamicMedia(media)
+    throw new Error('The selected file is not an audio file')
+  }
+  if (!media.filePath && !media.storageKey) {
+    await deleteDynamicMedia(media)
+    throw new Error('The selected audio file could not be persisted')
+  }
+  return media
+}
+
+const getDynamicMediaFile = async (media: DynamicStoredMedia): Promise<File | undefined> => {
   let blob: Blob | undefined
 
   if (media.filePath && isNativeStorage()) {
@@ -580,7 +848,7 @@ const getDynamicMediaFile = async (media: DynamicMedia): Promise<File | undefine
   })
 }
 
-const deleteDynamicMedia = async (media?: DynamicMedia) => {
+const deleteDynamicMedia = async (media?: DynamicStoredMedia) => {
   if (!media) return
 
   if (media.filePath && isNativeStorage()) {
@@ -610,6 +878,7 @@ const isMediaUsedByOtherGroups = (groups: DynamicGroup[], groupId: string, media
     if (group.id === groupId) return false
     if (group.thumbnail?.id === mediaId) return true
     if (getGroupBackgrounds(group).some((background) => background.id === mediaId)) return true
+    if (group.audioLibrary?.some((audio) => audio.id === mediaId)) return true
     return group.items.some((item) => item.media.id === mediaId)
   })
 }
@@ -620,6 +889,7 @@ const isMediaUsedByOtherEntity = (groups: DynamicGroup[], groupId: string, itemI
   return groups.some((group) => {
     if (group.thumbnail?.id === mediaId) return true
     if (getGroupBackgrounds(group).some((background) => background.id === mediaId)) return true
+    if (group.audioLibrary?.some((audio) => audio.id === mediaId)) return true
     return group.items.some((item) => {
       if (group.id === groupId && item.id === itemId) return false
       return item.media.id === mediaId
@@ -628,13 +898,14 @@ const isMediaUsedByOtherEntity = (groups: DynamicGroup[], groupId: string, itemI
 }
 
 const collectDynamicGroupMedia = (group: DynamicGroup) => {
-  const mediaById = new Map<string, DynamicMedia>()
-  const addMedia = (media?: DynamicMedia) => {
+  const mediaById = new Map<string, DynamicStoredMedia>()
+  const addMedia = (media?: DynamicStoredMedia) => {
     if (media) mediaById.set(media.id, media)
   }
 
   addMedia(group.thumbnail)
   getGroupBackgrounds(group).forEach(addMedia)
+  group.audioLibrary?.forEach(addMedia)
   group.items.forEach((item) => addMedia(item.media))
 
   return Array.from(mediaById.values())
@@ -662,6 +933,10 @@ const createDynamicGroup = async (
     backgroundIntervalMs: DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
     appearMode: 'all',
     appearIntervalMs: DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+    appearAnimation: 'none',
+    backgroundTransition: 'none',
+    audioLibrary: [],
+    linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
     items: [],
     createdAt: now,
     updatedAt: now
@@ -740,6 +1015,11 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
     backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
     backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
+    appearAnimation: getDynamicAppearAnimationFromGroup(group),
+    backgroundTransition: getDynamicBackgroundTransitionFromGroup(group),
+    audioLibrary: group.audioLibrary ?? [],
+    items: normalizeDynamicItemLinks(group.items),
+    linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
     updatedAt: Date.now()
   }, existingGroup)
 
@@ -758,7 +1038,11 @@ const setDynamicBackground = async (groupId: string, file: File) => {
   const group = groups.find((item) => item.id === groupId)
   if (!group) return undefined
 
-  const background = await persistDynamicMedia(file, `${groupId}/background`) as DynamicBackground
+  const persistedBackground = await persistDynamicMedia(file, `${groupId}/background`) as DynamicBackground
+  const background: DynamicBackground = {
+    ...persistedBackground,
+    backgroundTransition: getDynamicBackgroundTransitionFromGroup(group)
+  }
   const currentBackgrounds = getGroupBackgrounds(group)
   group.backgrounds = [background, ...currentBackgrounds.filter((item) => item.id !== background.id)]
   group.background = background
@@ -814,6 +1098,16 @@ const deleteDynamicBackgrounds = async (groupId: string, backgroundIds: string[]
   group.backgrounds = remainingBackgrounds
   group.background = activeBackground
   group.activeBackgroundId = activeBackground?.id
+  group.items = group.items.map((item) => {
+    if (!Array.isArray(item.backgroundIds) || item.backgroundIds.length === 0) return item
+    const backgroundIds = item.backgroundIds.filter((backgroundId) => !deleteSet.has(backgroundId))
+    return {
+      ...item,
+      // An empty list deliberately falls back to "all backgrounds".
+      backgroundIds,
+      updatedAt: Date.now()
+    }
+  })
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return hydrateGroup(group)
@@ -886,6 +1180,11 @@ const addDynamicItem = async (groupId: string, file: File, itemName?: string) =>
     movePercent: 50,
     moveSpeed: DEFAULT_DYNAMIC_MOVE_SPEED,
     moveTrack: 'middle',
+    targetMode: 'loop',
+    targetLoop: false,
+    audioTrigger: 'appearance',
+    audioDelayMs: 0,
+    backgroundIds: [],
     isVisible: true,
     order: group.items.length,
     createdAt: now,
@@ -935,9 +1234,9 @@ const updateDynamicItem = (groupId: string, itemId: string, updater: (item: Dyna
   const group = groups.find((item) => item.id === groupId)
   if (!group) return undefined
 
-  group.items = group.items.map((item) => (
+  group.items = normalizeDynamicItemLinks(group.items.map((item) => (
     item.id === itemId ? { ...updater(item), updatedAt: Date.now() } : item
-  ))
+  )))
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return group
@@ -954,7 +1253,14 @@ const deleteDynamicItems = async (groupId: string, itemIds: string[]) => {
 
   group.items = group.items
     .filter((item) => !deleteSet.has(item.id))
-    .map((nextItem, index) => ({ ...nextItem, order: index, updatedAt: Date.now() }))
+    .map((nextItem, index) => ({
+      ...nextItem,
+      linkedAppearance: nextItem.linkedAppearance && deleteSet.has(nextItem.linkedAppearance.triggerItemId)
+        ? undefined
+        : nextItem.linkedAppearance,
+      order: index,
+      updatedAt: Date.now()
+    }))
 
   const remainingMediaIds = new Set(
     groups.flatMap((nextGroup) => collectDynamicGroupMedia(nextGroup).map((media) => media.id))
@@ -979,7 +1285,7 @@ const copyDynamicItemSettings = async (
   groupId: string,
   targetItemId: string,
   sourceItemId: string,
-  copyFields: DynamicCopyField[] = ['motion', 'animation', 'size', 'deform'],
+  copyFields: DynamicCopyField[] = ['motion', 'animation', 'size', 'deform', 'audio', 'background', 'linkage'],
   currentGroup?: DynamicGroup
 ) => {
   const groups = loadRawGroups()
@@ -991,17 +1297,20 @@ const copyDynamicItemSettings = async (
   if (!group) return undefined
 
   const source = group.items.find((item) => item.id === sourceItemId)
-  if (!source) return undefined
+  const target = group.items.find((item) => item.id === targetItemId)
+  if (!source || !target) return undefined
 
   const fieldSet = new Set(copyFields)
   const sourceTrack = source.moveTrack ?? getDynamicMoveTrackFromPosition(source.position.y)
+  const canCopyLinkage = !source.linkedAppearance || !wouldCreateDynamicLinkedAppearanceCycle(
+    group.items,
+    targetItemId,
+    source.linkedAppearance.triggerItemId
+  )
   group.items = group.items.map((item) => {
     if (item.id !== targetItemId) return item
     const position = fieldSet.has('motion')
-      ? {
-          x: item.position.x,
-          y: getDynamicMoveTrackCenter(sourceTrack)
-        }
+      ? { ...source.position }
       : item.position
     return {
       ...item,
@@ -1022,9 +1331,26 @@ const copyDynamicItemSettings = async (
       movePercent: fieldSet.has('motion') ? source.movePercent : item.movePercent,
       moveSpeed: fieldSet.has('motion') ? getDynamicMoveSpeedFromItem(source) : item.moveSpeed,
       moveTrack: fieldSet.has('motion') ? sourceTrack : item.moveTrack,
+      targetMode: fieldSet.has('motion') ? getDynamicTargetModeFromItem(source) : item.targetMode,
+      targetLoop: fieldSet.has('motion') ? source.targetLoop === true : item.targetLoop,
+      targetPosition: fieldSet.has('motion')
+        ? source.targetPosition ? { ...source.targetPosition } : undefined
+        : item.targetPosition,
+      audioId: fieldSet.has('audio') ? source.audioId : item.audioId,
+      audioTrigger: fieldSet.has('audio') ? getDynamicAudioTriggerFromItem(source) : item.audioTrigger,
+      audioDelayMs: fieldSet.has('audio')
+        ? Math.max(0, Math.round(Number(source.audioDelayMs) || 0))
+        : item.audioDelayMs,
+      backgroundIds: fieldSet.has('background')
+        ? Array.from(new Set(source.backgroundIds ?? []))
+        : item.backgroundIds,
+      linkedAppearance: fieldSet.has('linkage') && canCopyLinkage
+        ? source.linkedAppearance ? { ...source.linkedAppearance } : undefined
+        : item.linkedAppearance,
       updatedAt: Date.now()
     }
   })
+  group.items = normalizeDynamicItemLinks(group.items)
   group.updatedAt = Date.now()
 
   if (groupIndex >= 0) {
@@ -1113,19 +1439,137 @@ const updateDynamicBackgroundPlayback = (
   return group
 }
 
+const updateDynamicAdvancedPlayback = (
+  groupId: string,
+  values: {
+    appearAnimation?: DynamicAppearAnimation
+    backgroundTransition?: DynamicBackgroundTransition
+  }
+) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  if (values.appearAnimation !== undefined) {
+    const appearAnimation = getDynamicAppearAnimationFromGroup({
+      ...group,
+      appearAnimation: values.appearAnimation
+    })
+    group.appearAnimation = appearAnimation
+  }
+  if (values.backgroundTransition !== undefined) {
+    group.backgroundTransition = getDynamicBackgroundTransitionFromGroup({
+      ...group,
+      backgroundTransition: values.backgroundTransition
+    })
+  }
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return group
+}
+
+const addDynamicAudio = async (groupId: string, file: File) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  const nextAudio = await persistDynamicAudio(file, `${groupId}/audio`)
+  group.audioLibrary = [nextAudio, ...(group.audioLibrary ?? []).filter((item) => item.id !== nextAudio.id)]
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return hydrateGroup(group)
+}
+
+const setDynamicBackgroundBgm = async (groupId: string, backgroundIds: string[], audioId?: string) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  const backgroundIdSet = new Set(backgroundIds)
+  const validAudioId = audioId && group.audioLibrary?.some((audio) => audio.id === audioId)
+    ? audioId
+    : undefined
+  group.backgrounds = getGroupBackgrounds(group).map((background) => (
+    backgroundIdSet.has(background.id)
+      ? { ...background, bgmAudioId: validAudioId }
+      : background
+  ))
+  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
+    ?? group.backgrounds[0]
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return hydrateGroup(group)
+}
+
+const setDynamicBackgroundTransition = async (
+  groupId: string,
+  backgroundIds: string[],
+  backgroundTransition: DynamicBackgroundTransition
+) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  const backgroundIdSet = new Set(backgroundIds)
+  const normalizedTransition = getDynamicBackgroundTransitionFromGroup({
+    ...group,
+    backgroundTransition
+  })
+  group.backgrounds = getGroupBackgrounds(group).map((background) => (
+    backgroundIdSet.has(background.id)
+      ? { ...background, backgroundTransition: normalizedTransition, appearAnimation: undefined }
+      : background
+  ))
+  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
+    ?? group.backgrounds[0]
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  return hydrateGroup(group)
+}
+
+const deleteDynamicAudio = async (groupId: string, audioId: string) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  const audio = group.audioLibrary?.find((item) => item.id === audioId)
+  if (!audio) return hydrateGroup(group)
+
+  group.audioLibrary = (group.audioLibrary ?? []).filter((item) => item.id !== audioId)
+  group.backgrounds = getGroupBackgrounds(group).map((background) => (
+    background.bgmAudioId === audioId ? { ...background, bgmAudioId: undefined } : background
+  ))
+  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
+    ?? group.backgrounds[0]
+  group.items = group.items.map((item) => (
+    item.audioId === audioId ? { ...item, audioId: undefined } : item
+  ))
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
+  await deleteDynamicMedia(audio)
+  return hydrateGroup(group)
+}
+
 export type {
   DynamicAppearMode,
+  DynamicAppearAnimation,
   DynamicAnimationMode,
+  DynamicAudioMedia,
   DynamicBackground,
   DynamicBackgroundPlayMode,
+  DynamicBackgroundTransition,
   DynamicCopyField,
   DynamicGroup,
   DynamicGroupOrganization,
   DynamicItem,
+  DynamicItemAudioTrigger,
+  DynamicLinkedAppearance,
+  DynamicLinkedAppearanceMode,
   DynamicMedia,
   DynamicMediaType,
   DynamicMoveMode,
-  DynamicMoveTrack
+  DynamicMoveTrack,
+  DynamicTargetMode
 }
 export {
   DYNAMIC_GROUPS_KEY,
@@ -1137,6 +1581,7 @@ export {
   MIN_DYNAMIC_APPEAR_INTERVAL_MS,
   MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
   addDynamicItem,
+  addDynamicAudio,
   calculateGridIndex,
   copyDynamicItemSettings,
   createDynamicGroup,
@@ -1144,16 +1589,22 @@ export {
   deleteDynamicGroup,
   deleteDynamicItem,
   deleteDynamicItems,
+  deleteDynamicAudio,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
   getDynamicMediaFile,
   loadDynamicGroups,
+  normalizeDynamicAudioFile,
+  persistDynamicAudio,
   persistDynamicMedia,
   reorderDynamicBackgrounds,
   reorderDynamicItems,
   saveDynamicGroups,
   setActiveDynamicBackground,
   setDynamicBackground,
+  setDynamicBackgroundTransition,
+  setDynamicBackgroundBgm,
+  updateDynamicAdvancedPlayback,
   updateDynamicGroupAppearMode,
   updateDynamicBackgroundPlayback,
   updateDynamicGroupMeta,

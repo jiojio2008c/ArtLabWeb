@@ -11,6 +11,7 @@ interface DynamicStageItemAnimationProps {
   itemId: string
   enabled: boolean
   coordinateScale: number
+  startedAtMs?: number
   children: ReactNode
 }
 
@@ -24,6 +25,7 @@ const DynamicStageItemAnimation = ({
   itemId,
   enabled,
   coordinateScale,
+  startedAtMs,
   children
 }: DynamicStageItemAnimationProps) => {
   const elementRef = useRef<HTMLDivElement>(null)
@@ -40,7 +42,10 @@ const DynamicStageItemAnimation = ({
     }
 
     const applyAnimationFrame = (timeSeconds: number) => {
-      const transform = sampleItemAnimation(animationId, itemId, timeSeconds)
+      const elapsedSeconds = startedAtMs === undefined
+        ? timeSeconds
+        : Math.max(0, timeSeconds - startedAtMs / 1000)
+      const transform = sampleItemAnimation(animationId, itemId, elapsedSeconds)
       const offsetX = transform.offsetX * coordinateScale
       const offsetY = transform.offsetY * coordinateScale
 
@@ -59,7 +64,7 @@ const DynamicStageItemAnimation = ({
       unsubscribe()
       resetAnimationStyles(element)
     }
-  }, [animationId, coordinateScale, enabled, itemId])
+  }, [animationId, coordinateScale, enabled, itemId, startedAtMs])
 
   return (
     <div

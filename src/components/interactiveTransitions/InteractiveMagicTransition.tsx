@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { gsap } from 'gsap'
 import type { DynamicTransitionOrigin } from '../dynamicTransitions/types.ts'
 import {
@@ -322,7 +322,7 @@ const InteractiveMagicTransition: React.FC<InteractiveMagicTransitionProps> = ({
     completeRef.current = onComplete
   }, [onComplete, onSceneSwitch])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current
     const voidLayer = voidRef.current
     const paperCanvas = paperCanvasRef.current

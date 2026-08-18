@@ -12,6 +12,8 @@ interface DirectUploadTheme {
   id: string
   labelKey: ThemeLabelKey
   cover: string
+  accent: string
+  secondary: string
   maskPrefix: DirectMaskPrefix
   launcherAppId: AppLauncherId
 }
@@ -32,6 +34,8 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
   {
     id: 'ocean',
     labelKey: 'theme.ocean',
+    accent: '#76efff',
+    secondary: '#3b75ff',
     cover: `${MAIN_ICON_BASE}/美麗海洋.jpg`,
     maskPrefix: 'C',
     launcherAppId: 'interactive-ocean'
@@ -39,6 +43,8 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
   {
     id: 'forest-1',
     labelKey: 'theme.forest1',
+    accent: '#b6ff8e',
+    secondary: '#8f5cff',
     cover: `${MAIN_ICON_BASE}/魔幻森林1.jpg`,
     maskPrefix: 'A',
     launcherAppId: 'interactive-forest-1'
@@ -46,6 +52,8 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
   {
     id: 'forest-2',
     labelKey: 'theme.forest2',
+    accent: '#78ffd2',
+    secondary: '#ff68bf',
     cover: `${MAIN_ICON_BASE}/魔幻森林2.jpg`,
     maskPrefix: 'A',
     launcherAppId: 'interactive-forest-2'
@@ -53,6 +61,8 @@ const DIRECT_UPLOAD_THEMES: DirectUploadTheme[] = [
   {
     id: 'painting-real',
     labelKey: 'theme.paintingReal',
+    accent: '#ffd878',
+    secondary: '#ff6da8',
     cover: `${MAIN_ICON_BASE}/畫境成真.png`,
     maskPrefix: 'B',
     launcherAppId: 'interactive-painting-real'

@@ -1,9 +1,14 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { Plus } from 'lucide-react'
 import { gsap } from 'gsap'
 import { useTranslation } from 'react-i18next'
 import type { DynamicTransitionOrigin } from '../dynamicTransitions/types.ts'
 import type { DirectUploadTheme } from '../../services/directUploadThemes.ts'
+import {
+  waitForContainerMedia,
+  waitForImageElement,
+  waitForStablePaint
+} from '../../services/transitionPerformance.ts'
 
 interface DirectThemeUploadTransitionProps {
   origin: DynamicTransitionOrigin
@@ -50,7 +55,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
     onCompleteRef.current = onComplete
   }, [onComplete, onSceneSwitch])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current
     const wash = washRef.current
     const clone = cloneRef.current
@@ -92,20 +97,6 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
     let destinationElements: HTMLElement[] = []
     let cancelled = false
 
-    const waitForCloneImage = async () => {
-      if (cloneImage.complete && cloneImage.naturalWidth > 0) {
-        await cloneImage.decode?.().catch(() => undefined)
-        return
-      }
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          cloneImage.addEventListener('load', () => resolve(), { once: true })
-          cloneImage.addEventListener('error', () => resolve(), { once: true })
-        }),
-        new Promise<void>((resolve) => window.setTimeout(resolve, 500))
-      ])
-    }
-
     const findDestination = async () => {
       for (let attempt = 0; attempt < 12; attempt += 1) {
         const screen = document.querySelector<HTMLElement>('.page-view-directUpload .upload-screen')
@@ -145,7 +136,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
     gsap.set(traces, { opacity: 0, scaleX: 0, transformOrigin: 'center center' })
 
     const run = async () => {
-      await waitForCloneImage()
+      await waitForImageElement(cloneImage, 900)
       if (cancelled) return
 
       gsap.set(root, { visibility: 'visible' })
@@ -226,6 +217,17 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
         onCompleteRef.current()
         return
       }
+
+      // Let the target route finish its first layout and decode any visible
+      // media before the existing entry timeline measures its destination.
+      await waitForContainerMedia(destination.screen, {
+        selector: 'img, video',
+        timeoutMs: 1100,
+        maxElements: 12,
+        visibleOnly: false
+      })
+      await waitForStablePaint(2)
+      if (cancelled) return
 
       const { dropzone, plus, title, topbar } = destination
       const backButton = topbar.querySelector<HTMLElement>('button')

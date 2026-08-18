@@ -11,14 +11,23 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div id="displayRoot" class="display-root">
-    <canvas id="backgroundStage" class="stage-canvas background-stage" width="1920" height="1080" aria-hidden="true"></canvas>
-    <canvas id="stage" width="1920" height="1080"></canvas>
-    <section id="statusPanel" class="status-panel">
-      <div class="brand">MagicFloor Dynamic Player</div>
-      <div id="statusText" class="status-text">正在啟動 8080 接收服務...</div>
-      <div id="groupText" class="group-text">等待 iPad 傳入作品檔案</div>
-    </section>
+    <div id="displayRoot" class="display-root is-archive-view">
+      <section id="archiveView" class="archive-view" aria-label="iPad 作品檔案同步畫面">
+        <div id="archiveMirrorFallback" class="archive-mirror-fallback" aria-hidden="false">
+          <img id="archiveSourceImage" class="archive-source-image" alt="" draggable="false" />
+        </div>
+        <img id="archiveMirrorImage" class="archive-mirror-image" alt="" draggable="false" />
+        <canvas id="archivePortalCanvas" class="archive-portal-canvas" aria-hidden="true"></canvas>
+        <canvas id="archivePortalFallbackCanvas" class="archive-portal-canvas archive-portal-fallback-canvas" aria-hidden="true"></canvas>
+      </section>
+
+      <canvas id="backgroundStage" class="stage-canvas background-stage" width="1920" height="1080" aria-hidden="true"></canvas>
+      <canvas id="stage" width="1920" height="1080"></canvas>
+      <section id="statusPanel" class="status-panel">
+        <div class="brand">MagicFloor Dynamic Player</div>
+        <div id="statusText" class="status-text">正在啟動 8080 接收服務...</div>
+        <div id="groupText" class="group-text">等待 iPad 載入作品檔案</div>
+      </section>
     </div>
     <script type="module" src="./player.js"></script>
   </body>

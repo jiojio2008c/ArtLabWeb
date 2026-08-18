@@ -1,7 +1,535 @@
 # MagicFloor 当前交接文档
 
-更新时间：2026-08-03
-当前状态：应用已增加 Supabase 邮箱密码登录门禁；有效会话会自动验证并进入首页，未登录或会话失效时停留在登录页，首页设置抽屉会显示当前玩家名称、邮箱、远端头像，并可登出当前设备。新版双入口和动态艺术工作台已经完成：首页为 `動態藝術` / `互動藝術` 双入口；端口和 IP 由设置页管理；`互動藝術` 继续沿用 11701 快速上載流程，并已正式接入「纸幕撕裂 + 魔幻传送门 + 四卡发牌」入口转场及沉浸式主题选择页；`動態藝術` 已具备背景上載、文件管理器式作品檔案素材库、16:9 多物件舞台、固定图层、物件属性、选择性属性复制、移动与动画预览，以及独立持久化和 PC 重同步能力。2026-07-30 已把确认后的 B 方案「数码门户 + 立体书破框」正式接入真实页面：首页进入作品档案、资料夹下钻、素材进入控制页及反向返回均使用统一转场；业务协议与本地资料结构保持不变。大改前可用功能基线仍保留在下方，作为回退和协议对照。
+## 2026-08-13 当前交付基线（权威现况）
+
+> 本节是当前代码与交付物的权威说明。下方原有内容是按日期累积的开发历史，保留用于追溯，但若与本节冲突，以本节为准。
+
+### 1. 产品与交付范围
+
+MagicFloor 当前由三个协作部分组成：
+
+1. **iPad 控制端**：本仓库根目录的 React/Vite/TypeScript 应用，经 Capacitor 封装为 iOS App。负责登录、首页导航、动态艺术资料管理、舞台编辑、预览控制、互动艺术拍照/遮罩/上载、设置与遥控键盘。
+2. **动态艺术 Windows 播放端**：`desktop-runtime/` 下的 Electron 应用。负责接收 iPad 发来的动态艺术资料、播放背景和物件动画、显示 iPad 作品档案页镜像，并提供鼠标互动。
+3. **互动艺术/其他 Unity 程序**：不在本仓库实现。iPad 只向 `11701` 发送启动、快速上载、二维码和遥控键盘指令；不等待 Unity 回执，也不负责判断外部程序是否成功启动。
+
+当前主流程可交付到以下程度：
+
+- 用户使用 Supabase 邮箱和密码登录，登录后进入首页。
+- 首页可进入动态艺术、互动艺术、远程机械键盘和设置。
+- 动态艺术可建立资料夹/子资料夹和素材作品档案，管理多背景、多图层及完整物件参数；进入预览后 iPad 与 EXE 同步播放。
+- 互动艺术可选择四种主题、拍照或选择图片、套用定位遮罩、合成并上载到 Unity，随后显示完成页。
+- Windows EXE 可无边框全屏显示 1920x1080 舞台，接收 iPad 的资料与状态；另有整体翻转版本用于特殊镜像展示环境。
+- 设置中的“进阶功能”可按设备开启。关闭时保持原有控制页和播放行为；开启后提供物件进场、目标点、物件音源、背景音乐、物件背景绑定和背景切换动画，并与 EXE 同步预览。
+
+### 2. 技术栈与目录职责
+
+#### iPad/Web 主应用
+
+- 框架：React 18、TypeScript 5、Vite 5。
+- 动效：GSAP、Three.js、CSS/Web Animations、Canvas 2D。
+- 图标：Lucide React。
+- 本地化：i18next + react-i18next。
+- 原生容器：Capacitor 8，iOS 工程位于 `ios/`。
+- 原生文件能力：`@capacitor/filesystem`；相机界面主要使用浏览器媒体设备能力与现有自定义拍照 UI。
+- 截图镜像：`html-to-image`，用于把 iPad 首页/作品档案页转成 JPEG 发给 EXE。
+
+关键入口与模块：
+
+- `src/main.tsx`：React 入口与 i18n 初始化。
+- `src/App.tsx`：登录态、页面状态机、动态/互动艺术路由、跨页转场、EXE 档案镜像同步。
+- `src/index.css`：全局设计系统、响应式布局、所有页面和过场动画样式。
+- `src/components/EntryPage.tsx`：首页，包含动态艺术、互动艺术、键盘和设置入口。
+- `src/components/LoginPage.tsx`：仅登录用途的登录页。
+- `src/components/SettingsPanel.tsx`：账号资料、IP/端口、二维码、语言和登出。
+- `src/components/DynamicGroupsPage.tsx`：动态艺术作品档案、资料夹层级、图标/详细模式、排序和面包屑。
+- `src/components/DynamicBackgroundPage.tsx`：新素材首次建立且无背景时的背景上传流程。
+- `src/components/DynamicItemsPage.tsx`：保留的图片上传/素材页流程；正常新建作品现以直接进入控制页为主。
+- `src/components/DynamicControlPage.tsx`：动态艺术舞台、图层、编辑背景、物件属性、属性复制和预览。
+- `src/components/DirectUploadSelectPage.tsx`：互动艺术四主题选择页。
+- `src/components/UploadPage.tsx`：拍照、文件/相簿选择、遮罩定位、合成和上载。
+- `src/components/DirectUploadCompletePage.tsx`：上载完成结果和重新上载确认。
+- `src/components/RemoteKeyboardPage.tsx`：机械键盘式远程控制器。
+- `src/components/dynamicTransitions/`：首页到动态作品档案、作品档案到控制页的统一转场。
+- `src/components/interactiveTransitions/`：首页到互动主题、主题到上载页、返回和作品发射过场。
+- `transition-portal-preview/`：视觉方案测试页。它不是正式产品路由，主要用于先确认 UI/动画提案。
+
+#### Windows 动态播放端
+
+- 技术：Electron 37 + Canvas 2D；打包使用 electron-builder。
+- 目录：`desktop-runtime/`。
+- `desktop-runtime/main.js`：窗口、8080 HTTP 服务、协议解析、资产落盘、运行状态和 IPC。
+- `desktop-runtime/main.vertical-flip.js`：特殊翻转版入口。
+- `desktop-runtime/renderer/player.js`：1920x1080 舞台渲染、背景/物件/动画、档案镜像、鼠标命中和涟漪。
+- `desktop-runtime/renderer/item-animation-core.js`：原有动画 `1-8`。
+- `desktop-runtime/renderer/walk-animation-core.js`：行走动画 `9`。
+- `desktop-runtime/renderer/unity-animation-core.js` 与 `unity-animation-curves.js`：从 Unity 曲线复刻的额外动画 `10-17`。
+- `desktop-runtime/renderer/dynamic-animation-catalog.js`：动画模式、ID、随机解析和点击动画范围的共享规范；iPad 也直接复用该模块。
+- `desktop-runtime/renderer/interaction-core.js`：点击动画覆盖、点击范围和坐标转换。
+- `desktop-runtime/renderer/water-ripple-renderer.js`：点击背景时的水面涟漪。
+- `desktop-runtime/renderer/archive-portal-world.js`：EXE 侧同步的首页到作品档案 Three.js 门户动画。
+
+### 3. 页面与导航现况
+
+应用页面状态由 `src/App.tsx` 管理，主要页面如下：
+
+- `entry`：首页。
+- `remoteKeyboard`：远程机械键盘。
+- `dynamicGroups`：动态艺术作品档案。
+- `dynamicBackground`：新作品首次背景上传。
+- `dynamicItems`：素材图片列表/上传兼容流程。
+- `dynamicControl`：动态艺术控制页。
+- `directSelect`：互动艺术四主题选择。
+- `directUpload`：互动艺术拍照、遮罩与上载。
+- `directComplete`：互动艺术完成页。
+
+登录状态独立于上述页面：启动时先检查 Supabase session；没有有效 session 时只显示登录页。登出入口位于首页设置菜单内。
+
+动态艺术路由包含两类连续视觉转场：
+
+- 首页进入作品档案：纸雕自然首页解构为科技门户，iPad 与 EXE 使用同一时间基准和源卡片位置。
+- 作品档案进入控制页：资料卡破框并展开为舞台；返回时使用逆向衔接，避免整页刷新和白帧。
+- 资料夹下钻：背景保持不动，文件夹盖板和内容层完成轻量级层级切换，面包屑随层级出现；根层级不显示面包屑。
+
+互动艺术路由包含：
+
+- 首页到四主题页的同步门户转场。
+- 主题卡到上载页的柔和衔接转场。
+- 上载页返回主题页的独立逆向转场。
+- 点击“上载图片”后，作品缩至中心并向上飞出，彩色星星位于作品下层形成拖尾；之后才进入原有的成功揭晓动画。
+
+所有重动画均提供 `prefers-reduced-motion` 降级路径；iPad Air 上重点限制了 Canvas DPR、粒子数量、滤镜层和重复布局读取。
+
+### 4. 登录、账号与语言
+
+Supabase 配置位于 `src/services/supabaseClient.ts`：
+
+- Project URL：`https://lmlzavksopdunbpckaqh.supabase.co`
+- 默认使用仓库内 anon key，也允许通过 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY` 覆盖。
+- Auth session key：`magicfloor_supabase_auth_v1`。
+- 登录方式：`signInWithPassword(email, password)`。
+- session 持久化与 token 自动刷新已开启。
+- 登出使用本地 scope，不做额外远程设备管理协议。
+
+设置菜单的账号组合会读取：
+
+- Supabase Auth 当前用户的 `email`、`user_metadata`。
+- 远端 `players` 表中当前 `user_id` 最新一条具有头像的记录。
+- 显示名称字段：`players.name`。
+- 头像字段：`players.avatar_url`，仅接受 `http`/`https` URL。
+- 读取头像失败时使用账号名称/邮箱回退，不阻塞应用。
+
+当前并未在本应用内实现“另一台设备登录后主动顶掉旧设备”的服务端单会话机制；若需要强制单设备，必须增加服务端 session/device 记录和 Realtime/轮询撤销策略。
+
+多语言支持：
+
+- 繁体中文 `zh-Hant`（默认与 fallback）。
+- 简体中文 `zh-Hans`。
+- English `en`。
+- Português `pt-PT`。
+- Polski `pl-PL`。
+- 选择值保存到 `magicfloor_locale_v1`；所有语言方向当前均为 LTR。
+
+### 5. 设置与远程机械键盘
+
+设置菜单当前包括：
+
+- 当前账号、名称、头像和邮箱。
+- 艺术画廊/PC IP。
+- 动态艺术端口，默认 `8080`。
+- 互动艺术端口，默认 `11701`。
+- “显示二维码”：向 `11701` 发送纯文本 `QrCode`，fire-and-forget，不显示结果提示。
+- 五种界面语言。
+- “进阶功能”：控制动态艺术的进阶编辑和播放能力；关闭时只隐藏并停用进阶行为，不删除已经保存的进阶参数。
+- 登出。
+
+网络设置保存于 `magicfloor_network_settings_v1`，最后 IP 同时兼容保存于 `artlab_last_ws_ip`。默认 IP 为 `192.168.8.101`。
+
+远程机械键盘页面发送 `MF|RemoteKeyboard|...` 指令，当前按键映射：
+
+- Escape。
+- Home。
+- LeftControl + LeftShift。
+- LeftAlt + F4。
+- Space + N。
+- Space + F。
+- End。
+- PageDown。
+- LeftControl + LeftAlt + Alpha1 至 Alpha8。
+- 旋钮 1：音量减/加。
+- 旋钮 2：UpArrow/DownArrow。
+- 旋钮 3：LeftArrow/RightArrow。
+
+按键和旋钮有独立的 Web Audio 按压、回弹和刻度音效。iPad 端仍然只发送，不等待对方反馈。
+
+### 6. 动态艺术资料模型与本地持久化
+
+#### 资料夹与作品档案
+
+资料夹由 `src/services/dynamicFolderStorage.ts` 管理：
+
+- 支持根资料夹、任意层级子资料夹、重命名、移动、删除资料夹或连同内容删除。
+- 支持图标模式和详细模式。
+- 支持按名称、更新时间和类型排序。
+- 当前资料夹、视图和排序偏好会持久化。
+- 资料夹数据 key：`magicfloor_dynamic_folders_v1`。
+- 浏览偏好 key：`magicfloor_dynamic_library_preferences_v1`。
+
+作品档案称为 `DynamicGroup`，主要字段：
+
+- `id`、`name`、`folderId`、`libraryOrder`。
+- 缩略图 `thumbnail`。
+- 多背景 `backgrounds`、当前背景 `activeBackgroundId`。
+- 背景播放方式：`fixed`、`random`、`sequence`。
+- 背景切换间隔：`1000-600000ms`。
+- 物件出现方式：`all` 或 `sequence`。
+- 逐个出现间隔：`100-5000ms`。
+- 物件进场动画 `appearAnimation`：`none`（淡入）、`drop`（上方快速掉落）或 `trackSlide`（按轨道从侧边进入）。
+- 背景切换动画 `backgroundTransition`：`none`、`curtain`、`cameraFlash` 或 `shadowPlay`。
+- 作品音频库 `audioLibrary`；每个背景可用 `bgmAudioId` 指向独立 BGM，也可让多个背景共用同一音频。
+- 图层物件数组 `items`，每组最多 30 个。
+
+动态资料元数据保存于 localStorage：`magicfloor_dynamic_groups_v1`。媒体二进制保存策略：
+
+- iOS/Capacitor：写入 `Directory.Data/dynamic-art/...`，元数据保存 `filePath`。
+- 浏览器：写入 IndexedDB `magicfloor_dynamic_media` 的 `media` store，元数据保存 `storageKey`。
+- localStorage 中不会保存临时 `blob:` URL；启动时会根据 `filePath`/`storageKey` 重新 hydrate。
+- 图片会记录真实宽高，舞台按长宽比和统一最大/最小边界计算显示尺寸，已针对极端细长抠图做稳定加载、重试和扩大触控区处理。
+
+**重要限制：当前动态艺术资料仍以设备本地为主，尚未上传到 Supabase Storage，也没有账号级云端恢复。** 更换 iPad 不会自动恢复资料夹、素材、背景和参数。
+
+#### 物件参数
+
+每个 `DynamicItem` 当前持久化：
+
+- 名称、媒体、位置 `x/y`、16x9 网格索引。
+- 缩放、旋转、水平翻转、垂直翻转。
+- 图层顺序、显示状态。
+- 移动方式：停止、上下、左移、右移、360 回环、随机。
+- 起始轨道：上、中、下。
+- 幅度与速度。
+- 动画模式：无、固定、随机。
+- 固定动画 ID。
+- EXE 点击后允许切换的动画 ID 集合 `clickAnimationIds`。
+- 目标移动模式 `targetMode`、可选往返字段 `targetLoop` 与归一化目标坐标 `targetPosition`；旧作品没有 `targetLoop` 时默认只执行一次 `起点 → 目标点`。
+- 物件音频 `audioId`、触发方式 `audioTrigger` 和延迟 `audioDelayMs`。
+- 背景绑定 `backgroundIds`；空数组代表贯穿所有背景，非空数组代表只在指定背景出现。受控物件会强制继承触发物件的背景范围，其自身背景设置在关系解除前不可修改。
+
+控制页：
+
+- 舞台为 16:9；图层面板收起时舞台居中放大，展开时恢复舞台+面板布局，具有平滑过渡。
+- 图层卡片整体可长按拖拽排序，并将层级关系实时反映到舞台。
+- 支持全选与批量删除；面板内 `+` 可直接加入物件。
+- 单击舞台物件或图层属性按钮打开“物件属性”；面板固定覆盖图层区域，关闭后返回图层。
+- 基础模式属性页固定为单行四项：`移动方式 | 动画 | 变形 | 属性复制`，现有尺寸和行为保持不变。
+- 进阶模式属性页固定为两行三列：第一行 `移动方式 | 动画 | 变形`，第二行 `物件音源 | 物件背景 | 属性复制`。每个标签文字保持单行，属性面板不加宽；标签区高度固定，属性内容从顶部开始且只有内容区纵向滚动。
+- 缩略图可放大查看；名称可单击编辑。
+- 属性复制先选择目标，再在确认弹窗勾选移动方式、动画、大小、变形等内容。
+- 编辑背景支持新增、删除、拖拽排序、固定/随机/顺序播放和秒/分钟间隔输入+滚轮选择。进阶模式可配置每个背景的 BGM、批量共用 BGM，以及舞台窗帘、相机闪光和皮影戏切换动画。
+- 进阶模式的移动方式可从原有循环移动切换为“移动到目标点”：确认起始位置后拖到目标并完成，编辑态物件自动回到起点，只有预览时才移动到目标。目标点模式默认单次到达并停留；只有用户另行开启“循环移动”后才会按 `起点 → 目标点 → 起点` 持续往返。
+- 物件音源支持“出现时”“出现后延迟”“到达目标点”三种触发；播放期间自动压低 BGM，结束后平滑恢复。
+- 物件绑定所有背景时不会在每次换背景时重复触发出现音源；只有从不可见重新变为可见才算再次出现。
+- 预览模式隐藏并锁定编辑 UI，只有“停止预览”可退出；退出后恢复进入预览前的图层/物件属性面板和 tab。
+- 逐个/全部出现切换在预览中会从头播放；背景与随机动画也随 `replayId` 重算。
+
+#### 移动轨迹
+
+iPad 与 EXE 共享的视觉语义：
+
+- 上下：以物件原位置和轨道为起点做连续垂直循环；幅度按完整画布比例计算，不在轨道边界处停顿。
+- 左移/右移：横向线性穿越，同时叠加连续正弦波；0% 为所在轨道直线，50% 为局部波浪，100% 覆盖画布最高/最低视觉范围。
+- 360 回环：围绕物件原放置点做横向椭圆轨迹，并以近大远小表现深度。
+- 随机移动：每次预览从上下、左移、右移、360 回环中确定一种；不包含停止。
+- 轨道只定义动画起点，不再把动画拆成会产生顿挫的轨道切换段。
+
+### 7. 动画目录与随机规则
+
+当前动画 ID 是 iPad 与 EXE 的公共协议，不得随意重排：
+
+| ID | 动画 | 实现 |
+|---:|---|---|
+| 0 | 无动画 | 静态 |
+| 1 | 呼吸缩放 | 原有 Canvas/DOM 动画 |
+| 2 | 摇摆 | 原有 Canvas/DOM 动画 |
+| 3 | 闪烁/淡入淡出 | 原有 Canvas/DOM 动画 |
+| 4 | 轻微旋转 | 原有 Canvas/DOM 动画 |
+| 5 | 弹跳 | 原有 Canvas/DOM 动画 |
+| 6 | 波动 | 原有 Canvas/DOM 动画 |
+| 7 | 快速翻转/倾斜 | 原有 Canvas/DOM 动画 |
+| 8 | 透明度脉冲/组合效果 | 原有 Canvas/DOM 动画 |
+| 9 | 行走 | `walk-animation-core.js` |
+| 10 | Dance02 | Unity 曲线复刻 |
+| 11 | Dance | Unity 曲线复刻 |
+| 12 | Jelly Jump | Unity 曲线复刻 |
+| 13 | Jump Flip | Unity 曲线复刻 |
+| 14 | Pull Right | Unity 曲线复刻 |
+| 15 | Raise Hand | Unity 曲线复刻 |
+| 16 | Rolling | Unity 曲线复刻 |
+| 17 | Unity Wave | Unity 曲线复刻 |
+
+动画属性使用左右切换的轮播预览，并显示页码；“无”和“随机”为固定入口。随机动画不是每帧乱跳，而是用以下 seed 在一次预览中稳定解析：
+
+```text
+groupId:itemId:previewReplayId
+```
+
+iPad 会把本次的 `resolvedAnimationIds` 随 `PreviewMode` 发给 EXE，确保两边得到同一个动画。属性面板中的随机预览使用独立 session seed，每次重新打开/重播属性预览可得到新的明确动画。
+
+EXE 点击物件时：
+
+- 仅从该物件 `clickAnimationIds` 中循环/选择点击动画。
+- 点击动画临时覆盖当前展示动画，并记录覆盖前状态。
+- iPad 再次开启预览时，EXE 清除点击覆盖，恢复 iPad 的预览配置。
+- 点击背景不切动画，而是绘制水面涟漪。
+- 点击物件播放独立点击音效。
+
+### 8. 动态艺术 iPad 与 EXE 同步
+
+动态艺术的实际接收端口默认是 EXE 的 `8080`。iPad 使用 HTTP POST，不依赖 WebSocket，虽然部分变量历史上仍命名为 `wsIp`。
+
+同步分两部分：
+
+#### 作品档案镜像
+
+正确产品流程：
+
+```text
+iPad 点击动态艺术
+→ iPad 向 11701 发送动态艺术程序启动指令
+→ iPad 与 EXE 同步播放首页到作品档案的门户动画
+→ EXE 显示 iPad 作品档案页的只读 JPEG 镜像
+→ iPad 选择作品进入控制页
+→ GroupStateSync / GroupSelectAndSync 才让 EXE 进入真实舞台
+```
+
+协议：
+
+- `ArchiveEnter` version 3：包含首页 JPEG、时间基准和动态艺术卡片在 iPad 页面中的真实 bounds。
+- `ArchiveSnapshot` version 2：包含当前作品档案页 JPEG；资料夹、面包屑、排序或列表变化后会重发。
+- `ArchiveReturn` version 2：控制页返回作品档案时，EXE 直接恢复最近镜像，不重播首页门户。
+- 镜像图片只保存在 EXE 内存，不写入 `runtime-state.json`。
+- 延迟或重复的旧 `replayId` 会被忽略。
+- 舞台状态向 renderer 发布时会剥离大 JPEG，避免 Electron IPC 持续搬运大字符串。
+
+**PC 不拥有、不读取、不生成独立的作品档案 UI。** 它只显示 iPad 截图镜像，因此不能在 PC 上浏览、创建或编辑资料夹/作品档案。
+
+#### 舞台资料同步
+
+- 新设备/IP 在设置页保存后会标记 receiver 需要重新同步。
+- 用户重新进入作品时，`dynamicArtReceiverSync.ts` 会按资产签名判断是否需要重发。
+- 背景、物件与音频媒体先以 `multipart/form-data` 上传；音频使用 `role: audio`，随后再发送完整参数。
+- `GroupSelect` 只记录选中组，不进入舞台。
+- 只有 `GroupStateSync` 与 `GroupSelectAndSync` 会切换 EXE 到真实舞台。
+- `GroupStateSync` / `GroupSelectAndSync` 同步 `appearAnimation`、`backgroundTransition`、`audioLibrary`、背景 `bgmAudioId`，以及物件的目标点、音频触发和背景绑定字段。
+- `PreviewMode` 传递启停、是否开启进阶功能、出现方式/动画/间隔、背景播放方式/切换动画/间隔、`replayId` 和解析后的随机动画 ID。
+- 位置、缩放、旋转、翻转、动画、移动、图层、背景等操作均有对应增量事件；完整组同步是最终一致性保障。
+- 随机背景顺序由双方使用同一组 ID 与 `replayId` 确定，确保 iPad 与 EXE 在同一轮预览选择相同背景；下一张图片或视频会在切换前预载。
+
+### 9. 互动艺术功能
+
+主题与外部程序映射位于 `src/services/directUploadThemes.ts`：
+
+- 美丽海洋：C 组，多种鱼类，launcher `interactive-ocean`。
+- 魔幻森林 1：A 组，多种动物，launcher `interactive-forest-1`。
+- 魔幻森林 2：A 组，多种动物，launcher `interactive-forest-2`。
+- 画境成真：B 组，缤纷建筑/车辆，launcher `interactive-painting-real`。
+
+当前遮罩：
+
+- A：长颈鹿、孔雀、狐狸、斑马、大象、鹿。
+- B：建筑群、建筑立面、长条建筑、L 型建筑、货车、厢型车、轿车、小型车。
+- C：旗鱼、小丑鱼、河豚、海马、海龟、鱿鱼、神仙鱼、鲔鱼、鲨鱼。
+- UI 显示繁体中文内容名；内部 `A-xx/B-xx/C-xx` ID 保持协议稳定。
+
+上载流程：
+
+- `+` 菜单支持 Photo Library、Take Photo、Choose File。
+- 自定义相机接近原生全屏构图；关闭与圆形快门位于安全区内。
+- 打开相机时底部遮罩导航默认显示，用户可自行收起/展开。
+- 遮罩只是拍照定位辅助，不裁掉原始照片；最终上载前由 Canvas 按用户缩放/位移合成原图与选中遮罩。
+- 遮罩铺满取景区域，拍照结果仍保留完整原图能力。
+- 点击“上载图片”先播放作品发射动画，再进入既有完成揭晓动画。
+- 完成页仅表达图片已发送；“返回”回到互动艺术主题选择页，不回整个 App 首页。
+- “重新上载”先弹出毛玻璃确认框；确认后回到保留当前主题语境的遮罩/图片选择流程。
+- 本地可确认的图片读取、遮罩读取、Canvas 合成或同步 `xhr.send()` 异常会中断并保留编辑状态。
+- 由于协议没有 Unity 回执，完成页只能表示本地已发出，不能证明 Unity 已保存。
+
+互动艺术上载和 launcher 使用 `11701`。iPad 不接收 Unity 回应。
+
+### 10. 11701 指令约定
+
+`src/services/unityBridge.ts` 是 iPad 侧统一发送入口。现有类别：
+
+- 外部程序启动：`MF|AppLauncher|...`，动态艺术一项、互动艺术四项。
+- 动态艺术结构化事件：`MF|DynamicArt|<EventName>|<JSON>`；默认主要发往 8080，但启动命令仍发往 11701。
+- 远程键盘：`MF|RemoteKeyboard|...`。
+- 显示二维码：纯文本 `QrCode`。
+- 快速上载图片：HTTP `multipart/form-data` 到 11701，字段和图片格式保持现有 Unity 接收脚本兼容。
+
+根目录 `ImageFileSaveHttpServer.cs` 是 Unity 接收端参考/集成脚本，包含 11701 的已有接收逻辑和预留 UnityEvent。修改协议前必须同时核对该文件和 Unity 项目实际挂载版本。
+
+### 11. Windows EXE 行为与运行数据
+
+EXE 默认：
+
+- 无边框、全屏/全屏窗口方式运行，目标画布固定 1920x1080，再按实际显示器等比适配。
+- 开启 HTTP `0.0.0.0:8080`。
+- 支持图片和视频背景；视频在预览状态播放。
+- 多背景支持固定、随机和顺序切换。
+- 物件按 iPad 图层顺序绘制。
+- 支持所有移动、动画、缩放、旋转和翻转参数。
+- 进阶预览支持三种物件进场、目标点移动、背景绑定、逐背景 BGM、BGM 交叉淡化、物件音源触发与 BGM 自动压低。
+- 支持舞台窗帘、相机闪光和皮影戏背景切换；相机快门音由程序生成，不依赖外部音效文件。
+- 相邻背景共用同一 BGM 时不重播；不同 BGM 切换时交叉淡化。背景图片和视频会预载，但不会改变既有切换动画时长或曲线。
+- 背景点击显示逼真水涟漪；物件点击按配置切换动画并播放声音。
+- 档案模式显示 iPad JPEG 镜像；舞台模式不展示 PC 自有档案。
+
+运行数据位于 Electron `userData` 下的 runtime 目录，包含资产与 `runtime-state.json`。档案镜像不持久化。更换 EXE 或清理 userData 后，iPad 可通过“设置保存后重新进入作品”的流程重发媒体和参数。
+
+特殊翻转版：
+
+- 入口 `main.vertical-flip.js` 设置翻转环境变量。
+- 当前特殊包是**整体显示水平+垂直翻转（等效 180 度）**的展示版本，并对 pointer 坐标做对应修正，保证现场鼠标左/右、上/下与翻转后的视觉位置一致。
+- 标准版与特殊翻转版不要同时启动，否则会争用 8080。
+
+调试窗口模式：
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE = $null
+$env:MAGICFLOOR_WINDOWED = '1'
+npm start
+```
+
+某些终端环境存在 `ELECTRON_RUN_AS_NODE=1`，若不清除，Electron 会按 Node 运行而不是打开窗口。
+
+### 12. 构建、同步与打包
+
+根项目：
+
+```powershell
+cd D:\ArtLabWeb
+npm install
+npm run dev -- --host 0.0.0.0 --port 5175
+npm run build
+npm run sync:ios
+```
+
+说明：
+
+- `npm run build` 执行 `tsc && vite build`，输出 `dist/`。
+- `npm run sync:ios` 会再次 build、执行 `npx cap sync ios`，然后运行 `scripts/fix-ios-spm-paths.cjs`。
+- iOS 工程：`ios/App/App.xcodeproj` / 对应 Xcode workspace（以当前 Capacitor 生成结果为准）。
+- iOS 状态栏已配置为全屏隐藏；安全区 CSS 仍必须保留，避免实体 iPad 顶部系统区域遮挡控件。
+- Windows 本机不能完成 Xcode archive/sign；最终 iOS 安装包需在 macOS/Xcode 使用正确 Team、Bundle ID 和签名配置构建。
+
+EXE：
+
+```powershell
+cd D:\ArtLabWeb\desktop-runtime
+npm install
+npm run pack:portable
+npm run pack:vertical-flip
+```
+
+也可使用 `npx electron-builder --win portable --config.directories.output=<新目录>` 为标准版输出到独立目录。每次修复后必须使用新目录，避免把旧 EXE 误认为新构建。
+
+### 13. 2026-08-13 当前 EXE 交付基线
+
+以下两个包已包含档案镜像同步、档案面包屑截图修复、额外动画循环修复，以及本节所述全部动态艺术进阶功能。后续现场交付只使用这两个目录中的文件：
+
+```text
+D:\ArtLabWeb\desktop-runtime\release-advanced-final-20260813\
+  MagicFloor Dynamic Player 0.1.0.exe
+
+D:\ArtLabWeb\desktop-runtime\release-advanced-vertical-final-20260813\
+  MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+```
+
+文件大小与 SHA-256（已在最终路径重新核对）：
+
+```text
+标准版：85,297,870 bytes
+SHA-256：06887217F0C9F51DFC5F7B9CBFCB90E09601D7429B04DF9E37C5DD717C9205F7
+
+整体翻转版：85,284,311 bytes
+SHA-256：20DD272F34A6505966F121F472E957B60DACF8E89743FB63101001DA66F70C8F
+```
+
+2026-08-13 已再次清理旧构建和失败临时输出；当前 `desktop-runtime/` 下所有 `release-*` 目录中只保留上述标准版与整体翻转版两份最终交付。`renderer/`、`scripts/`、`node_modules/` 和 EXE 源码均未删除。
+
+### 14. 验收清单
+
+每次触及动态艺术或 EXE 后至少验证：
+
+1. `npm run build` 成功。
+2. `npm run sync:ios` 成功，`dist` 已同步到 iOS public。
+3. `node --check desktop-runtime/main.js`、`player.js` 及被修改的 renderer 模块通过。
+4. iPad 点击动态艺术时，iPad/EXE 同步播放门户，EXE 最终显示 iPad 档案镜像。
+5. 进入子资料夹后 EXE 镜像与 iPad 面包屑一致。
+6. 单独 `GroupSelect` 不进入舞台；`GroupStateSync`/`GroupSelectAndSync` 才进入舞台。
+7. 图片、极端细长抠图、视频背景均能载入。
+8. 预览中的出现方式、背景切换、移动和动画在 iPad/EXE 一致。
+9. 随机动画在同一 `replayId` 下两端一致，重复预览会重新抽取。
+10. EXE 点击物件动画范围和背景涟漪不受预览逻辑影响。
+11. 标准版与整体翻转版分别启动；翻转版画面和鼠标命中方向均正确。
+12. 测试完成后关闭已知测试进程并确认 8080 已释放。
+13. 基础模式仍为四个属性标签且旧作品播放不变；进阶模式为两行三列且面板不加宽。
+14. 逐个/全部进场、目标点和到达音频在 iPad/EXE 同步；离开背景后延迟音频会被取消。
+15. 多背景 BGM 共用、交叉淡化和物件音频压低 BGM 正常；共用同一 BGM 时不重启。
+16. 窗帘、相机闪光和皮影戏分别验证图片/视频背景，并在 20-30 个物件时观察性能。
+
+### 15. 已知限制与维护约束
+
+- 动态艺术资料尚未做 Supabase Storage 云端备份/账号漫游。
+- “账号只允许一台设备”尚无服务端强制机制。
+- 互动艺术发送没有 Unity 回执，成功页不代表远端已落盘。
+- EXE 档案页依赖 iPad JPEG 镜像，不能脱离 iPad自行浏览作品档案。
+- 大 JPEG 通过 8080 发送，接收端必须保持足够的 body 大小与内存余量。
+- `src/index.css` 很大且包含多轮后置覆盖；改样式前必须搜索同名 selector，最终规则通常位于文件后部。
+- 动画 ID、事件名和 payload 字段是跨 iPad/EXE 的协议，修改时必须双端一起调整。
+- `transition-portal-preview/` 是测试页，不应被误当成生产入口。
+- 根目录中的 `ThreeJSPhotoAnimation/` 是 Unity 动画复刻依据，不能在没有对照验证时删除。
+- 进阶功能关闭时必须保留已经保存的进阶字段，只停用进阶 UI 与播放行为；重新开启后应恢复原设置。
+- 基础模式的四项属性布局、既有移动轨迹和图片动画属于回归保护范围，不得因进阶功能继续调整而改写。
+- 工作区可能存在用户未提交改动；不得回退或覆盖与当前任务无关的修改。
+- **只有用户明确要求时才执行 Git 命令（包括 status、diff、commit、push、tag、checkout 等）。**
+
+### 16. 2026-08-13 档案镜像与随机动画修复（已解决）
+
+#### EXE 档案面包屑毛玻璃块
+
+- 问题只存在于发送给 EXE 的档案页 JPEG 镜像中，不是 EXE 自己生成了面包屑或资料浏览 UI。
+- 根因是 `html-to-image` 截取 iPad 档案页面时，WebKit 会把面包屑的 `backdrop-filter` 错误栅格化成横跨下方区域的大矩形。
+- `captureDynamicArchiveSnapshot()` 现在只在截图期间为档案根节点挂载 `dynamic-archive-snapshot-capture`，并在 `finally` 中可靠移除。
+- 截图期间仅关闭面包屑的 `backdrop-filter/-webkit-backdrop-filter`，改用视觉接近的实色透明背景；iPad 实际页面仍保留原有毛玻璃效果，其他页面和过场动画不受影响。
+
+#### 首次随机动画只播放一轮
+
+- 根因是随机模式可能抽中 `12-17` 的 Unity 额外动画，而这些曲线的原始定义是 non-loop。物件属性内的小预览原本会强制循环，但 iPad 舞台与 EXE 舞台在第一次预览没有统一处理，所以会停在末帧；后续预览若抽中天然循环动画，就会看起来恢复正常。
+- iPad 的实际预览舞台现在为 `UnityAnimationCanvas` 启用 `forceLoop`，只在进入预览模式时生效。
+- EXE 在 `PreviewMode.enabled` 时根据 Unity 额外动画的真实时长循环折返 elapsed time，使 `10-17` 在预览期间连续播放。
+- EXE 的鼠标点击动画仍优先走原有 one-shot override；点击物件时按勾选范围播放一次的行为没有被改成循环。
+- 同一轮预览仍使用 iPad 发出的 resolved animation ID；随机结果、`replayId` 重播和双端同步协议均未改变。
+
+#### 本轮验证
+
+- `npm run build`：通过，1752 个模块完成转换；仅保留既有的大 chunk 提示。
+- `npm run sync:ios`：通过；Capacitor iOS 同步与 `fix-ios-spm-paths` 均成功。
+- Web 构建与 `ios/App/App/public` 文件核对：`58` 个文件，`MissingInIos: 0`，`HashMismatch: 0`。
+- EXE 语法检查：`main.js`、`renderer/player.js`、`unity-animation-core.js`、`dynamic-animation-catalog.js`、`interaction-core.js` 全部通过。
+- 标准版与整体翻转版均成功打包，并以窗口模式启动做烟雾测试；两者 `/status` 均返回 `server.status = listening`、`server.port = 8080`、`view.mode = archive`。
+- 测试进程已按实际 EXE 路径关闭，端口 `8080` 已确认释放；没有发送会修改用户作品资料的协议事件。
+- 当前开发预览服务仍位于 `http://localhost:5175/`。
+- 自动化环境无法代替实体 iPad 与 EXE 双屏截图，因此面包屑镜像最终视觉，以及“随机抽中 12-17 后长时间连续播放”仍应在实机做最后一次人工验收。
+
+更新时间：2026-08-13
+当前状态：登录、首页、五语设置、远程键盘、动态艺术档案与控制工作台、互动艺术拍照遮罩与上载、11701 单向 Unity 指令、8080 iPad/EXE 同步、档案镜像、标准与整体翻转 Windows 播放端均已形成可构建交付。动态艺术本地资料可以持久保存并在更换接收端后重发，但 Supabase Storage 云端备份、账号资料漫游和服务端单设备登录互斥仍未实现。大改前历史基线与逐轮修改记录保留在下方，供协议追溯和回归排查。
+
+### 17. 2026-08-13 iPad 首页与控制页细节修正
+
+- 首页键盘入口与设置入口共用 `entry-home-icon-button` 的 52×52 容器、8px 圆角、图标尺寸、双描边、高光与阴影。最终版本采用约 28% 不透明度的半透明蓝色玻璃基底，并降低表层渐变、内阴影和外发光强度；两处材质参数一致，同时允许蓝天或草地轻微透入，避免厚重磨砂感。入口位置和功能不变。
+- 出现方式选择“全部出现”时，间隔滑杆继续保留原数值供切回“逐个出现”恢复，但整段控件会灰化、去饱和并禁止触控，同时提供 `aria-disabled` 语义。
+- 物件属性关闭按钮由字体字符改为 Lucide `X`，图层收起按钮由字体字符改为 Lucide `ChevronRight`；按钮使用固定方形网格居中，避免繁中字体基线造成视觉偏移。
+- 最终透明度调整后再次执行 `npm run sync:ios` 并通过；其中包含 TypeScript/Vite 生产构建、Capacitor iOS 资源复制与 `fix-ios-spm-paths`。构建完成 1752 个模块，仅保留既有的大 chunk 警告；前一轮核对中 `dist` 的 58 个文件在 `ios/App/App/public` 内为 `MissingInIos: 0`、`HashMismatch: 0`。
 
 ## 近期修改记录
 
@@ -1746,3 +2274,184 @@ git diff --check
 - `npm run build` 通過；只有既有的大型 chunk 提示。
 - 已在 `1194 x 834` 與 `1024 x 768` 橫向尺寸驗證：四張主題卡最終等高等位、透明度為 `1`、transform 正確清除，頁面與控制台無異常。
 - 動態藝術回歸驗證仍顯示原筆記本圖騰；互動藝術門戶中間幀 Canvas 有正常內容，過場及落地頁沒有白屏幀。
+
+## 21. 2026-08-14 動態藝術進階出場、物件聯動與桌面同步
+
+### 完成內容
+
+- 設定頁的「進階功能」仍是唯一功能開關；未開啟時，控制頁維持原有四個物件屬性選項與既有預覽行為。關閉進階功能不會刪除已儲存的進階參數。
+- 進階物件屬性保持原面板寬度，選項分成兩行：`移動方式 / 動畫 / 變形` 與 `物件音源 / 物件背景 / 屬性複製`。
+- 目標點編輯按鈕顯示「完成」，不再顯示 `common.done`；切換物件、切換頁籤、開始預覽、關閉或收起面板、開啟背景或出場設定時，會自動退出目標點編輯狀態。
+- 選擇上方任一移動方式時，下方目標點與循環按鈕不顯示選中；選擇「移動到目標點」時，上方移動按鈕取消選中，預設只執行一次，另行開啟「循環移動」才會往返。切換模式不會刪除已設定的目標座標、上方移動參數或上次的 `targetLoop` 選擇。
+- 動畫頁新增物件聯動。可設定「無」、「指定時間出現」或「指定時間隱藏」，計時點是觸發物件完成自身進場之後；聯動物件不佔用逐個出場的排序時間。
+- 聯動編輯採用控制方視角：開啟觸發物件 A 的屬性後選擇受控物件 B，介面、圖層徽章與舞台關係線均明確顯示 `A -> B`。一個 A 可控制多個物件；一個 B 同一時間只可由一個 A 控制，替換控制方前會顯示警告。
+- 聯動支援連鎖關係，禁止綁定自己與形成循環。建立 `A -> B` 後，B 的 `backgroundIds` 會立即鎖定並持久化為 A 的背景範圍；A 之後修改背景時會同步傳播到 B，`A -> B -> C` 則沿整條鏈繼承。B 不會再單獨出現在 A 不屬於的背景，也不會產生關係鎖指向未顯示 A 的情況。
+- 關係鎖只表示物件之間存在聯動，不會鎖住位置、縮放、旋轉、變形或圖層拖曳。刪除觸發物件時，依賴它的聯動設定會自動清除；屬性複製不會複製聯動關係。
+- 作品的物件出場動畫由組級 `appearAnimation` 統一控制：淡入、上方掉落或按軌道左右進場，不再由背景資料覆蓋。
+- 每張背景可獨立指定背景轉場：直接切換、舞台窗簾、拍照閃白或皮影戲。背景編輯器可套用到已勾選背景；沒有勾選時則套用目前背景，切入時讀取目標背景綁定的轉場。
+- iPad 與 Windows EXE 共用 `desktop-runtime/renderer/advanced-appearance-timeline.js`：淡入 `420ms`、上方掉落 `620ms`、左右進場 `560ms`，聯動延遲限制為 `0-600000ms`。
+- 在多個背景持續存在且已真正可互動的物件會沿用同一播放 epoch，不會在背景切換首幀消失，也不會重播物件音源；真正重新出場的物件會建立新 epoch，可再次依設定播放音源。
+- 指定時間隱藏後，物件不再接受點擊，尚未觸發的物件音源會取消。移動、目標點、物件動畫與音源均從同一出場 epoch 起算。
+- iPad 傳送的 `GroupStateSync` / `GroupSelectAndSync` 已包含 `advancedFeaturesEnabled`、組級 `appearAnimation`、每張背景的 `backgroundTransition`，以及每個物件的 `linkedAppearance`；EXE 以相同資料和共享時間線播放。
+- 繁體中文、簡體中文、英文、葡萄牙文及波蘭文均已補齊目標點、物件聯動、物件出場和背景轉場相關文字。
+
+### 資料與協定
+
+物件聯動儲存在 `DynamicItem.linkedAppearance`：
+
+```text
+triggerItemId: 觸發物件 ID
+mode: showAfter | hideAfter
+delayMs: 0-600000
+```
+
+介面顯示的是控制方關係 `A -> B`，同步協定則由受控物件 B 保存上述欄位，其中 `B.linkedAppearance.triggerItemId = A.id`。目前 `linkedAppearanceModelVersion` 為 `3`；舊版方向錯置的本機與桌面快取只會遷移一次，之後不再反轉。關閉進階功能時不顯示也不執行聯動，但會保留已儲存的關係資料。
+
+作品的物件出場方式儲存在 `DynamicGroup.appearAnimation`：
+
+```text
+none       淡入
+drop       上方掉落
+trackSlide 按軌道左右進場
+```
+
+每張背景的轉場儲存在 `DynamicBackground.backgroundTransition`：
+
+```text
+none        直接切換
+curtain     舞台窗簾
+cameraFlash 拍照閃白
+shadowPlay  皮影戲
+```
+
+### 驗證與交付
+
+- `npm run test:appearance` 通過，覆蓋逐個出場排序、延遲顯示、延遲隱藏、互動狀態、受控背景強制繼承、多級關係傳播、解除關係後保留最後繼承值、關係方向、循環聯動及 600 秒上限。
+- 關係介面仍維持兩行屬性頁籤、圖層關係鎖、舞台 `A -> B` 輔助線與居中毛玻璃關係彈窗；舊的「跨背景暫時帶入」說明已替換為「背景跟隨」，受控物件的背景控制會顯示鎖定狀態。
+- `npm run build` 通過；TypeScript 與 Vite 生產構建正常，僅保留既有的大型 chunk 提示。
+- `node --check desktop-runtime/main.js`、`player.js` 與 `advanced-appearance-timeline.js` 全部通過。
+- `npm run sync:ios` 通過；最新 Web 資源已同步至 `ios/App/App/public`，Capacitor 插件與 SPM 本機路徑同步成功。
+- `npm run lint` 無法執行，原因仍是專案沒有 ESLint 設定檔，並非本輪程式錯誤。
+- 標準與完整翻轉便攜 EXE 均已直接啟動驗證：`8080` 為 `listening`、冷啟動頁為 `archive`、預覽預設關閉；測試後所有進程均已關閉且 `8080` 已釋放。
+
+2026-08-14 新交付版本：
+
+```text
+desktop-runtime/release-background-transitions-final-20260814/MagicFloor Dynamic Player 0.1.0.exe
+SHA-256: 20C35357B45A48883DCD03B22BEFABAB27F42D5F8D6D023D4255344B91F470DA
+
+desktop-runtime/release-background-transitions-vertical-final-20260814/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+SHA-256: 418A50DCDFF7531F42D80FE65B50F10C53729B744A8843514BE15D43C51FEA38
+```
+
+兩個版本都監聽 `8080`，不可同時運行。原有四個 `release-advanced-*` 目錄仍完整保留作回退版本。本輪未執行任何 Git 操作。
+
+此段為 2026-08-14 當時狀態：本輪物件聯動方向、關係鎖和跨背景暫時帶入已更新至 `desktop-runtime` 原始碼並通過共享時間線測試，但當時尚未重新打包 Windows EXE。2026-08-18 已完成標準版與完整翻轉版重新打包，最新交付路徑與 SHA-256 以第 25 節為準。
+
+## 22. 2026-08-14 背景轉場音效與 BGM 自動避讓
+
+### 完成內容
+
+- 新增跨 iPad / EXE 共用的 `desktop-runtime/renderer/background-transition-audio.js`，三種背景轉場現在都有獨立的程序合成音效，不依賴外部音檔或網路載入。
+- `cameraFlash` 使用雙段機械快門、高頻葉片與低頻鏡箱落定聲，取代原本容易被 BGM 掩蓋的弱快門聲。
+- `curtain` 使用左右立體聲布料收攏、中央閉合落定及向兩側拉開的聲音，總時長約 `1200ms`。
+- `shadowPlay` 使用布幕橫向拖動、木質杆件敲擊、換景後反向拉開及木質收尾聲，總時長約 `1400ms`。
+- 背景轉場聲開始時，iPad BGM 會由正常 `0.72` 快速壓低到 `0.10`；EXE BGM 會由正常 `0.62` 壓低到 `0.10`。轉場完成後，依物件音源是否仍在播放恢復至物件避讓音量或正常音量。
+- 背景切換時的新 BGM 會從壓低後的音量開始，不會在轉場中途突然升高；停止預覽、切換轉場或開始下一個轉場時會立即停止上一條轉場聲，避免疊音與殘音。
+- 三種既有背景轉場的視覺、時序、背景綁定資料與同步協定均未改動。
+
+### 驗證與交付
+
+- `npm run build`、三份 EXE 腳本 `node --check`、`npm run test:appearance` 與 `npm --prefix transition-portal-preview run verify:linkage` 均通過。
+- 新增 `npm --prefix desktop-runtime run test:transition-audio`，覆蓋三種音效時長、分層聲源建立、立即停止，以及 iOS AudioContext 尚未解鎖時取消舊聲音的行為。
+- `npm run sync:ios` 通過，且 `dist` 全部檔案與 `ios/App/App/public` 對應檔案的 SHA-256 完全一致。
+- 標準版與完整翻轉版的 `app.asar` 均確認包含 `background-transition-audio.js`、`interaction-audio.js` 與最新 `player.js`。
+- 兩個 EXE 均已冷啟動驗證：`8080` 正常監聽、初始頁為 `archive`、預覽預設關閉；測試進程已全部結束，`8080` 已釋放。
+- `npm run lint` 仍因專案沒有 ESLint 設定檔而無法啟動，並非本輪程式錯誤。
+
+本輪最新交付版本已包含前一輪物件聯動修正與本輪背景轉場音效：
+
+```text
+desktop-runtime/release-transition-audio-final-20260814/MagicFloor Dynamic Player 0.1.0.exe
+SHA-256: 54D0ED1B9CE99217DAF95B75E74DA1E3D17D1198BE013D871FDF9DE7E0B092E3
+
+desktop-runtime/release-transition-audio-vertical-final-20260814/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+SHA-256: 7397D97BA7E579F4B38A16F2ABF1DB49C0B5DEB189689BC8F25EE2EF16D6C053
+```
+
+兩個版本都監聽 `8080`，不可同時運行。本輪未執行任何 Git 操作。
+
+## 23. 2026-08-17 控制頁雙向過場、目標點循環與完整屬性複製
+
+### 完成內容
+
+- `作品檔案 → 控制頁` 與 `控制頁 → 作品檔案` 的雙向過場改為提前掛載目標頁、預先解碼舞台圖片、保留作品檔案頁快取，並把網路同步與影片播放延後到過場完成；原有 GSAP 時長、順序、緩動、視覺關鍵幀、物件落地及反向收攏均未改動，用於減少 iPad Air / iPad Pro 的掉幀與白屏。
+- 目標點移動新增獨立 `targetLoop`：選擇「移動到目標點」後預設只執行 `起點 → 目標點` 並停留；開啟「循環移動」後才執行 `起點 → 目標點 → 起點` 往返。舊作品沒有該欄位時按不循環處理。
+- 上方既有移動方式與下方目標點模式只做選中狀態互斥，不會互相刪除設定；切回目標點模式會恢復上次的目標座標與循環選擇。iPad 與 EXE 使用同一速度及單次／往返計算，循環期間「到達目標」音源只在首次到達時觸發一次。
+- 「移動到目標點」與「循環移動」按鈕重新分配寬度、圖示、間距及勾選位置；中文完整顯示，英文、葡萄牙文與波蘭文過長時可自然換行，不再以省略號裁切。
+- 進階功能開啟時，屬性複製擴充為 `移動方式 / 動畫 / 大小 / 變形 / 物件音源 / 物件背景 / 物件聯動` 七類；基礎模式仍只顯示原有四類，不改既有介面。
+- 複製「移動方式」會同時複製來源物件的 `position`、`gridIndex`、一般移動參數、`targetMode`、`targetLoop` 與 `targetPosition`，完整保留 `來源起點 → 來源目標點` 軌跡；音源、背景與聯動的空值也會覆蓋目標舊值，陣列與座標均為獨立深複製。
+- EXE 的屬性複製事件與完整組同步已支援上述進階欄位，並新增 `desktop-runtime/renderer/item-settings-copy-core.cjs` 作為可獨立驗證的桌面複製核心。
+
+### 驗證與交付
+
+- `npm run build`、`npm --prefix desktop-runtime run test:item-copy`、`npm --prefix desktop-runtime run test:target-motion`、`npm --prefix desktop-runtime run test:appearance`、`npm --prefix desktop-runtime run test:transition-audio`、`node --check desktop-runtime/main.js` 均通過。
+- `npm run sync:ios` 通過，當輪 `dist` 的 58 個正式檔案與 `ios/App/App/public` 對應內容逐一一致；iOS 額外的 `cordova.js` 與 `cordova_plugins.js` 為 Capacitor 正常執行檔。
+- 當輪曾生成 `release-target-loop-*` 標準版與完整翻轉版；這兩個目錄其後已被第 25 節的背景繼承最終版本覆蓋，因此交付時不得使用本節歷史中間哈希。
+- `npm run lint` 仍因倉庫沒有 ESLint 設定檔而無法啟動，並非本輪程式錯誤；本輪未執行任何 Git 操作。
+
+## 24. 2026-08-17 首頁品牌與背景播放順序
+
+### 完成內容
+
+- 首頁「動態藝術」卡片圖像改為根目錄 `ArtDisplay.jpg`，以 Vite 資源匯入並預先解碼，Web 與 Capacitor iOS 產物均包含該圖片；作品檔案、控制頁、互動藝術卡片及首頁門戶轉場結構不受影響。
+- 英文首頁專用名稱改為 `ArtDisplay`，只作用於首頁卡片，不會把作品檔案頁的 Dynamic Art 標題一併改名；其他語言沿用既有名稱。
+- 首頁 Logo 在一般橫屏放大至約 `128px`，較矮或較窄裝置回退至約 `96px`，並保留 safe area 與頂欄空間；登入頁 Logo 不受影響。
+- 背景播放方式選擇 `sequence / 全部切換` 時，每次預覽都從持久化背景陣列第 1 張開始，嚴格依背景卡片拖曳順序循環；勾選順序只用於批量套用轉場、BGM 或刪除，不再影響播放。`fixed` 與 `random` 行為保持不變。
+- 新增 `desktop-runtime/renderer/background-playback-core.js` 與型別檔，iPad 控制頁及 EXE 共用相同的順序起點規則；新增 `npm --prefix desktop-runtime run test:background-order` 防止播放順序回歸。
+- 首輪背景編輯已能按目前背景篩選舞台物件；關閉背景面板後仍出現其他背景物件的問題，已在第 25 節改為持續活動背景範圍。
+- 首頁 `DynamicPortalTransition` 的約 `2.18s` GSAP / Three.js 時間線、紙片解構、代碼流與目標頁揭示均未修改；獨立測試頁 `http://localhost:5188/` 曾以 `1194 × 834`、WebGL 可用且非 reduced-motion 條件確認完整播放。
+
+### 驗證與交付
+
+- `npm run build`、`npm run sync:ios`、`npm --prefix desktop-runtime run test:background-order`、`npm --prefix desktop-runtime run test:appearance`、`npm --prefix desktop-runtime run test:transition-audio`、`npm --prefix desktop-runtime run test:item-copy`、`npm --prefix desktop-runtime run test:target-motion` 均通過；`desktop-runtime/main.js`、`renderer/player.js` 與 `renderer/background-playback-core.js` 的 `node --check` 亦通過。
+- `ArtDisplay.jpg` 已進入 Web 與 iOS 產物；當輪 `dist` 59 個檔案均在 iOS 中逐一 SHA-256 一致，iOS 額外兩個 Capacitor 執行檔屬正常差異。
+- 當輪兩版 EXE 其後均被第 25 節的最終背景繼承版本覆蓋，最新交付只認第 25 節列出的路徑與哈希。
+- Vite 仍只保留既有主 chunk 大於 500KB 的提示；本輪未執行任何 Git 操作。
+
+## 25. 2026-08-18 活動背景篩選與聯動背景強制繼承
+
+### 完成內容
+
+- 開啟進階功能且存在 `activeBackgroundId` 時，控制頁舞台與圖層列表會持續只顯示目前背景適用的物件，不再依賴預覽狀態或「編輯背景」面板是否開啟；未指定背景的物件仍貫穿所有背景。
+- 切換背景後，若原選中物件不屬於新背景，控制頁會切換至可見物件並關閉舊物件屬性與目標點編輯；全選及批量刪除只作用於目前可見圖層。圖層拖曳與鍵盤調層仍以完整作品順序計算，其他背景的隱藏物件不會遺失或被意外重排。
+- 建立 `A -> B` 聯動後，B 的 `backgroundIds` 會立即鎖定並持久化為 A 的有效背景範圍；A 後續修改背景會同步傳播到 B，`A -> B -> C` 沿整條鏈繼承，最上游 A 貫穿所有背景時下游也全部貫穿。
+- B 的「物件背景」頁仍可查看，但範圍按鈕與背景勾選全部停用，介面顯示「背景跟隨 A」；B 不會再單獨出現在 A 不存在的背景，舞台關係鎖也只連接目前背景中實際可見的物件。
+- 解除聯動後，B 保留解除前最後一次繼承的背景範圍並恢復獨立編輯；舊作品若已保存 A/B 衝突背景，載入、儲存、屬性複製及同步至 PC 時會自動正規化，不需要使用者重新綁定。
+- `advanced-appearance-timeline.js` 新增有效背景解析與聯動背景同步，播放過濾改為使用繼承後的範圍；`dynamicArtStorage.ts`、`DynamicControlPage.tsx`、`GroupStateSync` 及 `desktop-runtime/main.js` 均使用相同規則，取代舊的「只在預覽中暫時帶入且不持久化」行為。
+- 五語文案已由「跨背景暫時帶入」統一改為「背景跟隨」與鎖定說明；首頁、背景播放、目標點、音源、背景轉場及其他既有進階功能均未移除。
+
+### 驗證與交付
+
+- `npm run build`、`npm --prefix desktop-runtime run test:appearance`、`npm --prefix desktop-runtime run test:item-copy`、`npm --prefix desktop-runtime run test:target-motion`、`npm --prefix desktop-runtime run test:background-order`、`npm --prefix desktop-runtime run test:transition-audio` 均通過；外觀測試已覆蓋強制繼承、多級傳播、全背景繼承、非突變播放過濾、持久化同步及解除關係後保留最後背景值。
+- `node --check desktop-runtime/main.js`、`node --check desktop-runtime/renderer/player.js` 與 `node --check desktop-runtime/renderer/advanced-appearance-timeline.js` 均通過。
+- `npm run sync:ios`、最後一次 `npx cap sync ios` 與 `npm run fix:ios-spm` 均通過；最終 `dist` 的 59 個應用檔案與 iOS 對應檔案 SHA-256 全部一致，額外兩個 Capacitor 執行檔為正常差異。
+- 兩個便攜 EXE 都已重新打包；包內 `main.js`、`player.js`、`advanced-appearance-timeline.js`、`background-playback-core.js` 與 `target-motion-core.js` 已核對為本輪最新版本。兩個版本都監聽 `8080`，不可同時運行。
+
+最終標準版：
+
+```text
+desktop-runtime/release-target-loop-final-20260817/MagicFloor Dynamic Player 0.1.0.exe
+Size: 85,302,382 bytes
+SHA-256: 196C0E8354B2DDBFF9B12E6F32E1D7CC36C7B6327C708DA989504AACEDD57F5B
+```
+
+最終完整翻轉版：
+
+```text
+desktop-runtime/release-target-loop-vertical-final-20260817/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+Size: 85,289,448 bytes
+SHA-256: 8AFCC25FD43938688BE46EF2AD5E54F003ACE0413C7FEAC8B19EC9758447257F
+```
+
+兩個 release 目錄同時保留 electron-builder 產生的 `win-unpacked`，便攜 EXE 本身可正常交付。`desktop-runtime/README.md` 仍保留「跨背景暫時帶入且不修改 backgroundIds」的舊描述，後續維護時應以本節、目前原始碼與測試為準並同步修正文檔。`npm run lint` 仍因沒有 ESLint 設定檔而無法啟動；本輪未執行任何 Git 操作。

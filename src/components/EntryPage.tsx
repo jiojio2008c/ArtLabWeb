@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Settings } from 'lucide-react'
+import { Keyboard, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import type { DynamicGroup, DynamicMedia } from '../services/dynamicArtStorage.ts'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
 import { preloadInteractiveTransitionAssets } from './interactiveTransitions/preloadInteractiveAssets.ts'
+import { preloadImages, scheduleIdleTask } from '../services/transitionPerformance.ts'
 
 interface EntryPageProps {
   wsIp: string
@@ -12,6 +13,7 @@ interface EntryPageProps {
   onOpenDynamicArt: () => void
   onOpenDynamicGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
   onOpenInteractiveArt: () => void
+  onOpenRemoteKeyboard: () => void
   onOpenSettings: () => void
   rootRef?: RefObject<HTMLElement>
   dynamicCardRef?: RefObject<HTMLButtonElement>
@@ -24,6 +26,7 @@ const LONG_PRESS_MS = 430
 const MAX_PREVIEW_GROUPS = 4
 const MAX_PREVIEW_ITEMS_PER_GROUP = 5
 const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
+const ART_DISPLAY_ICON_URL = new URL('../../ArtDisplay.jpg', import.meta.url).href
 
 const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => (
   group.thumbnail ?? group.background ?? group.items[0]?.media
@@ -35,6 +38,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
   onOpenDynamicArt,
   onOpenDynamicGroup,
   onOpenInteractiveArt,
+  onOpenRemoteKeyboard,
   onOpenSettings,
   rootRef,
   dynamicCardRef,
@@ -49,12 +53,22 @@ const EntryPage: React.FC<EntryPageProps> = ({
   const previewGroups = dynamicGroups.slice(0, MAX_PREVIEW_GROUPS)
 
   useEffect(() => {
-    const preloadTimer = window.setTimeout(() => {
+    return scheduleIdleTask(() => {
       void preloadInteractiveTransitionAssets()
-    }, 120)
-
-    return () => window.clearTimeout(preloadTimer)
+    }, 800)
   }, [])
+
+  useEffect(() => {
+    const previewUrls = dynamicGroups
+      .slice(0, 12)
+      .map((group) => group.thumbnail ?? group.background ?? group.items[0]?.media)
+      .filter((media): media is DynamicMedia => Boolean(media) && media?.type !== 'video')
+      .map((media) => media.url)
+
+    return scheduleIdleTask(() => {
+      void preloadImages(previewUrls, 1200)
+    }, 500)
+  }, [dynamicGroups])
 
   const handleEnter = (next: () => void) => {
     const ip = wsIp.trim()
@@ -134,7 +148,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
 
         <button
           type="button"
-          className="settings-icon-button"
+          className="settings-icon-button entry-home-icon-button"
           onClick={onOpenSettings}
           disabled={transitioning}
           aria-label={t('home.settings')}
@@ -158,9 +172,16 @@ const EntryPage: React.FC<EntryPageProps> = ({
             disabled={transitioning}
           >
             <span className="entry-choice-image-shell">
-              <img src="/MainIcon/8080.png" alt="" className="entry-choice-icon" draggable={false} />
+              <img
+                src={ART_DISPLAY_ICON_URL}
+                alt=""
+                className="entry-choice-icon"
+                draggable={false}
+                loading="eager"
+                decoding="async"
+              />
             </span>
-            <span className="entry-choice-title">{t('home.dynamicArt')}</span>
+            <span className="entry-choice-title">{t('home.dynamicArtCard')}</span>
             <i className="dynamic-portal-card-grid" aria-hidden="true" />
             <i className="dynamic-portal-card-corners" aria-hidden="true" />
           </button>
@@ -242,6 +263,21 @@ const EntryPage: React.FC<EntryPageProps> = ({
           <span className="entry-choice-title">{t('home.interactiveArt')}</span>
           <i className="dynamic-portal-card-grid" aria-hidden="true" />
           <i className="dynamic-portal-card-corners" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
+          className="settings-icon-button entry-home-icon-button entry-remote-keyboard-button dynamic-home-fade"
+          disabled={transitioning}
+          onClick={() => {
+            setDynamicPeekOpen(false)
+            handleEnter(onOpenRemoteKeyboard)
+          }}
+          aria-label={t('home.keyboardControl')}
+          title={t('home.keyboardControl')}
+        >
+          <Keyboard aria-hidden="true" />
+          <span>{t('home.keyboardControl')}</span>
         </button>
       </section>
     </main>

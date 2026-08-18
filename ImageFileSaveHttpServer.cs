@@ -7,9 +7,17 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Events;
 
+[Serializable]
+public class RemoteKeyboardCommandEvent : UnityEvent<string>
+{
+}
+
 public class ImageFileSaveHttpServer : MonoBehaviour
 {
     private const string LaunchCommandPrefix = "MF|AppLauncher|Launch|";
+    private const string RemoteKeyboardCommandPrefix = "MF|RemoteKeyboard|";
+    private const string RemoteKeyboardPressPrefix = RemoteKeyboardCommandPrefix + "Press|";
+    private const string RemoteKeyboardTurnPrefix = RemoteKeyboardCommandPrefix + "Turn|";
     private const string DynamicArtAppId = "dynamic-art";
     private const string Forest1AppId = "interactive-forest-1";
     private const string Forest2AppId = "interactive-forest-2";
@@ -32,8 +40,13 @@ public class ImageFileSaveHttpServer : MonoBehaviour
     public UnityEvent onPaintingRealLaunch = new UnityEvent();
     public UnityEvent onBeautifulOceanLaunch = new UnityEvent();
 
+    [Header("Remote Keyboard Events")]
+    [Tooltip("Invoked on the Unity main thread with a validated MF|RemoteKeyboard command.")]
+    public RemoteKeyboardCommandEvent onRemoteKeyboardCommand = new RemoteKeyboardCommandEvent();
+
     private readonly object _saveLock = new object();
     private readonly ConcurrentQueue<string> _launchRequests = new ConcurrentQueue<string>();
+    private readonly ConcurrentQueue<string> _remoteKeyboardRequests = new ConcurrentQueue<string>();
     private HttpListener _listener;
     private bool _isListening;
     private string _resolvedSaveDirectory;
@@ -49,6 +62,20 @@ public class ImageFileSaveHttpServer : MonoBehaviour
     {
         public string fullPath;
         public long length;
+    }
+
+    [Serializable]
+    private class RemoteKeyboardPressPayload
+    {
+        public string[] keys;
+    }
+
+    [Serializable]
+    private class RemoteKeyboardTurnPayload
+    {
+        public string control;
+        public string key;
+        public int steps;
     }
 
     private void Start()
@@ -114,10 +141,11 @@ public class ImageFileSaveHttpServer : MonoBehaviour
 
             if (IsTextCommandContentType(context.Request.ContentType))
             {
-                if (TryQueueLaunchCommand(rawData))
+                string command = Encoding.UTF8.GetString(rawData).Trim();
+                if (TryQueueLaunchCommand(command) || TryQueueRemoteKeyboardCommand(command))
                     WriteResponse(context.Response, 202, "Accepted");
                 else
-                    WriteResponse(context.Response, 400, "Invalid app launch command.");
+                    WriteResponse(context.Response, 400, "Invalid text command.");
 
                 return;
             }
@@ -157,6 +185,13 @@ public class ImageFileSaveHttpServer : MonoBehaviour
         string appId;
         while (_launchRequests.TryDequeue(out appId))
             InvokeLaunchEvent(appId);
+
+        string remoteKeyboardCommand;
+        while (_remoteKeyboardRequests.TryDequeue(out remoteKeyboardCommand))
+        {
+            Debug.Log($"Remote keyboard command requested: {remoteKeyboardCommand}");
+            onRemoteKeyboardCommand?.Invoke(remoteKeyboardCommand);
+        }
     }
 
     private bool IsTextCommandContentType(string contentType)
@@ -165,12 +200,11 @@ public class ImageFileSaveHttpServer : MonoBehaviour
                contentType.Trim().StartsWith("text/plain", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool TryQueueLaunchCommand(byte[] rawData)
+    private bool TryQueueLaunchCommand(string command)
     {
-        if (rawData == null || rawData.Length == 0)
+        if (string.IsNullOrWhiteSpace(command))
             return false;
 
-        string command = Encoding.UTF8.GetString(rawData).Trim();
         if (!command.StartsWith(LaunchCommandPrefix, StringComparison.Ordinal))
             return false;
 
@@ -179,6 +213,112 @@ public class ImageFileSaveHttpServer : MonoBehaviour
             return false;
 
         _launchRequests.Enqueue(appId);
+        return true;
+    }
+
+    private bool TryQueueRemoteKeyboardCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command) ||
+            !command.StartsWith(RemoteKeyboardCommandPrefix, StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            if (command.StartsWith(RemoteKeyboardPressPrefix, StringComparison.Ordinal))
+            {
+                string json = command.Substring(RemoteKeyboardPressPrefix.Length);
+                RemoteKeyboardPressPayload payload = JsonUtility.FromJson<RemoteKeyboardPressPayload>(json);
+                if (payload == null || !IsAllowedRemoteKeyboardPress(payload.keys))
+                    return false;
+
+                _remoteKeyboardRequests.Enqueue(
+                    RemoteKeyboardPressPrefix + JsonUtility.ToJson(payload)
+                );
+                return true;
+            }
+
+            if (command.StartsWith(RemoteKeyboardTurnPrefix, StringComparison.Ordinal))
+            {
+                string json = command.Substring(RemoteKeyboardTurnPrefix.Length);
+                RemoteKeyboardTurnPayload payload = JsonUtility.FromJson<RemoteKeyboardTurnPayload>(json);
+                if (payload == null || !IsAllowedRemoteKeyboardTurn(payload))
+                    return false;
+
+                _remoteKeyboardRequests.Enqueue(
+                    RemoteKeyboardTurnPrefix + JsonUtility.ToJson(payload)
+                );
+                return true;
+            }
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private bool IsAllowedRemoteKeyboardPress(string[] keys)
+    {
+        if (MatchesKeys(keys, "Escape") ||
+            MatchesKeys(keys, "Home") ||
+            MatchesKeys(keys, "LeftControl", "LeftShift") ||
+            MatchesKeys(keys, "LeftAlt", "F4") ||
+            MatchesKeys(keys, "Space", "N") ||
+            MatchesKeys(keys, "Space", "F") ||
+            MatchesKeys(keys, "End") ||
+            MatchesKeys(keys, "PageDown"))
+            return true;
+
+        if (keys == null || keys.Length != 3 ||
+            keys[0] != "LeftControl" || keys[1] != "LeftAlt")
+            return false;
+
+        switch (keys[2])
+        {
+            case "Alpha1":
+            case "Alpha2":
+            case "Alpha3":
+            case "Alpha4":
+            case "Alpha5":
+            case "Alpha6":
+            case "Alpha7":
+            case "Alpha8":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool IsAllowedRemoteKeyboardTurn(RemoteKeyboardTurnPayload payload)
+    {
+        if (payload.steps < 1 || payload.steps > 32)
+            return false;
+
+        switch (payload.control)
+        {
+            case "volume":
+                return payload.key == "Minus" || payload.key == "Plus";
+            case "vertical":
+                return payload.key == "UpArrow" || payload.key == "DownArrow";
+            case "horizontal":
+                return payload.key == "LeftArrow" || payload.key == "RightArrow";
+            default:
+                return false;
+        }
+    }
+
+    private bool MatchesKeys(string[] actual, params string[] expected)
+    {
+        if (actual == null || actual.Length != expected.Length)
+            return false;
+
+        for (int i = 0; i < expected.Length; i++)
+        {
+            if (!string.Equals(actual[i], expected[i], StringComparison.Ordinal))
+                return false;
+        }
+
         return true;
     }
 

@@ -3,9 +3,11 @@ import {
   type DynamicBackground,
   type DynamicGroup,
   type DynamicItem,
-  type DynamicMedia
+  type DynamicMedia,
+  type DynamicAudioMedia
 } from './dynamicArtStorage.ts'
 import { sendDynamicEventAsync, uploadUnityAssetAsync } from './unityBridge.ts'
+import { loadNetworkSettings } from './appSettings.ts'
 import {
   getDynamicAnimationMode,
   getDynamicClickAnimationIds
@@ -24,7 +26,7 @@ interface ReceiverSyncState {
 }
 
 interface SyncStatus {
-  phase: 'starting' | 'background' | 'item' | 'parameters'
+  phase: 'starting' | 'background' | 'item' | 'audio' | 'parameters'
   current?: number
   total?: number
 }
@@ -33,6 +35,7 @@ interface SyncDynamicGroupOptions {
   group: DynamicGroup
   ip: string
   port: number
+  advancedFeaturesEnabled?: boolean
   onStatus?: (status: SyncStatus) => void
 }
 
@@ -55,7 +58,9 @@ const toBackgroundPayload = (background?: DynamicBackground) => (
         assetId: background.id,
         name: background.name,
         mediaType: background.type,
-        mimeType: background.mimeType
+        mimeType: background.mimeType,
+        bgmAudioId: background.bgmAudioId,
+        backgroundTransition: background.backgroundTransition ?? 'none'
       }
     : null
 )
@@ -77,25 +82,47 @@ const toItemPayload = (item: DynamicItem) => ({
   movePercent: item.movePercent,
   moveSpeed: item.moveSpeed,
   moveTrack: item.moveTrack,
+  targetMode: item.targetMode ?? 'loop',
+  targetLoop: item.targetLoop === true,
+  targetPosition: item.targetPosition ?? null,
+  audioId: item.audioId ?? null,
+  audioTrigger: item.audioTrigger ?? 'appearance',
+  audioDelayMs: item.audioDelayMs ?? 0,
+  linkedAppearance: item.linkedAppearance ?? null,
+  backgroundIds: item.backgroundIds ?? [],
   order: item.order,
   mediaType: item.media.type,
   mimeType: item.media.mimeType
 })
 
-const buildGroupSyncPayload = (group: DynamicGroup) => {
+const buildGroupSyncPayload = (
+  group: DynamicGroup,
+  advancedFeaturesEnabled = loadNetworkSettings().advancedFeaturesEnabled
+) => {
   const backgrounds = getBackgrounds(group)
   const activeBackground = getActiveBackground(group, backgrounds)
 
   return {
     groupId: group.id,
     name: group.name,
+    linkedAppearanceModelVersion: group.linkedAppearanceModelVersion,
+    advancedFeaturesEnabled,
     appearMode: group.appearMode,
     appearIntervalMs: group.appearIntervalMs,
+    appearAnimation: group.appearAnimation ?? 'none',
     backgroundPlayMode: group.backgroundPlayMode,
     backgroundIntervalMs: group.backgroundIntervalMs,
+    backgroundTransition: group.backgroundTransition ?? 'none',
     activeBackgroundId: group.activeBackgroundId ?? activeBackground?.id,
     background: toBackgroundPayload(activeBackground),
     backgrounds: backgrounds.map((background) => toBackgroundPayload(background)),
+    audioLibrary: (group.audioLibrary ?? []).map((audio) => ({
+      assetId: audio.id,
+      name: audio.name,
+      mediaType: 'audio',
+      mimeType: audio.mimeType,
+      durationMs: audio.durationMs
+    })),
     items: group.items.map(toItemPayload)
   }
 }
@@ -135,7 +162,7 @@ const saveSyncState = (state: ReceiverSyncState) => {
   }
 }
 
-const getMediaSignaturePart = (media: DynamicMedia) => [
+const getMediaSignaturePart = (media: DynamicMedia | DynamicAudioMedia) => [
   media.id,
   media.updatedAt,
   media.filePath ?? '',
@@ -152,10 +179,15 @@ const getGroupAssetSignature = (group: DynamicGroup) => {
     .sort((a, b) => a.order - b.order)
     .map((item) => `item:${item.id}:${item.order}:${getMediaSignaturePart(item.media)}`)
 
-  return [...backgroundParts, ...itemParts].join('|')
+  const audioParts = (group.audioLibrary ?? [])
+    .map((audio) => `audio:${getMediaSignaturePart(audio)}`)
+
+  return [...backgroundParts, ...itemParts, ...audioParts].join('|')
 }
 
-const hasGroupAssets = (group: DynamicGroup) => getBackgrounds(group).length > 0 || group.items.length > 0
+const hasGroupAssets = (group: DynamicGroup) => (
+  getBackgrounds(group).length > 0 || group.items.length > 0 || Boolean(group.audioLibrary?.length)
+)
 
 const shouldSyncGroup = (
   state: ReceiverSyncState,
@@ -193,7 +225,7 @@ const markGroupSynced = (receiverKey: string, groupId: string, assetSignature: s
 }
 
 const uploadMediaForSync = async (
-  media: DynamicMedia,
+  media: DynamicMedia | DynamicAudioMedia,
   fields: Record<string, string | number | boolean | undefined>,
   ip: string,
   port: number
@@ -215,6 +247,7 @@ const syncDynamicGroupToReceiver = async ({
   group,
   ip,
   port,
+  advancedFeaturesEnabled = loadNetworkSettings().advancedFeaturesEnabled,
   onStatus
 }: SyncDynamicGroupOptions) => {
   const receiverKey = getReceiverKey(ip, port)
@@ -230,7 +263,8 @@ const syncDynamicGroupToReceiver = async ({
 
   const syncPromise = (async () => {
     const backgrounds = getBackgrounds(group)
-    const total = backgrounds.length + group.items.length
+    const audioLibrary = group.audioLibrary ?? []
+    const total = backgrounds.length + group.items.length + audioLibrary.length
     let current = 0
 
     onStatus?.({ phase: 'starting', current, total })
@@ -261,8 +295,26 @@ const syncDynamicGroupToReceiver = async ({
       }, ip, port)
     }
 
+
+    for (const audio of audioLibrary) {
+      current += 1
+      onStatus?.({ phase: 'audio', current, total })
+      await uploadMediaForSync(audio, {
+        role: 'audio',
+        groupId: group.id,
+        assetId: audio.id,
+        mediaType: 'audio',
+        mimeType: audio.mimeType
+      }, ip, port)
+    }
+
     onStatus?.({ phase: 'parameters', current: total, total })
-    await sendDynamicEventAsync(ip, port, 'GroupSelectAndSync', buildGroupSyncPayload(group))
+    await sendDynamicEventAsync(
+      ip,
+      port,
+      'GroupSelectAndSync',
+      buildGroupSyncPayload(group, advancedFeaturesEnabled)
+    )
     markGroupSynced(receiverKey, group.id, assetSignature)
     return true
   })()

@@ -6,9 +6,21 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test:appearance": "node --no-warnings scripts/verify-advanced-appearance.mjs",
+    "test:item-copy": "node scripts/verify-item-settings-copy.cjs",
+    "test:target-motion": "node --no-warnings scripts/verify-target-motion.mjs",
+    "test:transition-audio": "node --no-warnings scripts/verify-background-transition-audio.mjs",
+    "test:background-order": "node --no-warnings scripts/verify-background-playback-order.mjs",
+    "clean:releases": "node scripts/clean-release-directories.cjs all",
+    "clean:release:standard": "node scripts/clean-release-directories.cjs standard",
+    "clean:release:vertical": "node scripts/clean-release-directories.cjs vertical",
+    "prepack:dir": "npm run clean:release:standard",
     "pack:dir": "electron-builder --win dir",
+    "prepack:portable": "npm run clean:release:standard",
     "pack:portable": "electron-builder --win portable",
-    "pack:vertical-flip": "electron-builder --config electron-builder.vertical-flip.json --win"
+    "prepack:vertical-flip": "npm run clean:release:vertical",
+    "pack:vertical-flip": "electron-builder --config electron-builder.vertical-flip.json --win",
+    "pack:all": "npm run pack:portable && npm run pack:vertical-flip"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -20,6 +32,7 @@
     "directories": {
       "output": "release"
     },
+    "electronDist": "node_modules/electron/dist",
     "files": [
       "main.js",
       "main.vertical-flip.js",

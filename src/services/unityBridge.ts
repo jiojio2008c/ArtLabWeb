@@ -12,7 +12,37 @@ type AppLauncherId =
   | 'interactive-painting-real'
   | 'interactive-ocean'
 
+type RemoteKeyboardKey =
+  | 'Escape'
+  | 'Home'
+  | 'LeftControl'
+  | 'LeftShift'
+  | 'LeftAlt'
+  | 'F4'
+  | 'Space'
+  | 'N'
+  | 'F'
+  | 'End'
+  | 'PageDown'
+  | 'Alpha1'
+  | 'Alpha2'
+  | 'Alpha3'
+  | 'Alpha4'
+  | 'Alpha5'
+  | 'Alpha6'
+  | 'Alpha7'
+  | 'Alpha8'
+  | 'Minus'
+  | 'Plus'
+  | 'UpArrow'
+  | 'DownArrow'
+  | 'LeftArrow'
+  | 'RightArrow'
+
+type RemoteKeyboardControl = 'volume' | 'vertical' | 'horizontal'
+
 const APP_LAUNCH_COMMAND_PREFIX = 'MF|AppLauncher|Launch|'
+const REMOTE_KEYBOARD_COMMAND_PREFIX = 'MF|RemoteKeyboard|'
 const QR_CODE_COMMAND = 'QrCode'
 
 const buildUnityUrl = (ip: string, port: number) => `http://${ip.trim()}:${port}`
@@ -33,6 +63,42 @@ const sendAppLaunchCommand = (ip: string, port: number, appId: AppLauncherId) =>
 
 const sendQrCodeCommand = (ip: string, port: number) => {
   sendUnityText(ip, port, QR_CODE_COMMAND)
+}
+
+const makeRemoteKeyboardPressMessage = (keys: readonly RemoteKeyboardKey[]) => {
+  return `${REMOTE_KEYBOARD_COMMAND_PREFIX}Press|${JSON.stringify({ keys })}`
+}
+
+const makeRemoteKeyboardTurnMessage = (
+  control: RemoteKeyboardControl,
+  key: RemoteKeyboardKey,
+  steps: number
+) => {
+  const normalizedSteps = Math.min(32, Math.max(1, Math.round(steps)))
+  return `${REMOTE_KEYBOARD_COMMAND_PREFIX}Turn|${JSON.stringify({
+    control,
+    key,
+    steps: normalizedSteps
+  })}`
+}
+
+const sendRemoteKeyboardPress = (
+  ip: string,
+  port: number,
+  keys: readonly RemoteKeyboardKey[]
+) => {
+  if (keys.length === 0) return
+  sendUnityText(ip, port, makeRemoteKeyboardPressMessage(keys))
+}
+
+const sendRemoteKeyboardTurn = (
+  ip: string,
+  port: number,
+  control: RemoteKeyboardControl,
+  key: RemoteKeyboardKey,
+  steps: number
+) => {
+  sendUnityText(ip, port, makeRemoteKeyboardTurnMessage(control, key, steps))
 }
 
 const sendUnityTextAsync = (ip: string, port: number, message: string) => {
@@ -129,15 +195,20 @@ const sendDynamicEventAsync = (
 
 export {
   APP_LAUNCH_COMMAND_PREFIX,
+  REMOTE_KEYBOARD_COMMAND_PREFIX,
   buildUnityUrl,
   makeDynamicEventMessage,
+  makeRemoteKeyboardPressMessage,
+  makeRemoteKeyboardTurnMessage,
   sendAppLaunchCommand,
   sendDynamicEvent,
   sendDynamicEventAsync,
   sendQrCodeCommand,
+  sendRemoteKeyboardPress,
+  sendRemoteKeyboardTurn,
   sendUnityText,
   sendUnityTextAsync,
   uploadUnityAsset,
   uploadUnityAssetAsync
 }
-export type { AppLauncherId }
+export type { AppLauncherId, RemoteKeyboardControl, RemoteKeyboardKey }

@@ -12,6 +12,7 @@ interface UnityAnimationCanvasProps {
   style?: CSSProperties
   ariaLabel: string
   replayKey?: string | number
+  startedAtMs?: number
   overscanX?: number
   overscanY?: number
   forceLoop?: boolean
@@ -33,6 +34,7 @@ const UnityAnimationCanvas = ({
   style,
   ariaLabel,
   replayKey = 0,
+  startedAtMs,
   overscanX = 1,
   overscanY = 1,
   forceLoop = false,
@@ -58,7 +60,7 @@ const UnityAnimationCanvas = ({
     image.onload = () => {
       if (!active) return
       imageRef.current = image
-      startedAtRef.current = performance.now() / 1000
+      startedAtRef.current = (startedAtMs ?? performance.now()) / 1000
       setImageFailed(false)
     }
     image.onerror = () => {
@@ -72,12 +74,12 @@ const UnityAnimationCanvas = ({
       active = false
       imageRef.current = null
     }
-  }, [src])
+  }, [src, startedAtMs])
 
   useEffect(() => {
-    startedAtRef.current = performance.now() / 1000
+    startedAtRef.current = (startedAtMs ?? performance.now()) / 1000
     firstFrameDrawnRef.current = false
-  }, [animationId, replayKey])
+  }, [animationId, replayKey, startedAtMs])
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current

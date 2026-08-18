@@ -11,6 +11,7 @@ interface WalkAnimationCanvasProps {
   style?: CSSProperties
   ariaLabel?: string
   replayKey?: string | number
+  startedAtMs?: number
   onFirstFrame?: () => void
 }
 
@@ -28,6 +29,7 @@ const WalkAnimationCanvas = ({
   style,
   ariaLabel,
   replayKey = 0,
+  startedAtMs,
   onFirstFrame
 }: WalkAnimationCanvasProps) => {
   const { t } = useTranslation()
@@ -52,7 +54,7 @@ const WalkAnimationCanvas = ({
     image.onload = () => {
       if (!active) return
       imageRef.current = image
-      startedAtRef.current = performance.now() / 1000
+      startedAtRef.current = (startedAtMs ?? performance.now()) / 1000
       setImageFailed(false)
     }
     image.onerror = () => {
@@ -66,12 +68,12 @@ const WalkAnimationCanvas = ({
       active = false
       imageRef.current = null
     }
-  }, [src])
+  }, [src, startedAtMs])
 
   useEffect(() => {
-    startedAtRef.current = performance.now() / 1000
+    startedAtRef.current = (startedAtMs ?? performance.now()) / 1000
     firstFrameDrawnRef.current = false
-  }, [replayKey])
+  }, [replayKey, startedAtMs])
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current
