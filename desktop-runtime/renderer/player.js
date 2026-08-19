@@ -33,6 +33,13 @@ import {
 } from './advanced-appearance-timeline.js'
 import { getDynamicBackgroundPlaybackStartIndex } from './background-playback-core.js'
 import { sampleTargetMotionProgress } from './target-motion-core.js'
+import {
+  drawBubble,
+  getBubbleAssetId,
+  getBubbleSize,
+  isBubbleItem,
+  normalizeBubble
+} from './bubble-render-core.js'
 
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
@@ -128,6 +135,7 @@ let stageOffsetX = 0
 let stageOffsetY = 0
 let lastPreviewKey = ''
 let previewStartTime = performance.now()
+let activeStageStartedAt = previewStartTime
 let lastDrawnBackgroundAssetId = ''
 let randomBackgroundState = { key: '', indices: [] }
 let backgroundPlaybackScheduleState = { key: '', entries: [] }
@@ -1296,7 +1304,7 @@ const getItemAppearanceSample = (item, itemIndex, now) => {
       alpha,
       active: alpha > 0.001,
       interactive: alpha > 0.04,
-      animationElapsedMs: Math.max(0, now - previewStartTime - delayMs),
+      animationElapsedMs: Math.max(0, now - (preview.enabled ? previewStartTime : activeStageStartedAt) - delayMs),
       schedule: null,
       epoch: null
     }
@@ -1336,7 +1344,7 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
   const schedule = appearanceSample.schedule
   const appearAnimation = schedule?.appearAnimation ?? 'none'
   const appearanceProgress = appearanceSample.alpha
-  const size = getBaseImageSize(image)
+  const size = getItemBaseSize(item, image)
   const numericScale = Number(item.scale ?? 1)
   const itemScale = Number.isFinite(numericScale) ? Math.max(Math.abs(numericScale), 0.05) : 1
   const halfWidth = size.width * itemScale / 2
@@ -1566,6 +1574,10 @@ const getBaseImageSize = (imageEntry) => {
   }
 }
 
+const getItemBaseSize = (item, imageEntry) => (
+  isBubbleItem(item) ? getBubbleSize(item.bubble) : getBaseImageSize(imageEntry)
+)
+
 const drawMissingItem = (item, renderState) => {
   context.save()
   context.globalAlpha = renderState.alpha
@@ -1682,7 +1694,8 @@ const getItemRenderState = (item, itemIndex, now, image, backgroundFrame) => {
     silhouette: advanced.silhouette,
     animationId: effectiveAnimation.animationId,
     animationTimeSeconds: effectiveAnimation.timeSeconds,
-    size: getBaseImageSize(image)
+    animationElapsedMs: advanced.animationElapsedMs,
+    size: getItemBaseSize(item, image)
   }
 }
 
@@ -1734,14 +1747,39 @@ const drawItemImage = (renderContext, image, renderState) => {
   )
 }
 
+const getBubbleImage = (item) => getImage(getAsset(
+  item.imageAssetId ?? getBubbleAssetId(item)
+))
+
+const drawItemBubble = (renderContext, item, image, renderState) => {
+  const bubble = normalizeBubble({
+    ...(item.bubble ?? {}),
+    imageAssetId: item.imageAssetId ?? item.bubble?.imageAssetId
+  })
+  renderContext.save()
+  renderContext.translate(-renderState.size.width / 2, -renderState.size.height / 2)
+  drawBubble(renderContext, bubble, image, renderState.animationElapsedMs)
+  renderContext.restore()
+}
+
+const drawItemContent = (renderContext, item, image, renderState) => {
+  if (isBubbleItem(item)) {
+    drawItemBubble(renderContext, item, image, renderState)
+    return
+  }
+  drawItemImage(renderContext, image, renderState)
+}
+
 const drawItem = (item, itemIndex, now, backgroundFrame) => {
   if (item.isVisible === false) return
 
-  const asset = getAsset(item.assetId)
-  const image = getImage(asset)
+  const bubbleItem = isBubbleItem(item)
+  const image = bubbleItem
+    ? getBubbleImage(item)
+    : getImage(getAsset(item.assetId))
   const renderState = getItemRenderState(item, itemIndex, now, image, backgroundFrame)
 
-  if (!image?.loaded) {
+  if (!bubbleItem && !image?.loaded) {
     drawMissingItem(item, renderState)
     return
   }
@@ -1750,7 +1788,7 @@ const drawItem = (item, itemIndex, now, backgroundFrame) => {
   context.globalAlpha = renderState.alpha
   if (renderState.silhouette) context.filter = 'brightness(0) opacity(0.82)'
   applyItemRenderTransform(context, renderState)
-  drawItemImage(context, image, renderState)
+  drawItemContent(context, item, image, renderState)
   context.restore()
 }
 
@@ -1763,8 +1801,11 @@ const getOrderedItems = (group) => {
 const isPointOverItem = (item, itemIndex, now, stagePoint, backgroundFrame) => {
   if (item.isVisible === false || !hitContext) return false
 
-  const image = getImage(getAsset(item.assetId))
-  if (!image?.loaded) return false
+  const bubbleItem = isBubbleItem(item)
+  const image = bubbleItem
+    ? getBubbleImage(item)
+    : getImage(getAsset(item.assetId))
+  if (!bubbleItem && !image?.loaded) return false
 
   const renderState = getItemRenderState(item, itemIndex, now, image, backgroundFrame)
   if (!renderState.interactive) return false
@@ -1791,7 +1832,7 @@ const isPointOverItem = (item, itemIndex, now, stagePoint, backgroundFrame) => {
         HIT_SAMPLE_SIZE / 2 - stagePoint.y
       )
       applyItemRenderTransform(hitContext, renderState)
-      drawItemImage(hitContext, image, renderState)
+      drawItemContent(hitContext, item, image, renderState)
     } finally {
       hitContext.restore()
     }
@@ -1981,6 +2022,9 @@ const receiveState = (state) => {
   const previousState = runtimeState
   const previousPreview = previousState.preview ?? {}
   const nextPreview = state.preview ?? {}
+  const stateEventSequence = Number(state.lastEvent?.sequence ?? 0)
+  const stageStateSynced = stateEventSequence > lastStateEventSequence
+    && (state.lastEvent?.eventName === 'GroupSelectAndSync' || state.lastEvent?.eventName === 'GroupStateSync')
   const activeGroupChanged = previousState.activeGroupId !== state.activeGroupId
   const previewRestarted = Boolean(nextPreview.enabled) && (
     !previousPreview.enabled
@@ -1997,6 +2041,7 @@ const receiveState = (state) => {
   const advancedSessionChanged = advancedSessionKey !== advancedPlaybackState.sessionKey
 
   runtimeState = state
+  if (activeGroupChanged || archiveModeChanged || stageStateSynced) activeStageStartedAt = performance.now()
   if (advancedSessionChanged) {
     resetAdvancedPlaybackSession(advancedSessionKey)
   } else if (previousAdvancedPreview && !nextAdvancedPreview) {

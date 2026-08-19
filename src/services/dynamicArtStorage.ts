@@ -32,6 +32,17 @@ const DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS = 5000
 const MIN_DYNAMIC_BACKGROUND_INTERVAL_MS = 1000
 const MAX_DYNAMIC_BACKGROUND_INTERVAL_MS = 600000
 const DEFAULT_DYNAMIC_MOVE_SPEED = 50
+const DEFAULT_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS = 80
+const MIN_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS = 20
+const MAX_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS = 1000
+const MIN_DYNAMIC_BUBBLE_FONT_SIZE_PX = 18
+const MAX_DYNAMIC_BUBBLE_FONT_SIZE_PX = 120
+const MIN_DYNAMIC_BUBBLE_WIDTH_PX = 220
+const MAX_DYNAMIC_BUBBLE_WIDTH_PX = 1600
+const MIN_DYNAMIC_BUBBLE_HEIGHT_PX = 140
+const MAX_DYNAMIC_BUBBLE_HEIGHT_PX = 1000
+const DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS = ['dialogue-rounded', 'dialogue-soft', 'dialogue-comic'] as const
+const DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS = ['thought-cloud', 'thought-soft'] as const
 
 type DynamicMediaType = 'image' | 'video'
 type DynamicStoredMediaType = DynamicMediaType | 'audio'
@@ -45,6 +56,12 @@ type DynamicTargetMode = 'loop' | 'target'
 type DynamicItemAudioTrigger = 'appearance' | 'appearanceDelay' | 'targetArrival'
 type DynamicLinkedAppearanceMode = 'none' | 'showAfter' | 'hideAfter'
 type DynamicCopyField = 'motion' | 'animation' | 'size' | 'deform' | 'audio' | 'background' | 'linkage'
+type DynamicItemKind = 'media' | 'bubble'
+type DynamicBubbleType = 'dialogue' | 'thought'
+type DynamicBubbleRevealMode = 'all' | 'typewriter'
+type DynamicBubbleStyleId = typeof DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS[number]
+  | typeof DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS[number]
+type DynamicBubblePaletteId = 'ink' | 'ocean' | 'coral' | 'sun' | 'violet'
 
 interface DynamicLinkedAppearance {
   triggerItemId: string
@@ -77,10 +94,44 @@ interface DynamicBackground extends DynamicMedia {
   backgroundTransition?: DynamicBackgroundTransition
 }
 
-interface DynamicItem {
+interface DynamicBubbleContent {
+  schemaVersion: 1
+  bubbleType: DynamicBubbleType
+  styleId: DynamicBubbleStyleId
+  title: string
+  bodyText: string
+  revealMode: DynamicBubbleRevealMode
+  revealIntervalMs: number
+  fontSizePx: number
+  textColor: string
+  surfaceId: string
+  paletteId: DynamicBubblePaletteId
+  widthPx: number
+  heightPx: number
+  image?: DynamicMedia
+}
+
+interface DynamicBubbleInput {
+  name?: string
+  bubbleType: DynamicBubbleType
+  styleId: DynamicBubbleStyleId
+  title: string
+  bodyText: string
+  revealMode: DynamicBubbleRevealMode
+  revealIntervalMs: number
+  fontSizePx: number
+  textColor: string
+  surfaceId?: string
+  paletteId: DynamicBubblePaletteId
+  widthPx: number
+  heightPx: number
+  imageFile?: File | null
+  removeImage?: boolean
+}
+
+interface DynamicItemBase {
   id: string
   name: string
-  media: DynamicMedia
   position: {
     x: number
     y: number
@@ -113,6 +164,18 @@ interface DynamicItem {
   createdAt: number
   updatedAt: number
 }
+
+interface DynamicMediaItem extends DynamicItemBase {
+  kind: 'media'
+  media: DynamicMedia
+}
+
+interface DynamicBubbleItem extends DynamicItemBase {
+  kind: 'bubble'
+  bubble: DynamicBubbleContent
+}
+
+type DynamicItem = DynamicMediaItem | DynamicBubbleItem
 
 interface DynamicGroup {
   id: string
@@ -157,6 +220,109 @@ const isNativeStorage = () => Capacitor.isNativePlatform()
 const generateId = (prefix: string) => {
   const randomPart = Math.random().toString(36).slice(2, 8)
   return `${prefix}_${Date.now().toString(36)}_${randomPart}`
+}
+
+const isDynamicBubbleItem = (item: DynamicItem): item is DynamicBubbleItem => item.kind === 'bubble'
+
+const isDynamicMediaItem = (item: DynamicItem): item is DynamicMediaItem => item.kind !== 'bubble'
+
+const getDynamicItemMedia = (item: DynamicItem) => (
+  isDynamicMediaItem(item) ? item.media : undefined
+)
+
+const getDynamicItemBubbleImage = (item: DynamicItem) => (
+  isDynamicBubbleItem(item) ? item.bubble.image : undefined
+)
+
+const clampRoundedNumber = (value: unknown, minimum: number, maximum: number, fallback: number) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(maximum, Math.max(minimum, Math.round(number)))
+}
+
+const normalizeDynamicBubbleType = (value: unknown): DynamicBubbleType => (
+  value === 'thought' ? 'thought' : 'dialogue'
+)
+
+const normalizeDynamicBubbleStyleId = (bubbleType: DynamicBubbleType, value: unknown): DynamicBubbleStyleId => {
+  const styleId = typeof value === 'string' ? value.trim() : ''
+  const allowedStyleIds: readonly string[] = bubbleType === 'thought'
+    ? DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS
+    : DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS
+  return (allowedStyleIds.includes(styleId) ? styleId : allowedStyleIds[0]) as DynamicBubbleStyleId
+}
+
+const normalizeDynamicBubblePaletteId = (
+  bubbleType: DynamicBubbleType,
+  value: unknown
+): DynamicBubblePaletteId => {
+  if (value === 'ink' || value === 'ocean' || value === 'coral' || value === 'sun' || value === 'violet') {
+    return value
+  }
+  return bubbleType === 'thought' ? 'ink' : 'ocean'
+}
+
+const normalizeDynamicBubbleContent = (
+  bubble: Partial<DynamicBubbleContent> | undefined,
+  image?: DynamicMedia
+): DynamicBubbleContent => {
+  const bubbleType = normalizeDynamicBubbleType(bubble?.bubbleType)
+  return {
+    schemaVersion: 1,
+    bubbleType,
+    styleId: normalizeDynamicBubbleStyleId(bubbleType, bubble?.styleId),
+    title: typeof bubble?.title === 'string' ? bubble.title : '',
+    bodyText: typeof bubble?.bodyText === 'string' ? bubble.bodyText : '',
+    revealMode: bubble?.revealMode === 'typewriter' ? 'typewriter' : 'all',
+    revealIntervalMs: clampRoundedNumber(
+      bubble?.revealIntervalMs,
+      MIN_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS,
+      MAX_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS,
+      DEFAULT_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS
+    ),
+    fontSizePx: clampRoundedNumber(
+      bubble?.fontSizePx,
+      MIN_DYNAMIC_BUBBLE_FONT_SIZE_PX,
+      MAX_DYNAMIC_BUBBLE_FONT_SIZE_PX,
+      52
+    ),
+    textColor: typeof bubble?.textColor === 'string' && bubble.textColor.trim()
+      ? bubble.textColor.trim()
+      : '#172033',
+    surfaceId: typeof bubble?.surfaceId === 'string' && bubble.surfaceId.trim()
+      ? bubble.surfaceId.trim()
+      : 'light',
+    paletteId: normalizeDynamicBubblePaletteId(bubbleType, bubble?.paletteId),
+    widthPx: clampRoundedNumber(
+      bubble?.widthPx,
+      MIN_DYNAMIC_BUBBLE_WIDTH_PX,
+      MAX_DYNAMIC_BUBBLE_WIDTH_PX,
+      bubbleType === 'thought' ? 940 : 1080
+    ),
+    heightPx: clampRoundedNumber(
+      bubble?.heightPx,
+      MIN_DYNAMIC_BUBBLE_HEIGHT_PX,
+      MAX_DYNAMIC_BUBBLE_HEIGHT_PX,
+      bubbleType === 'thought' ? 680 : 480
+    ),
+    image: bubbleType === 'thought' ? image ?? bubble?.image : undefined
+  }
+}
+
+const normalizeDynamicItemKind = (item: DynamicItem): DynamicItem => {
+  if ((item as DynamicItem).kind === 'bubble' && (item as DynamicBubbleItem).bubble) {
+    const bubbleItem = item as DynamicBubbleItem
+    return {
+      ...bubbleItem,
+      kind: 'bubble',
+      bubble: normalizeDynamicBubbleContent(bubbleItem.bubble)
+    }
+  }
+
+  return {
+    ...(item as DynamicMediaItem),
+    kind: 'media'
+  }
 }
 
 const safePathSegment = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'default'
@@ -566,7 +732,10 @@ const loadRawGroups = (): DynamicGroup[] => {
   try {
     const raw = localStorage.getItem(DYNAMIC_GROUPS_KEY)
     const groups = raw ? JSON.parse(raw) as DynamicGroup[] : []
-    return groups.map(migrateDynamicLinkedAppearanceModel)
+    return groups.map((group) => migrateDynamicLinkedAppearanceModel({
+      ...group,
+      items: Array.isArray(group.items) ? group.items.map(normalizeDynamicItemKind) : []
+    }))
   } catch {
     return []
   }
@@ -590,6 +759,25 @@ const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicB
   return serializeMediaForStorage(nextBackground as DynamicBackground) as DynamicBackground
 }
 
+const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
+  if (isDynamicBubbleItem(item)) {
+    return {
+      ...item,
+      kind: 'bubble',
+      bubble: {
+        ...item.bubble,
+        image: serializeMediaForStorage(item.bubble.image)
+      }
+    }
+  }
+
+  return {
+    ...item,
+    kind: 'media',
+    media: serializeMediaForStorage(item.media) ?? item.media
+  }
+}
+
 const serializeGroupForStorage = (group: DynamicGroup): DynamicGroup => ({
   ...group,
   thumbnail: serializeMediaForStorage(group.thumbnail),
@@ -598,10 +786,7 @@ const serializeGroupForStorage = (group: DynamicGroup): DynamicGroup => ({
   audioLibrary: group.audioLibrary?.map((audio) => (
     serializeMediaForStorage(audio) as DynamicAudioMedia
   )),
-  items: group.items.map((item) => ({
-    ...item,
-    media: serializeMediaForStorage(item.media) ?? item.media
-  }))
+  items: group.items.map(serializeDynamicItemForStorage)
 })
 
 const saveDynamicGroups = (groups: DynamicGroup[]) => {
@@ -638,7 +823,10 @@ const mergeGroupPersistentMedia = (group: DynamicGroup, existingGroup?: DynamicG
   collectMedia(existingGroup.thumbnail)
   getGroupBackgrounds(existingGroup).forEach(collectMedia)
   existingGroup.audioLibrary?.forEach(collectMedia)
-  existingGroup.items.forEach((item) => collectMedia(item.media))
+  existingGroup.items.forEach((item) => {
+    collectMedia(getDynamicItemMedia(item))
+    collectMedia(getDynamicItemBubbleImage(item))
+  })
 
   return {
     ...group,
@@ -650,10 +838,23 @@ const mergeGroupPersistentMedia = (group: DynamicGroup, existingGroup?: DynamicG
     audioLibrary: group.audioLibrary?.map((audio) => (
       mergeMediaPersistentFields(audio, existingMediaById.get(audio.id)) as DynamicAudioMedia
     )),
-    items: group.items.map((item) => ({
-      ...item,
-      media: mergeMediaPersistentFields(item.media, existingMediaById.get(item.media.id)) ?? item.media
-    }))
+    items: group.items.map((item) => {
+      if (isDynamicBubbleItem(item)) {
+        const image = item.bubble.image
+        return {
+          ...item,
+          bubble: {
+            ...item.bubble,
+            image: mergeMediaPersistentFields(image, image ? existingMediaById.get(image.id) : undefined)
+          }
+        }
+      }
+
+      return {
+        ...item,
+        media: mergeMediaPersistentFields(item.media, existingMediaById.get(item.media.id)) ?? item.media
+      }
+    })
   }
 }
 
@@ -677,10 +878,10 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
     Promise.all((group.audioLibrary ?? []).map(async (audio) => (
       await resolveMediaUrl(audio) as DynamicAudioMedia
     ))),
-    Promise.all(
-      group.items.map(async (item) => ({
+    Promise.all(group.items.map(async (sourceItem): Promise<DynamicItem> => {
+      const item = normalizeDynamicItemKind(sourceItem)
+      const commonItem = {
         ...item,
-        media: await resolveMediaUrl(item.media),
         flipX: item.flipX ?? false,
         flipY: item.flipY ?? false,
         animationMode: getDynamicAnimationMode(item),
@@ -696,8 +897,25 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
         backgroundIds: Array.isArray(item.backgroundIds)
           ? Array.from(new Set(item.backgroundIds.filter(Boolean)))
           : []
-      }))
-    )
+      }
+
+      if (isDynamicBubbleItem(item)) {
+        const image = item.bubble.image
+          ? await resolveMediaUrl(item.bubble.image)
+          : undefined
+        return {
+          ...commonItem,
+          kind: 'bubble',
+          bubble: normalizeDynamicBubbleContent(item.bubble, image)
+        }
+      }
+
+      return {
+        ...commonItem,
+        kind: 'media',
+        media: await resolveMediaUrl(item.media)
+      }
+    }))
   ])
 
   const backgrounds = resolvedBackgrounds as DynamicBackground[]
@@ -879,7 +1097,9 @@ const isMediaUsedByOtherGroups = (groups: DynamicGroup[], groupId: string, media
     if (group.thumbnail?.id === mediaId) return true
     if (getGroupBackgrounds(group).some((background) => background.id === mediaId)) return true
     if (group.audioLibrary?.some((audio) => audio.id === mediaId)) return true
-    return group.items.some((item) => item.media.id === mediaId)
+    return group.items.some((item) => (
+      getDynamicItemMedia(item)?.id === mediaId || getDynamicItemBubbleImage(item)?.id === mediaId
+    ))
   })
 }
 
@@ -892,7 +1112,7 @@ const isMediaUsedByOtherEntity = (groups: DynamicGroup[], groupId: string, itemI
     if (group.audioLibrary?.some((audio) => audio.id === mediaId)) return true
     return group.items.some((item) => {
       if (group.id === groupId && item.id === itemId) return false
-      return item.media.id === mediaId
+      return getDynamicItemMedia(item)?.id === mediaId || getDynamicItemBubbleImage(item)?.id === mediaId
     })
   })
 }
@@ -906,7 +1126,10 @@ const collectDynamicGroupMedia = (group: DynamicGroup) => {
   addMedia(group.thumbnail)
   getGroupBackgrounds(group).forEach(addMedia)
   group.audioLibrary?.forEach(addMedia)
-  group.items.forEach((item) => addMedia(item.media))
+  group.items.forEach((item) => {
+    addMedia(getDynamicItemMedia(item))
+    addMedia(getDynamicItemBubbleImage(item))
+  })
 
   return Array.from(mediaById.values())
 }
@@ -1166,6 +1389,7 @@ const addDynamicItem = async (groupId: string, file: File, itemName?: string) =>
   const item: DynamicItem = {
     id: generateId('item'),
     name: itemName?.trim() || file.name,
+    kind: 'media',
     media,
     position: { x: 0.5, y: 0.5 },
     gridIndex: calculateGridIndex(0.5, 0.5),
@@ -1207,7 +1431,7 @@ const updateDynamicItemMeta = async (
   if (!group) return undefined
 
   const item = group.items.find((nextItem) => nextItem.id === itemId)
-  if (!item) return undefined
+  if (!item || !isDynamicMediaItem(item)) return undefined
 
   const previousMedia = item.media
   item.name = values.name.trim() || item.name || values.file?.name || '未命名物件'
@@ -1226,6 +1450,137 @@ const updateDynamicItemMeta = async (
   item.updatedAt = Date.now()
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
+  return hydrateGroup(group)
+}
+
+const createDynamicItemBase = (
+  group: DynamicGroup,
+  name: string,
+  now: number
+): DynamicItemBase => ({
+  id: generateId('item'),
+  name,
+  position: { x: 0.5, y: 0.5 },
+  gridIndex: calculateGridIndex(0.5, 0.5),
+  scale: 1,
+  rotation: 0,
+  flipX: false,
+  flipY: false,
+  animationMode: 'none',
+  animationId: 0,
+  clickAnimationIds: [...DYNAMIC_ANIMATION_IDS],
+  moveMode: 'none',
+  movePercent: 50,
+  moveSpeed: DEFAULT_DYNAMIC_MOVE_SPEED,
+  moveTrack: 'middle',
+  targetMode: 'loop',
+  targetLoop: false,
+  audioTrigger: 'appearance',
+  audioDelayMs: 0,
+  backgroundIds: [],
+  isVisible: true,
+  order: group.items.length,
+  createdAt: now,
+  updatedAt: now
+})
+
+const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) return undefined
+
+  const bubbleType = normalizeDynamicBubbleType(input.bubbleType)
+  let image: DynamicMedia | undefined
+  if (bubbleType === 'thought' && input.imageFile) {
+    image = await persistDynamicMedia(input.imageFile, `${groupId}/bubble-images`)
+    if (image.type !== 'image') {
+      await deleteDynamicMedia(image)
+      throw new Error('Thought bubble media must be an image')
+    }
+  }
+
+  const now = Date.now()
+  const item: DynamicBubbleItem = {
+    ...createDynamicItemBase(group, input.name?.trim() || input.title.trim() || '气泡', now),
+    kind: 'bubble',
+    bubble: normalizeDynamicBubbleContent({
+      schemaVersion: 1,
+      bubbleType,
+      styleId: input.styleId,
+      title: input.title,
+      bodyText: input.bodyText,
+      revealMode: input.revealMode,
+      revealIntervalMs: input.revealIntervalMs,
+      fontSizePx: input.fontSizePx,
+      textColor: input.textColor,
+      surfaceId: input.surfaceId,
+      paletteId: input.paletteId,
+      widthPx: input.widthPx,
+      heightPx: input.heightPx
+    }, image)
+  }
+
+  group.items.push(item)
+  group.updatedAt = now
+  saveDynamicGroups(groups)
+  return hydrateGroup(group)
+}
+
+const updateDynamicBubble = async (
+  groupId: string,
+  itemId: string,
+  input: DynamicBubbleInput
+) => {
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) return undefined
+
+  const item = group.items.find((nextItem) => nextItem.id === itemId)
+  if (!item || !isDynamicBubbleItem(item)) return undefined
+
+  const previousImage = item.bubble.image
+  const bubbleType = normalizeDynamicBubbleType(input.bubbleType)
+  let image = bubbleType === 'thought' && !input.removeImage && input.imageFile !== null
+    ? previousImage
+    : undefined
+
+  if (bubbleType === 'thought' && input.imageFile) {
+    const nextImage = await persistDynamicMedia(input.imageFile, `${groupId}/bubble-images`)
+    if (nextImage.type !== 'image') {
+      await deleteDynamicMedia(nextImage)
+      throw new Error('Thought bubble media must be an image')
+    }
+    image = nextImage
+  }
+
+  item.name = input.name?.trim() || input.title.trim() || item.name || '气泡'
+  item.bubble = normalizeDynamicBubbleContent({
+    schemaVersion: 1,
+    bubbleType,
+    styleId: input.styleId,
+    title: input.title,
+    bodyText: input.bodyText,
+    revealMode: input.revealMode,
+    revealIntervalMs: input.revealIntervalMs,
+    fontSizePx: input.fontSizePx,
+    textColor: input.textColor,
+    surfaceId: input.surfaceId,
+    paletteId: input.paletteId,
+    widthPx: input.widthPx,
+    heightPx: input.heightPx
+  }, image)
+  item.updatedAt = Date.now()
+  group.updatedAt = item.updatedAt
+  saveDynamicGroups(groups)
+
+  if (
+    previousImage
+    && previousImage.id !== image?.id
+    && !isMediaUsedByOtherEntity(groups, groupId, itemId, previousImage.id)
+  ) {
+    await deleteDynamicMedia(previousImage)
+  }
+
   return hydrateGroup(group)
 }
 
@@ -1265,9 +1620,14 @@ const deleteDynamicItems = async (groupId: string, itemIds: string[]) => {
   const remainingMediaIds = new Set(
     groups.flatMap((nextGroup) => collectDynamicGroupMedia(nextGroup).map((media) => media.id))
   )
-  const deletedMedia = Array.from(
-    new Map(deletedItems.map((item) => [item.media.id, item.media])).values()
-  )
+  const deletedMedia = Array.from(new Map(
+    deletedItems.flatMap((item) => [
+      getDynamicItemMedia(item),
+      getDynamicItemBubbleImage(item)
+    ])
+      .filter((media): media is DynamicMedia => Boolean(media))
+      .map((media) => [media.id, media])
+  ).values())
   await Promise.all(
     deletedMedia
       .filter((media) => !remainingMediaIds.has(media.id))
@@ -1558,28 +1918,41 @@ export type {
   DynamicBackground,
   DynamicBackgroundPlayMode,
   DynamicBackgroundTransition,
+  DynamicBubbleContent,
+  DynamicBubbleInput,
+  DynamicBubbleItem,
+  DynamicBubblePaletteId,
+  DynamicBubbleRevealMode,
+  DynamicBubbleStyleId,
+  DynamicBubbleType,
   DynamicCopyField,
   DynamicGroup,
   DynamicGroupOrganization,
   DynamicItem,
   DynamicItemAudioTrigger,
+  DynamicItemKind,
   DynamicLinkedAppearance,
   DynamicLinkedAppearanceMode,
   DynamicMedia,
+  DynamicMediaItem,
   DynamicMediaType,
   DynamicMoveMode,
   DynamicMoveTrack,
   DynamicTargetMode
 }
 export {
+  DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS,
   DYNAMIC_GROUPS_KEY,
+  DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  DEFAULT_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS,
   DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_APPEAR_INTERVAL_MS,
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   MIN_DYNAMIC_APPEAR_INTERVAL_MS,
   MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
+  addDynamicBubble,
   addDynamicItem,
   addDynamicAudio,
   calculateGridIndex,
@@ -1592,7 +1965,11 @@ export {
   deleteDynamicAudio,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
+  getDynamicItemBubbleImage,
+  getDynamicItemMedia,
   getDynamicMediaFile,
+  isDynamicBubbleItem,
+  isDynamicMediaItem,
   loadDynamicGroups,
   normalizeDynamicAudioFile,
   persistDynamicAudio,
@@ -1611,5 +1988,6 @@ export {
   updateDynamicGroupOrganization,
   updateDynamicItemMeta,
   updateDynamicItem,
+  updateDynamicBubble,
   upsertDynamicGroup
 }

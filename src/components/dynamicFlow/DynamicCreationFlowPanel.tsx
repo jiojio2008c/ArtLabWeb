@@ -27,6 +27,7 @@ import {
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import IntervalWheel from '../IntervalWheel.tsx'
+import DynamicItemThumbnail from '../DynamicItemThumbnail.tsx'
 import './DynamicCreationFlow.css'
 import type {
   DynamicCreationAppearAnimation,
@@ -311,7 +312,7 @@ const DynamicCreationFlowPanel = ({
             <span className={`dynamic-flow-order-number ${isChild ? 'is-child' : ''}`}>
               {isChild ? <Link2 aria-hidden="true" /> : (rootIndex ?? 0) + 1}
             </span>
-            <img src={item.imageUrl} alt="" loading="lazy" />
+            <DynamicItemThumbnail item={item.item} decorative />
             <span className="dynamic-flow-item-copy">
               <strong>{item.name}</strong>
               <small>{item.moveLabel} · {item.animationLabel}</small>
@@ -418,7 +419,7 @@ const DynamicCreationFlowPanel = ({
       : `${item.name}. ${backgroundStatus}`
     const cardContent = (
       <>
-        <img src={item.imageUrl} alt="" loading="lazy" />
+        <DynamicItemThumbnail item={item.item} decorative />
         <span className="dynamic-flow-background-object-copy">
           <strong>{item.name}</strong>
           <small>{backgroundStatus}</small>
@@ -802,7 +803,7 @@ const DynamicCreationFlowPanel = ({
                     title={item.name}
                   >
                     <span className="dynamic-flow-audio-object-preview">
-                      <img src={item.imageUrl} alt="" loading="lazy" />
+                      <DynamicItemThumbnail item={item.item} decorative />
                       {itemSelected && (
                         <span className="dynamic-flow-audio-object-check" aria-hidden="true"><Check /></span>
                       )}

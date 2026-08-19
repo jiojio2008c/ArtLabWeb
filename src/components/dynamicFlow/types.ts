@@ -1,4 +1,5 @@
 import type { DynamicAppearanceRelationTreeNode } from '../../services/dynamicCreationFlowCore.js'
+import type { DynamicItem } from '../../services/dynamicArtStorage.ts'
 
 export type DynamicCreationStep =
   | 'objects'
@@ -31,7 +32,7 @@ export interface DynamicCreationFlowLinkedAppearance {
 export interface DynamicCreationFlowItem {
   id: string
   name: string
-  imageUrl: string
+  item: DynamicItem
   order: number
   moveLabel: string
   animationLabel: string

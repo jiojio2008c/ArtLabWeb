@@ -4,7 +4,9 @@ import {
   type DynamicGroup,
   type DynamicItem,
   type DynamicMedia,
-  type DynamicAudioMedia
+  type DynamicAudioMedia,
+  isDynamicBubbleItem,
+  isDynamicMediaItem
 } from './dynamicArtStorage.ts'
 import { sendDynamicEventAsync, uploadUnityAssetAsync } from './unityBridge.ts'
 import { loadNetworkSettings } from './appSettings.ts'
@@ -65,35 +67,71 @@ const toBackgroundPayload = (background?: DynamicBackground) => (
     : null
 )
 
-const toItemPayload = (item: DynamicItem) => ({
-  itemId: item.id,
-  assetId: item.media.id,
-  name: item.name,
-  gridIndex: item.gridIndex,
-  position: item.position,
-  scale: item.scale,
-  rotation: item.rotation,
-  flipX: item.flipX ?? false,
-  flipY: item.flipY ?? false,
-  animationMode: getDynamicAnimationMode(item),
-  animationId: item.animationId,
-  clickAnimationIds: getDynamicClickAnimationIds(item),
-  moveMode: item.moveMode,
-  movePercent: item.movePercent,
-  moveSpeed: item.moveSpeed,
-  moveTrack: item.moveTrack,
-  targetMode: item.targetMode ?? 'loop',
-  targetLoop: item.targetLoop === true,
-  targetPosition: item.targetPosition ?? null,
-  audioId: item.audioId ?? null,
-  audioTrigger: item.audioTrigger ?? 'appearance',
-  audioDelayMs: item.audioDelayMs ?? 0,
-  linkedAppearance: item.linkedAppearance ?? null,
-  backgroundIds: item.backgroundIds ?? [],
-  order: item.order,
-  mediaType: item.media.type,
-  mimeType: item.media.mimeType
-})
+const toItemPayload = (item: DynamicItem) => {
+  const commonPayload = {
+    itemId: item.id,
+    kind: item.kind,
+    name: item.name,
+    gridIndex: item.gridIndex,
+    position: item.position,
+    scale: item.scale,
+    rotation: item.rotation,
+    flipX: item.flipX ?? false,
+    flipY: item.flipY ?? false,
+    animationMode: getDynamicAnimationMode(item),
+    animationId: item.animationId,
+    clickAnimationIds: getDynamicClickAnimationIds(item),
+    moveMode: item.moveMode,
+    movePercent: item.movePercent,
+    moveSpeed: item.moveSpeed,
+    moveTrack: item.moveTrack,
+    targetMode: item.targetMode ?? 'loop',
+    targetLoop: item.targetLoop === true,
+    targetPosition: item.targetPosition ?? null,
+    audioId: item.audioId ?? null,
+    audioTrigger: item.audioTrigger ?? 'appearance',
+    audioDelayMs: item.audioDelayMs ?? 0,
+    linkedAppearance: item.linkedAppearance ?? null,
+    backgroundIds: item.backgroundIds ?? [],
+    order: item.order
+  }
+
+  if (isDynamicBubbleItem(item)) {
+    const imageAssetId = item.bubble.image?.id ?? null
+    return {
+      ...commonPayload,
+      assetId: null,
+      imageAssetId,
+      mediaType: 'bubble',
+      mimeType: 'application/vnd.magicfloor.bubble+json',
+      bubble: {
+        schemaVersion: item.bubble.schemaVersion,
+        bubbleType: item.bubble.bubbleType,
+        styleId: item.bubble.styleId,
+        title: item.bubble.title,
+        bodyText: item.bubble.bodyText,
+        revealMode: item.bubble.revealMode,
+        revealIntervalMs: item.bubble.revealIntervalMs,
+        fontSizePx: item.bubble.fontSizePx,
+        textColor: item.bubble.textColor,
+        surfaceId: item.bubble.surfaceId,
+        paletteId: item.bubble.paletteId,
+        widthPx: item.bubble.widthPx,
+        heightPx: item.bubble.heightPx,
+        imageAssetId
+      }
+    }
+  }
+
+  return {
+    ...commonPayload,
+    assetId: item.media.id,
+    imageAssetId: null,
+    mediaType: item.media.type,
+    mimeType: item.media.mimeType,
+    bubble: null
+  }
+}
 
 const buildGroupSyncPayload = (
   group: DynamicGroup,
@@ -177,7 +215,19 @@ const getGroupAssetSignature = (group: DynamicGroup) => {
   const itemParts = group.items
     .slice()
     .sort((a, b) => a.order - b.order)
-    .map((item) => `item:${item.id}:${item.order}:${getMediaSignaturePart(item.media)}`)
+    .map((item) => {
+      if (isDynamicBubbleItem(item)) {
+        const { image, ...bubbleContent } = item.bubble
+        return [
+          'bubble',
+          item.id,
+          item.order,
+          JSON.stringify(bubbleContent),
+          image ? getMediaSignaturePart(image) : ''
+        ].join(':')
+      }
+      return `item:${item.id}:${item.order}:${getMediaSignaturePart(item.media)}`
+    })
 
   const audioParts = (group.audioLibrary ?? [])
     .map((audio) => `audio:${getMediaSignaturePart(audio)}`)
@@ -193,14 +243,14 @@ const shouldSyncGroup = (
   state: ReceiverSyncState,
   receiverKey: string,
   groupId: string,
-  _assetSignature: string
+  assetSignature: string
 ) => {
-  if (!_assetSignature) return false
+  if (!assetSignature) return false
 
   const record = state.groupsByReceiver[receiverKey]?.[groupId]
   const forcedAt = state.forcedAtByReceiver[receiverKey] ?? 0
   if (!record) return true
-  return forcedAt > record.syncedAt
+  return record.assetSignature !== assetSignature || forcedAt > record.syncedAt
 }
 
 const markDynamicReceiverNeedsResync = (ip: string, port: number) => {
@@ -264,7 +314,10 @@ const syncDynamicGroupToReceiver = async ({
   const syncPromise = (async () => {
     const backgrounds = getBackgrounds(group)
     const audioLibrary = group.audioLibrary ?? []
-    const total = backgrounds.length + group.items.length + audioLibrary.length
+    const itemAssetCount = group.items.reduce((count, item) => (
+      count + (isDynamicMediaItem(item) || item.bubble.image ? 1 : 0)
+    ), 0)
+    const total = backgrounds.length + itemAssetCount + audioLibrary.length
     let current = 0
 
     onStatus?.({ phase: 'starting', current, total })
@@ -283,15 +336,18 @@ const syncDynamicGroupToReceiver = async ({
 
     const sortedItems = group.items.slice().sort((a, b) => a.order - b.order)
     for (const item of sortedItems) {
+      const media = isDynamicMediaItem(item) ? item.media : item.bubble.image
+      if (!media) continue
+
       current += 1
       onStatus?.({ phase: 'item', current, total })
-      await uploadMediaForSync(item.media, {
-        role: 'item',
+      await uploadMediaForSync(media, {
+        role: isDynamicBubbleItem(item) ? 'bubbleImage' : 'item',
         groupId: group.id,
         itemId: item.id,
-        assetId: item.media.id,
-        mediaType: item.media.type,
-        mimeType: item.media.mimeType
+        assetId: media.id,
+        mediaType: media.type,
+        mimeType: media.mimeType
       }, ip, port)
     }
 

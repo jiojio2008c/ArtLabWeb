@@ -388,9 +388,25 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
 }
 
 const defaultItem = (payload, order = 0) => {
+  const kind = payload.kind === 'bubble' ? 'bubble' : 'media'
+  const hasImageAssetId = Object.prototype.hasOwnProperty.call(payload, 'imageAssetId')
+  const hasNestedImageAssetId = Object.prototype.hasOwnProperty.call(payload.bubble ?? {}, 'imageAssetId')
+  const imageAssetId = kind === 'bubble'
+    ? hasImageAssetId
+      ? payload.imageAssetId || null
+      : hasNestedImageAssetId
+        ? payload.bubble.imageAssetId || null
+        : payload.bubble?.image?.id ?? null
+    : null
+  const bubble = kind === 'bubble'
+    ? { ...(payload.bubble ?? {}), imageAssetId }
+    : null
   return {
     itemId: payload.itemId,
-    assetId: payload.assetId ?? null,
+    kind,
+    assetId: kind === 'media' ? payload.assetId ?? null : null,
+    imageAssetId,
+    bubble,
     name: payload.name ?? payload.itemId ?? '物件',
     gridIndex: payload.gridIndex ?? 72,
     position: payload.position ?? { x: 0.5, y: 0.5 },
@@ -455,6 +471,34 @@ const upsertAssetMetadata = (metadata) => {
     ...metadata,
     updatedAt: metadata.updatedAt ?? Date.now()
   }
+}
+
+const upsertItemAssetMetadata = (group, item) => {
+  if (!item) return
+  if (item.kind === 'bubble') {
+    const imageAssetId = item.imageAssetId ?? item.bubble?.imageAssetId
+    const existingAsset = runtimeState.assets[imageAssetId] ?? {}
+    upsertAssetMetadata({
+      assetId: imageAssetId,
+      role: 'bubbleImage',
+      groupId: group.groupId,
+      itemId: item.itemId,
+      name: existingAsset.name || `${item.name || item.itemId || 'bubble'} image`,
+      mediaType: existingAsset.mediaType || 'image',
+      mimeType: existingAsset.mimeType || ''
+    })
+    return
+  }
+  const existingAsset = runtimeState.assets[item.assetId] ?? {}
+  upsertAssetMetadata({
+    assetId: item.assetId,
+    role: 'item',
+    groupId: group.groupId,
+    itemId: item.itemId,
+    name: item.name || existingAsset.name,
+    mediaType: item.mediaType ?? existingAsset.mediaType ?? 'image',
+    mimeType: item.mimeType ?? existingAsset.mimeType ?? ''
+  })
 }
 
 const upsertBackground = (group, payload) => {
@@ -735,18 +779,13 @@ const applyDynamicEvent = (eventName, payload) => {
         const existing = existingItems.get(itemPayload.itemId) ?? {}
         const nextItem = defaultItem({
           ...existing,
-          ...itemPayload
+          ...itemPayload,
+          bubble: (itemPayload.kind ?? existing.kind) === 'bubble'
+            ? { ...(existing.bubble ?? {}), ...(itemPayload.bubble ?? {}) }
+            : itemPayload.bubble
         }, index)
 
-        upsertAssetMetadata({
-          assetId: nextItem.assetId,
-          role: 'item',
-          groupId: group.groupId,
-          itemId: nextItem.itemId,
-          name: nextItem.name,
-          mediaType: 'image',
-          mimeType: ''
-        })
+        upsertItemAssetMetadata(group, nextItem)
 
         return nextItem
       })
@@ -812,19 +851,17 @@ const applyDynamicEvent = (eventName, payload) => {
       const group = ensureGroup(payload.groupId)
       const existing = findItem(group, payload.itemId)
       if (existing) {
-        Object.assign(existing, defaultItem({ ...existing, ...payload }, existing.order))
+        Object.assign(existing, defaultItem({
+          ...existing,
+          ...payload,
+          bubble: (payload.kind ?? existing.kind) === 'bubble'
+            ? { ...(existing.bubble ?? {}), ...(payload.bubble ?? {}) }
+            : payload.bubble
+        }, existing.order))
       } else {
         group.items.push(defaultItem(payload, group.items.length))
       }
-      upsertAssetMetadata({
-        assetId: payload.assetId,
-        role: 'item',
-        groupId: group.groupId,
-        itemId: payload.itemId,
-        name: payload.name ?? payload.assetId,
-        mediaType: 'image',
-        mimeType: ''
-      })
+      upsertItemAssetMetadata(group, findItem(group, payload.itemId))
       group.updatedAt = Date.now()
       break
     }
@@ -833,19 +870,15 @@ const applyDynamicEvent = (eventName, payload) => {
       const group = ensureGroup(payload.groupId)
       const item = findItem(group, payload.itemId)
       if (item) {
-        item.assetId = payload.assetId ?? item.assetId
-        item.name = payload.name ?? item.name
-        item.updatedAt = Date.now()
+        Object.assign(item, defaultItem({
+          ...item,
+          ...payload,
+          bubble: (payload.kind ?? item.kind) === 'bubble'
+            ? { ...(item.bubble ?? {}), ...(payload.bubble ?? {}) }
+            : payload.bubble
+        }, item.order))
       }
-      upsertAssetMetadata({
-        assetId: payload.assetId,
-        role: 'item',
-        groupId: group.groupId,
-        itemId: payload.itemId,
-        name: payload.name ?? payload.assetId,
-        mediaType: payload.mediaType ?? 'image',
-        mimeType: payload.mimeType ?? ''
-      })
+      upsertItemAssetMetadata(group, item)
       group.updatedAt = Date.now()
       break
     }
@@ -1103,6 +1136,13 @@ const handleUpload = (buffer, contentType) => {
       },
       ...(group.audioLibrary ?? []).filter((audio) => audio.assetId !== assetId)
     ]
+  } else if ((asset.role === 'bubbleImage' || asset.role === 'bubble-image') && fields.itemId) {
+    const item = findItem(group, fields.itemId)
+    if (item?.kind === 'bubble') {
+      item.imageAssetId = assetId
+      item.bubble = { ...(item.bubble ?? {}), imageAssetId: assetId }
+      item.updatedAt = Date.now()
+    }
   } else if (asset.role === 'item' && fields.itemId) {
     const item = findItem(group, fields.itemId)
     if (item) {

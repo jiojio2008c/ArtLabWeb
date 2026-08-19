@@ -28,6 +28,7 @@ import {
 } from './services/appSettings.ts'
 import { DIRECT_UPLOAD_THEMES, getDirectMasksForTheme, type DirectUploadTheme } from './services/directUploadThemes.ts'
 import {
+  getDynamicItemMedia,
   loadDynamicGroups,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
@@ -135,7 +136,14 @@ function App() {
       getMediaSignature(group.thumbnail),
       getMediaSignature(group.background),
       (group.backgrounds ?? []).map((background) => getMediaSignature(background)),
-      group.items.map((item) => [item.id, item.name, getMediaSignature(item.media)])
+      group.items.map((item) => [
+        item.id,
+        item.name,
+        item.kind,
+        item.kind === 'bubble'
+          ? JSON.stringify(item.bubble)
+          : getMediaSignature(item.media)
+      ])
     ])
     const mergedGroups = nextGroups.map((group) => {
       const currentGroup = currentById.get(group.id)
@@ -444,7 +452,9 @@ function App() {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
     if (experience) setDynamicEditorExperience(resolveDynamicEditorExperience(experience))
-    const preview = group.thumbnail ?? group.background ?? group.items[0]?.media
+    const preview = group.thumbnail
+      ?? group.background
+      ?? group.items.map(getDynamicItemMedia).find(Boolean)
     setDynamicArtworkTransition({
       direction: 'forward',
       groupId: group.id,
@@ -510,7 +520,9 @@ function App() {
     if (!selectedDynamicGroup || dynamicArtworkTransition) return
     setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
     setDynamicArchiveReplayId(makeDynamicArchiveReplayId())
-    const preview = selectedDynamicGroup.thumbnail ?? selectedDynamicGroup.background ?? selectedDynamicGroup.items[0]?.media
+    const preview = selectedDynamicGroup.thumbnail
+      ?? selectedDynamicGroup.background
+      ?? selectedDynamicGroup.items.map(getDynamicItemMedia).find(Boolean)
     setDynamicArtworkTransition({
       direction: 'backward',
       groupId: selectedDynamicGroup.id,

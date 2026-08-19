@@ -5,6 +5,7 @@ import {
   Ban,
   CheckCircle2,
   Check,
+  Cloud,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   Link2,
   LockKeyhole,
   Maximize2,
+  MessageCircleMore,
   Music2,
   Move,
   MousePointerClick,
@@ -37,6 +39,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
+  addDynamicBubble,
   addDynamicItem,
   calculateGridIndex,
   copyDynamicItemSettings,
@@ -47,6 +50,8 @@ import {
   deleteDynamicItems,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
+  isDynamicBubbleItem,
+  isDynamicMediaItem,
   normalizeDynamicAudioFile,
   MAX_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_APPEAR_INTERVAL_MS,
@@ -64,6 +69,8 @@ import {
   updateDynamicBackgroundPlayback,
   updateDynamicGroupAppearMode,
   updateDynamicItemMeta,
+  updateDynamicBubble,
+  updateDynamicItem,
   upsertDynamicGroup,
   type DynamicAppearAnimation,
   type DynamicAppearMode,
@@ -71,6 +78,8 @@ import {
   type DynamicBackground,
   type DynamicBackgroundPlayMode,
   type DynamicBackgroundTransition,
+  type DynamicBubbleContent,
+  type DynamicBubbleInput,
   type DynamicCopyField,
   type DynamicGroup,
   type DynamicItem,
@@ -83,6 +92,7 @@ import {
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
 import {
+  buildGroupSyncPayload,
   syncDynamicGroupToReceiver,
   type SyncStatus
 } from '../services/dynamicArtReceiverSync.ts'
@@ -137,6 +147,11 @@ import DynamicCreationFlowPanel, {
   type DynamicCreationFlowIssue,
   type DynamicCreationFlowItem
 } from './dynamicFlow/DynamicCreationFlowPanel.tsx'
+import DynamicBubbleEditor, {
+  type DynamicBubbleEditorSubmitValue
+} from './DynamicBubbleEditor.tsx'
+import DynamicBubbleVisual from './DynamicBubbleVisual.tsx'
+import DynamicItemThumbnail, { toDynamicBubbleDraft } from './DynamicItemThumbnail.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'audio' | 'background' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
@@ -485,6 +500,7 @@ const getInitialItemId = (items: DynamicItem[], preferredItemId = '', restoredIt
 }
 
 const getStoredItemMediaSizes = (items: DynamicItem[]) => items.reduce<Record<string, MediaSize>>((sizes, item) => {
+  if (!isDynamicMediaItem(item)) return sizes
   const width = Number(item.media.width ?? 0)
   const height = Number(item.media.height ?? 0)
   if (width > 0 && height > 0) sizes[item.media.id] = { width, height }
@@ -1118,6 +1134,17 @@ const getDynamicItemPreviewSize = (
   cachedSize: MediaSize | undefined,
   stageSize: { width: number; height: number }
 ) => {
+  const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
+  const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
+  const stageRatio = Math.min(stageWidth / RUNTIME_STAGE_WIDTH, stageHeight / RUNTIME_STAGE_HEIGHT)
+
+  if (isDynamicBubbleItem(item)) {
+    return {
+      width: Math.max(1, item.bubble.widthPx * stageRatio),
+      height: Math.max(1, item.bubble.heightPx * stageRatio)
+    }
+  }
+
   const cachedWidth = getPositiveDimension(cachedSize?.width)
   const cachedHeight = getPositiveDimension(cachedSize?.height)
   const mediaWidth = getPositiveDimension(item.media.width)
@@ -1142,10 +1169,6 @@ const getDynamicItemPreviewSize = (
   } else {
     runtimeRatio = Math.min(runtimeRatio, 1)
   }
-
-  const stageWidth = stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH
-  const stageHeight = stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT
-  const stageRatio = Math.min(stageWidth / RUNTIME_STAGE_WIDTH, stageHeight / RUNTIME_STAGE_HEIGHT)
 
   return {
     width: Math.max(1, naturalWidth * runtimeRatio * stageRatio),
@@ -1272,6 +1295,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const itemAudioInputRef = useRef<HTMLInputElement>(null)
   const backgroundAudioInputRef = useRef<HTMLInputElement>(null)
   const flowAudioInputRef = useRef<HTMLInputElement>(null)
+  const addItemButtonRef = useRef<HTMLButtonElement>(null)
   const targetSetButtonRef = useRef<HTMLButtonElement>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const bgmAudioRef = useRef<{ id: string; element: HTMLAudioElement } | null>(null)
@@ -1351,6 +1375,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [toolOpen, setToolOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<ControlTab>('motion')
   const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false)
+  const [addItemMenuOpen, setAddItemMenuOpen] = useState(false)
+  const [bubbleEditorOpen, setBubbleEditorOpen] = useState(false)
+  const [editingBubbleItemId, setEditingBubbleItemId] = useState('')
+  const [isSavingBubble, setIsSavingBubble] = useState(false)
   const [backgroundIntervalUnit, setBackgroundIntervalUnit] = useState<BackgroundIntervalUnit>(() => {
     const intervalMs = clamp(
       group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
@@ -1499,6 +1527,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     ? sortedItems
     : displayedItems
   const selectedItem = selectableItems.find((item) => item.id === selectedItemId) ?? selectableItems[0]
+  const editingBubbleItem = editingBubbleItemId
+    ? sortedItems.find((item) => item.id === editingBubbleItemId && isDynamicBubbleItem(item))
+    : undefined
   const displayedItemsAudioKey = displayedItems.map((item) => [
     item.id,
     item.audioId ?? '',
@@ -1652,57 +1683,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     : undefined
 
   const buildGroupStatePayload = (nextGroup: DynamicGroup) => {
-    const nextBackgrounds = getBackgrounds(nextGroup)
-    const nextItems = synchronizeDynamicLinkedBackgrounds(nextGroup.items)
-    return {
-      groupId: nextGroup.id,
-      name: nextGroup.name,
-      linkedAppearanceModelVersion: nextGroup.linkedAppearanceModelVersion,
-      advancedFeaturesEnabled,
-      appearMode: nextGroup.appearMode,
-      appearIntervalMs: nextGroup.appearIntervalMs,
-      appearAnimation: nextGroup.appearAnimation ?? 'none',
-      backgroundPlayMode: nextGroup.backgroundPlayMode,
-      backgroundIntervalMs: nextGroup.backgroundIntervalMs,
-      backgroundTransition: nextGroup.backgroundTransition ?? 'none',
-      activeBackgroundId: nextGroup.activeBackgroundId,
-      background: toBackgroundPayload(nextGroup.background),
-      backgrounds: nextBackgrounds.map((background) => toBackgroundPayload(background)),
-      audioLibrary: (nextGroup.audioLibrary ?? []).map((audio) => ({
-        assetId: audio.id,
-        name: audio.name,
-        mediaType: 'audio',
-        mimeType: audio.mimeType,
-        durationMs: audio.durationMs
-      })),
-      items: nextItems.map((item) => ({
-        itemId: item.id,
-        assetId: item.media.id,
-        name: item.name,
-        gridIndex: item.gridIndex,
-        position: item.position,
-        scale: item.scale,
-        rotation: item.rotation,
-        flipX: getItemFlipX(item),
-        flipY: getItemFlipY(item),
-        animationMode: getDynamicAnimationMode(item),
-        animationId: item.animationId,
-        clickAnimationIds: getDynamicClickAnimationIds(item),
-        moveMode: item.moveMode,
-        movePercent: item.movePercent,
-        moveSpeed: getItemMoveSpeed(item),
-        moveTrack: getItemTrack(item),
-        targetMode: item.targetMode ?? 'loop',
-        targetLoop: item.targetLoop === true,
-        targetPosition: item.targetPosition ?? null,
-        audioId: item.audioId ?? null,
-        audioTrigger: item.audioTrigger ?? 'appearance',
-        audioDelayMs: item.audioDelayMs ?? 0,
-        linkedAppearance: item.linkedAppearance ?? null,
-        backgroundIds: item.backgroundIds ?? [],
-        order: item.order
-      }))
-    }
+    return buildGroupSyncPayload({
+      ...nextGroup,
+      items: synchronizeDynamicLinkedBackgrounds(nextGroup.items)
+    }, advancedFeaturesEnabled)
   }
 
   const sendGroupStateSync = (nextGroup: DynamicGroup) => {
@@ -2581,7 +2565,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [group.items])
 
   useEffect(() => {
-    const validMediaIds = new Set(group.items.map((item) => item.media.id))
+    const validMediaIds = new Set(
+      group.items.filter(isDynamicMediaItem).map((item) => item.media.id)
+    )
     const storedSizes = getStoredItemMediaSizes(group.items)
     setItemImageSizes((currentSizes) => {
       const nextSizes = Object.fromEntries(Object.entries(currentSizes).filter(([mediaId]) => validMediaIds.has(mediaId)))
@@ -2835,7 +2821,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       item.id === targetEditingItemId && targetDraftPosition
         ? { ...item, position: targetDraftPosition }
         : item,
-      getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], measuredStageSize),
+      getDynamicItemPreviewSize(
+        item,
+        isDynamicMediaItem(item) ? itemImageSizes[item.media.id] : undefined,
+        measuredStageSize
+      ),
       stageRect,
       clientPoint
     ))
@@ -3143,7 +3133,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       const previousItemIds = new Set(currentGroup.items.map((item) => item.id))
       const createdItem = nextGroup.items.find((item) => !previousItemIds.has(item.id))
         ?? nextGroup.items[nextGroup.items.length - 1]
-      if (!createdItem) return
+      if (!createdItem || !isDynamicMediaItem(createdItem)) return
 
       uploadUnityAsset({
         ip: wsIp,
@@ -4188,7 +4178,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     try {
       clearPendingTransformPersist()
       upsertDynamicGroup(latestGroupRef.current)
-      const nextGroup = await updateDynamicItemMeta(group.id, selectedItem.id, { name: nextName })
+      const nextGroup = isDynamicBubbleItem(selectedItem)
+        ? updateDynamicItem(group.id, selectedItem.id, (item) => ({ ...item, name: nextName }))
+        : await updateDynamicItemMeta(group.id, selectedItem.id, { name: nextName })
       const updatedItem = nextGroup?.items.find((item) => item.id === selectedItem.id)
       if (!nextGroup || !updatedItem) {
         setItemNameErrorKey('control.nameSaveFailed')
@@ -4197,15 +4189,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
       latestGroupRef.current = nextGroup
       onGroupChange(nextGroup)
-      sendDynamicEvent(wsIp, dynamicPort, 'ItemUpdate', {
-        groupId: group.id,
-        itemId: updatedItem.id,
-        assetId: updatedItem.media.id,
-        name: updatedItem.name,
-        mediaType: updatedItem.media.type,
-        mimeType: updatedItem.media.mimeType,
-        replacedAsset: false
-      })
+      if (isDynamicMediaItem(updatedItem)) {
+        sendDynamicEvent(wsIp, dynamicPort, 'ItemUpdate', {
+          groupId: group.id,
+          itemId: updatedItem.id,
+          assetId: updatedItem.media.id,
+          name: updatedItem.name,
+          mediaType: updatedItem.media.type,
+          mimeType: updatedItem.media.mimeType,
+          replacedAsset: false
+        })
+      } else {
+        sendGroupStateSync(nextGroup)
+      }
       setItemNameDraft(updatedItem.name)
       setIsEditingItemName(false)
       playUiSound('success')
@@ -5054,6 +5050,90 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const labelKey = trackOptions.find((option) => option.id === track)?.labelKey ?? 'control.trackMiddle'
     return t(labelKey)
   }
+
+  const closeAddItemMenu = (restoreFocus = false) => {
+    setAddItemMenuOpen(false)
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => addItemButtonRef.current?.focus({ preventScroll: true }))
+    }
+  }
+
+  const openBubbleEditor = (itemId = '') => {
+    closeAddItemMenu()
+    setEditingBubbleItemId(itemId)
+    setBubbleEditorOpen(true)
+    setToolOpen(false)
+    setBackgroundPanelOpen(false)
+    setAppearPanelOpen(false)
+    setRightPanelCollapsed(false)
+  }
+
+  const closeBubbleEditor = () => {
+    if (isSavingBubble) return
+    setBubbleEditorOpen(false)
+    setEditingBubbleItemId('')
+    window.requestAnimationFrame(() => addItemButtonRef.current?.focus({ preventScroll: true }))
+  }
+
+  const uploadBubbleImage = (file: File, nextGroup: DynamicGroup, itemId: string) => {
+    const bubbleItem = nextGroup.items.find((item) => item.id === itemId)
+    if (!bubbleItem || !isDynamicBubbleItem(bubbleItem) || !bubbleItem.bubble.image) return
+    const image = bubbleItem.bubble.image
+    uploadUnityAsset({
+      ip: wsIp,
+      port: dynamicPort,
+      file,
+      fields: {
+        role: 'bubbleImage',
+        groupId: nextGroup.id,
+        itemId,
+        assetId: image.id,
+        mediaType: image.type,
+        mimeType: image.mimeType
+      }
+    })
+  }
+
+  const handleBubbleSubmit = async (value: DynamicBubbleEditorSubmitValue) => {
+    if (isSavingBubble) return
+    if (!editingBubbleItem && latestGroupRef.current.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
+      window.alert(t('items.limitReached'))
+      return
+    }
+
+    setIsSavingBubble(true)
+    try {
+      flushPendingTransformPersist()
+      const input: DynamicBubbleInput = {
+        ...value,
+        name: value.title.trim()
+          || value.bodyText.trim().split(/\r?\n/, 1)[0]?.slice(0, 28)
+          || (value.bubbleType === 'thought' ? '想象气泡' : '对话气泡')
+      }
+      const currentGroup = latestGroupRef.current
+      const nextGroup = editingBubbleItem
+        ? await updateDynamicBubble(currentGroup.id, editingBubbleItem.id, input)
+        : await addDynamicBubble(currentGroup.id, input)
+      if (!nextGroup) throw new Error('Unable to save bubble')
+
+      const itemId = editingBubbleItem?.id
+        ?? nextGroup.items.find((item) => !currentGroup.items.some((currentItem) => currentItem.id === item.id))?.id
+      if (!itemId) throw new Error('Unable to resolve bubble item')
+
+      if (value.imageFile) uploadBubbleImage(value.imageFile, nextGroup, itemId)
+      latestGroupRef.current = nextGroup
+      onGroupChange(nextGroup)
+      setSelectedItemId(itemId)
+      setBubbleEditorOpen(false)
+      setEditingBubbleItemId('')
+      setToolOpen(true)
+      setRightPanelCollapsed(false)
+      sendGroupStateSync(nextGroup)
+      playUiSound('success')
+    } finally {
+      setIsSavingBubble(false)
+    }
+  }
   const flowSummary = getDynamicCreationFlowSummary(group)
   const layerRelationTree: DynamicAppearanceRelationTreeNode[] = advancedFeaturesEnabled
     ? buildVisibleLayerRelationTree(flowSummary.relationTree, layerItems)
@@ -5112,7 +5192,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     return {
       id: item.id,
       name: item.name,
-      imageUrl: item.media.url,
+      item,
       order: index,
       moveLabel: getTranslatedMotionLabel(item.moveMode),
       animationLabel: `${t('control.animationShort')} ${item.animationId}`,
@@ -5449,7 +5529,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             }}
           >
             <span className="dynamic-layer-order">{String(item.order + 1).padStart(2, '0')}</span>
-            <img src={item.media.url} alt={item.name} />
+            <DynamicItemThumbnail item={item} />
             <span className="dynamic-layer-copy">
               <strong>{item.name}</strong>
               <small>{t('control.layerSummary', { motion: motionLabel, animation: item.animationId })}</small>
@@ -6199,22 +6279,60 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 <p className="eyebrow">{t('control.stageStructure')}</p>
                 <h2 data-flow-step-heading tabIndex={-1}>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
               </div>
-              <button
-                type="button"
-                className="drawer-add-item-button"
-                disabled={isAddingLayerItem || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP}
-                onClick={() => {
-                  setToolOpen(false)
-                  setBackgroundPanelOpen(false)
-                  setRightPanelCollapsed(false)
-                  setAppearPanelOpen(false)
-                  layerItemInputRef.current?.click()
-                }}
-                aria-label={t('items.add')}
-                title={t('items.add')}
-              >
-                +
-              </button>
+              <div className="dynamic-add-item-menu-anchor">
+                <button
+                  ref={addItemButtonRef}
+                  type="button"
+                  className="drawer-add-item-button"
+                  disabled={isAddingLayerItem || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP}
+                  onClick={() => {
+                    setToolOpen(false)
+                    setBackgroundPanelOpen(false)
+                    setRightPanelCollapsed(false)
+                    setAppearPanelOpen(false)
+                    setAddItemMenuOpen((open) => !open)
+                  }}
+                  aria-label={t('items.add')}
+                  title={t('items.add')}
+                  aria-haspopup="menu"
+                  aria-expanded={addItemMenuOpen}
+                  aria-controls="dynamic-add-item-menu"
+                >
+                  +
+                </button>
+                {addItemMenuOpen && (
+                  <>
+                    <button
+                      type="button"
+                      className="dynamic-add-item-menu-scrim"
+                      aria-label="关闭新增物件菜单"
+                      onClick={() => closeAddItemMenu(true)}
+                    />
+                    <div
+                      id="dynamic-add-item-menu"
+                      className="dynamic-add-item-menu"
+                      role="menu"
+                      aria-label="选择物件类型"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          closeAddItemMenu()
+                          layerItemInputRef.current?.click()
+                        }}
+                      >
+                        <span className="dynamic-add-item-menu-icon is-media"><ImageIcon aria-hidden="true" /></span>
+                        <span><strong>上传物件</strong><small>相册、拍照或文件</small></span>
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => openBubbleEditor()}>
+                        <span className="dynamic-add-item-menu-icon is-bubble"><MessageCircleMore aria-hidden="true" /></span>
+                        <span><strong>添加气泡</strong><small>对话或想象内容</small></span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               {editorExperience === 'free' && (
                 <button
                   type="button"
@@ -6302,7 +6420,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   aria-label={t('control.previewNamed', { name: selectedItem.name })}
                   title={t('control.previewImage')}
                 >
-                  <img src={selectedItem.media.url} alt="" draggable={false} />
+                  <DynamicItemThumbnail item={selectedItem} decorative />
                   <span className="dynamic-property-thumbnail-icon" aria-hidden="true">
                     <Maximize2 size={14} strokeWidth={2.4} />
                   </span>
@@ -6684,7 +6802,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           aria-label={t('control.linkageEditNamed', { name: targetItem.name })}
                         >
                           <span className="dynamic-linkage-relation-thumbnail">
-                            <img src={targetItem.media.url} alt="" draggable={false} />
+                            <DynamicItemThumbnail item={targetItem} decorative />
                             <LockKeyhole size={12} strokeWidth={2.5} aria-hidden="true" />
                           </span>
                           <span className="dynamic-linkage-relation-copy">
@@ -6731,7 +6849,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           onClick={() => selectItem(selectedIncomingSourceItem.id, true)}
                           aria-label={t('control.linkageViewSourceNamed', { name: selectedIncomingSourceItem.name })}
                         >
-                          <img src={selectedIncomingSourceItem.media.url} alt="" draggable={false} />
+                          <DynamicItemThumbnail item={selectedIncomingSourceItem} decorative />
                           <span>
                             <small>{t('control.linkageControlledBy')}</small>
                             <strong>{selectedIncomingSourceItem.name}</strong>
@@ -6841,11 +6959,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       transform: `rotate(${selectedItemRotation}deg) scale(${getItemFlipX(selectedItem) ? -selectedItemScale : selectedItemScale}, ${getItemFlipY(selectedItem) ? -selectedItemScale : selectedItemScale})`
                     }}
                   >
-                    <img
-                      src={selectedItem.media.url}
-                      alt={t('control.previewNamed', { name: selectedItem.name })}
-                      draggable={false}
-                    />
+                    <DynamicItemThumbnail item={selectedItem} decorative />
                   </div>
                   <span>{t('control.objectPreview')}</span>
                 </div>

@@ -4,12 +4,15 @@ import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   addDynamicItem,
   deleteDynamicItem,
+  isDynamicBubbleItem,
+  isDynamicMediaItem,
   updateDynamicItemMeta,
   type DynamicGroup,
   type DynamicItem
 } from '../services/dynamicArtStorage.ts'
 import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
 import { syncDynamicGroupToReceiver, type SyncStatus } from '../services/dynamicArtReceiverSync.ts'
+import DynamicItemThumbnail from './DynamicItemThumbnail.tsx'
 
 interface DynamicItemsPageProps {
   group: DynamicGroup
@@ -167,6 +170,10 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   const startEditItem = (item: DynamicItem) => {
     suppressClickRef.current = false
     setMenuItemId('')
+    if (isDynamicBubbleItem(item)) {
+      onOpenControl(item.id)
+      return
+    }
     setEditingItem(item)
     setEditName(item.name)
     setEditFile(undefined)
@@ -240,6 +247,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
       const createdItem = nextGroup.items.find((item) => item.order === group.items.length)
         ?? nextGroup.items[nextGroup.items.length - 1]
+      if (!createdItem || !isDynamicMediaItem(createdItem)) return
       uploadUnityAsset({
         ip: wsIp,
         port: dynamicPort,
@@ -280,7 +288,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
       if (!nextGroup) return
 
       const updatedItem = nextGroup.items.find((item) => item.id === editingItem.id)
-      if (!updatedItem) return
+      if (!updatedItem || !isDynamicMediaItem(updatedItem)) return
 
       if (editFile) {
         uploadUnityAsset({
@@ -393,7 +401,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
               openItemMenu(item, event.clientX, event.clientY)
             }}
           >
-            <img src={item.media.url} alt={item.name} />
+            <DynamicItemThumbnail item={item} />
             <span>{item.name}</span>
           </button>
         ))}

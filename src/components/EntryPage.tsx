@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Keyboard, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveLastWsIp } from '../services/appSettings.ts'
-import type { DynamicGroup, DynamicMedia } from '../services/dynamicArtStorage.ts'
+import {
+  getDynamicItemMedia,
+  type DynamicGroup,
+  type DynamicMedia
+} from '../services/dynamicArtStorage.ts'
+import DynamicItemThumbnail from './DynamicItemThumbnail.tsx'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
 import { preloadInteractiveTransitionAssets } from './interactiveTransitions/preloadInteractiveAssets.ts'
 import { preloadImages, scheduleIdleTask } from '../services/transitionPerformance.ts'
@@ -29,7 +34,7 @@ const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 const ART_DISPLAY_ICON_URL = new URL('../../ArtDisplay.jpg', import.meta.url).href
 
 const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => (
-  group.thumbnail ?? group.background ?? group.items[0]?.media
+  group.thumbnail ?? group.background ?? group.items.map(getDynamicItemMedia).find(Boolean)
 )
 
 const EntryPage: React.FC<EntryPageProps> = ({
@@ -61,7 +66,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
   useEffect(() => {
     const previewUrls = dynamicGroups
       .slice(0, 12)
-      .map((group) => group.thumbnail ?? group.background ?? group.items[0]?.media)
+      .map(getGroupPreviewMedia)
       .filter((media): media is DynamicMedia => Boolean(media) && media?.type !== 'video')
       .map((media) => media.url)
 
@@ -220,7 +225,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
                             className="entry-item-bubble"
                             style={{ '--item-index': itemIndex } as React.CSSProperties}
                           >
-                            <img src={item.media.url} alt={item.name} draggable={false} />
+                            <DynamicItemThumbnail item={item} />
                           </span>
                         ))}
                         {previewItems.length === 0 && (
