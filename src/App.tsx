@@ -12,6 +12,7 @@ import DynamicBackgroundPage from './components/DynamicBackgroundPage.tsx'
 import DynamicGroupsPage from './components/DynamicGroupsPage.tsx'
 import DynamicItemsPage from './components/DynamicItemsPage.tsx'
 import DynamicControlPage from './components/DynamicControlPage.tsx'
+import { getContentAwareThumbnailSource } from './components/ContentAwareThumbnail.tsx'
 import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
 import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
 import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
@@ -429,6 +430,10 @@ function App() {
     navigateTo('directSelect')
   }
 
+  const resolveDynamicEditorExperience = (experience: DynamicCreationFlowExperience) => (
+    networkSettings.advancedFeaturesEnabled ? experience : 'free'
+  )
+
   const beginDynamicArtworkTransition = (
     group: DynamicGroup,
     origin?: DynamicTransitionOrigin,
@@ -438,13 +443,15 @@ function App() {
     setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
-    if (experience) setDynamicEditorExperience(experience)
+    if (experience) setDynamicEditorExperience(resolveDynamicEditorExperience(experience))
     const preview = group.thumbnail ?? group.background ?? group.items[0]?.media
     setDynamicArtworkTransition({
       direction: 'forward',
       groupId: group.id,
       groupName: group.name,
-      previewUrl: preview?.url,
+      previewUrl: group.thumbnail?.type === 'image'
+        ? getContentAwareThumbnailSource(group.thumbnail.url)
+        : preview?.url,
       previewType: preview?.type,
       origin
     })
@@ -479,7 +486,6 @@ function App() {
       itemIds: group.items.map((item) => item.id),
       defaultExperience: 'free'
     })
-    setDynamicEditorExperience(flowSession.experience)
     beginDynamicArtworkTransition(group, origin, flowSession.experience)
   }
 
@@ -495,7 +501,7 @@ function App() {
       itemIds: selectedDynamicGroup.items.map((item) => item.id),
       defaultExperience: 'free'
     })
-    setDynamicEditorExperience(flowSession.experience)
+    setDynamicEditorExperience(resolveDynamicEditorExperience(flowSession.experience))
     setSelectedDynamicItemId(itemId)
     navigateTo('dynamicControl')
   }
@@ -509,7 +515,9 @@ function App() {
       direction: 'backward',
       groupId: selectedDynamicGroup.id,
       groupName: selectedDynamicGroup.name,
-      previewUrl: preview?.url,
+      previewUrl: selectedDynamicGroup.thumbnail?.type === 'image'
+        ? getContentAwareThumbnailSource(selectedDynamicGroup.thumbnail.url)
+        : preview?.url,
       previewType: preview?.type
     })
   }

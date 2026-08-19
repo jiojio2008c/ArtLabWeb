@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   DYNAMIC_CREATION_FLOW_STEP_IDS,
@@ -19,6 +20,11 @@ import {
   saveDynamicCreationFlowSession,
   updateDynamicCreationFlowSession
 } from '../src/services/dynamicCreationFlowStorage.ts'
+import en from '../src/i18n/locales/en.ts'
+import plPL from '../src/i18n/locales/pl-PL.ts'
+import ptPT from '../src/i18n/locales/pt-PT.ts'
+import zhHans from '../src/i18n/locales/zh-Hans.ts'
+import zhHant from '../src/i18n/locales/zh-Hant.ts'
 
 const makeItem = (id, order, overrides = {}) => ({
   id,
@@ -51,6 +57,79 @@ const createMemoryStorage = () => {
     setItem: (key, value) => values.set(key, value),
     removeItem: (key) => values.delete(key)
   }
+}
+
+const localizedFlowCopy = [
+  ['zh-Hans', zhHans, {
+    'control.appearanceOrder': '出场排序',
+    'control.objectLinkage': '物件联动',
+    'flow.appearAll': '全部出现',
+    'flow.appearSequence': '逐个出现',
+    'flow.backgroundInheritedCardLabel': '{{child}}，跟随 {{parent}}',
+    'flow.backgroundFollowsNamed': '跟随：{{parent}}',
+    'settings.advancedFeaturesSummary': '创作流程、出场编排、音源、背景与进阶转场'
+  }],
+  ['zh-Hant', zhHant, {
+    'control.appearanceOrder': '出場排序',
+    'control.objectLinkage': '物件聯動',
+    'flow.appearAll': '全部出現',
+    'flow.appearSequence': '逐個出現',
+    'flow.backgroundInheritedCardLabel': '{{child}}，跟隨 {{parent}}',
+    'flow.backgroundFollowsNamed': '跟隨：{{parent}}',
+    'settings.advancedFeaturesSummary': '創作流程、出場編排、音源、背景與進階轉場'
+  }],
+  ['en', en, {
+    'control.appearanceOrder': 'Entrance Order',
+    'control.objectLinkage': 'Object Link',
+    'flow.appearAll': 'Show All',
+    'flow.appearSequence': 'One by One',
+    'flow.backgroundInheritedCardLabel': '{{child}}, follows {{parent}}',
+    'flow.backgroundFollowsNamed': 'Follows: {{parent}}',
+    'settings.advancedFeaturesSummary': 'Creation flow, entrance sequencing, audio, backgrounds, and advanced transitions'
+  }],
+  ['pt-PT', ptPT, {
+    'control.appearanceOrder': 'Ordem de entrada',
+    'control.objectLinkage': 'Ligação de objetos',
+    'flow.appearAll': 'Mostrar todos',
+    'flow.appearSequence': 'Um a um',
+    'flow.backgroundInheritedCardLabel': '{{child}}, segue os fundos de {{parent}}',
+    'flow.backgroundFollowsNamed': 'Segue: {{parent}}',
+    'settings.advancedFeaturesSummary': 'Fluxo de criação, ordem de entrada, áudio, fundos e transições avançadas'
+  }],
+  ['pl-PL', plPL, {
+    'control.appearanceOrder': 'Kolejność wejścia',
+    'control.objectLinkage': 'Powiązanie obiektu',
+    'flow.appearAll': 'Pokaż wszystkie',
+    'flow.appearSequence': 'Po kolei',
+    'flow.backgroundInheritedCardLabel': '{{child}}, przejmuje tła od {{parent}}',
+    'flow.backgroundFollowsNamed': 'Przejmuje od: {{parent}}',
+    'settings.advancedFeaturesSummary': 'Proces tworzenia, kolejność pojawiania, dźwięk, tła i zaawansowane przejścia'
+  }]
+]
+
+const getTranslationPlaceholders = (value) => (
+  [...value.matchAll(/{{([^}]+)}}/g)].map((match) => match[1]).sort()
+)
+
+for (const [locale, resource, expectedCopy] of localizedFlowCopy) {
+  for (const [key, expectedValue] of Object.entries(expectedCopy)) {
+    assert.equal(resource[key], expectedValue, `${locale} should use the approved copy for ${key}.`)
+  }
+  assert.deepEqual(
+    getTranslationPlaceholders(resource['flow.backgroundInheritedCardLabel']),
+    ['child', 'parent'],
+    `${locale} inherited-background card label should identify both objects.`
+  )
+  assert.deepEqual(
+    getTranslationPlaceholders(resource['flow.backgroundFollowsNamed']),
+    ['parent'],
+    `${locale} inherited-background status should identify its parent.`
+  )
+  assert.notEqual(
+    resource['control.appearanceOrder'],
+    resource['control.objectLinkage'],
+    `${locale} entrance-order copy must not replace the existing object-linkage copy.`
+  )
 }
 
 assert.deepEqual(
@@ -357,5 +436,66 @@ assert.equal(
   'objects'
 )
 assert.equal(clearDynamicCreationFlowSessions(memoryStorage), true)
+
+const indexCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
+const dynamicControlSource = readFileSync(
+  new URL('../src/components/DynamicControlPage.tsx', import.meta.url),
+  'utf8'
+)
+const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const desktopPlayerSource = readFileSync(
+  new URL('../desktop-runtime/renderer/player.js', import.meta.url),
+  'utf8'
+)
+
+assert.match(
+  indexCss,
+  /\.page-frame\.page-portal\.page-view-dynamicControl \.dynamic-control-workspace\s*{\s*animation:\s*none !important;\s*}/,
+  'The artwork-transition handoff must not restart the control workspace entrance animation.'
+)
+assert.match(
+  dynamicControlSource,
+  /if \(video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\)\s*{\s*video\.load\(\)\s*}\s*else\s*{\s*playVideo\(\)\s*}/,
+  'A ready stage video must resume without resetting its visible frame.'
+)
+
+assert.match(
+  appSource,
+  /const resolveDynamicEditorExperience = \(experience: DynamicCreationFlowExperience\) => \(\s*networkSettings\.advancedFeaturesEnabled \? experience : 'free'\s*\)/,
+  'Every route into the control page must fall back to free editing when advanced features are disabled.'
+)
+assert.match(
+  dynamicControlSource,
+  /const savedEditorExperience = flowSession\.experience\s*const editorExperience: DynamicCreationFlowExperience = advancedFeaturesEnabled\s*\? savedEditorExperience\s*: 'free'/,
+  'A saved creation-flow session must not override the basic free-editing experience.'
+)
+assert.match(
+  dynamicControlSource,
+  /const layerRelationTree: DynamicAppearanceRelationTreeNode\[\] = advancedFeaturesEnabled[\s\S]*?: layerItems\.map\(\(item\) => \(\{[\s\S]*?children: \[\][\s\S]*?}\)\)/,
+  'Basic editing must flatten every visible layer into a root card.'
+)
+assert.match(
+  dynamicControlSource,
+  /{advancedFeaturesEnabled && \(\s*<div className="dynamic-editor-experience-switch"/,
+  'The creation-flow/free-editing switch must only be shown with advanced features.'
+)
+
+const orbitKeyframes = indexCss.match(/@keyframes dynamic-preview-orbit\s*{([\s\S]*?)\n}/)?.[1]
+assert.ok(orbitKeyframes, 'The orbit preview animation must remain defined.')
+assert.doesNotMatch(
+  orbitKeyframes,
+  /scale\(/,
+  'Orbit motion must preserve the configured object size throughout preview playback.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /--move-orbit-scale-/,
+  'Orbit preview styling must not reintroduce hidden depth scaling.'
+)
+assert.match(
+  desktopPlayerSource,
+  /case 'orbit':\s*{[\s\S]*?return\s*{\s*x,\s*y,\s*scale:\s*1,\s*rotation:\s*0\s*}/,
+  'Desktop orbit playback must preserve the same configured object size as the editor and web preview.'
+)
 
 console.log('Dynamic creation flow verification passed.')

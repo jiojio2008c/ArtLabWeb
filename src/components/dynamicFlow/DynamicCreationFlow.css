@@ -215,6 +215,7 @@
 
 .dynamic-flow-panel .dynamic-flow-mode-grid button,
 .dynamic-flow-panel .dynamic-flow-animation-grid button {
+  min-height: 44px;
   border: 1px solid var(--flow-line);
   border-radius: 13px;
   padding: 8px;
@@ -786,37 +787,108 @@
   font-weight: 950;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list {
+.dynamic-flow-panel .dynamic-flow-background-object-list,
+.dynamic-flow-panel .dynamic-flow-background-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-tree {
   margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-node {
+  position: relative;
+  min-width: 0;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-children {
+  margin-top: 8px;
+  margin-inline-start: 0;
+  border-inline-start: 2px solid rgba(8, 127, 153, 0.17);
+  padding-inline-start: 12px;
   display: grid;
   gap: 8px;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list button {
+.dynamic-flow-panel .dynamic-flow-background-children[hidden] {
+  display: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-node.is-child::before {
+  position: absolute;
+  top: 31px;
+  inset-inline-start: -12px;
+  width: 12px;
+  height: 2px;
+  border-radius: 999px 0 0 999px;
+  background: rgba(8, 127, 153, 0.36);
+  content: '';
+}
+
+.dynamic-flow-panel .dynamic-flow-background-node.depth-3 > .dynamic-flow-background-children {
+  margin-inline-start: 0;
+  border-inline-start: 0;
+  padding-inline-start: 0;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-node.depth-3
+  > .dynamic-flow-background-children
+  > .dynamic-flow-background-node::before {
+  display: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-object-card {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--flow-line);
+  border-radius: 15px;
+  overflow: visible;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 7px 18px rgba(32, 63, 71, 0.05);
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-object-card.is-inherited {
+  border-color: rgba(8, 127, 153, 0.14);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(239, 249, 248, 0.72));
+}
+
+.dynamic-flow-panel .dynamic-flow-background-object-card.is-selected {
+  border-color: rgba(8, 127, 153, 0.4);
+  background: linear-gradient(145deg, rgba(229, 248, 248, 0.94), rgba(255, 255, 255, 0.92));
+  box-shadow: 0 8px 19px rgba(8, 127, 153, 0.12);
+}
+
+.dynamic-flow-panel .dynamic-flow-background-object-select,
+.dynamic-flow-panel .dynamic-flow-background-object-summary {
   width: 100%;
   min-width: 0;
   min-height: 62px;
-  border: 1px solid var(--flow-line);
-  border-radius: 15px;
+  border-radius: 14px;
   padding: 8px;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 10px;
   color: var(--flow-ink-soft);
-  background: rgba(255, 255, 255, 0.68);
+  background: transparent;
   text-align: left;
-  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list button.is-selected {
-  border-color: rgba(8, 127, 153, 0.4);
+.dynamic-flow-panel .dynamic-flow-background-object-select {
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-object-card.is-selected .dynamic-flow-background-object-select {
   color: var(--flow-ink);
-  background: linear-gradient(145deg, rgba(229, 248, 248, 0.94), rgba(255, 255, 255, 0.92));
-  box-shadow: 0 8px 19px rgba(8, 127, 153, 0.12);
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list img {
+.dynamic-flow-panel .dynamic-flow-background-object-select img,
+.dynamic-flow-panel .dynamic-flow-background-object-summary img {
   width: 44px;
   height: 44px;
   border: 1px solid rgba(23, 60, 70, 0.08);
@@ -825,28 +897,57 @@
   background: rgba(236, 243, 242, 0.78);
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list button > span {
+.dynamic-flow-panel .dynamic-flow-background-object-copy {
   min-width: 0;
   display: grid;
   gap: 3px;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list strong,
-.dynamic-flow-panel .dynamic-flow-background-object-list small {
+.dynamic-flow-panel .dynamic-flow-background-object-copy strong,
+.dynamic-flow-panel .dynamic-flow-background-object-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list strong {
+.dynamic-flow-panel .dynamic-flow-background-object-copy strong {
   font-size: 12px;
   font-weight: 950;
 }
 
-.dynamic-flow-panel .dynamic-flow-background-object-list small {
+.dynamic-flow-panel .dynamic-flow-background-object-copy small {
   color: var(--flow-muted);
   font-size: 10px;
   font-weight: 700;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-children-toggle {
+  width: 100%;
+  min-height: 44px;
+  border-top: 1px solid rgba(23, 60, 70, 0.07);
+  border-radius: 0 0 14px 14px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 7px;
+  color: var(--flow-accent-deep);
+  background: rgba(238, 246, 245, 0.54);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: left;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-children-toggle > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-children-toggle svg {
+  width: 15px;
+  height: 15px;
 }
 
 .dynamic-flow-panel .dynamic-flow-object-status-icon {
@@ -1539,6 +1640,8 @@
 }
 
 .dynamic-flow-panel .dynamic-flow-audio-delay-field {
+  position: relative;
+  z-index: 2;
   min-height: 52px;
   margin-top: 10px;
   border: 1px solid var(--flow-line);
@@ -1552,14 +1655,42 @@
   background: rgba(255, 255, 255, 0.62);
   font-size: 10px;
   font-weight: 850;
+  overflow: visible;
 }
 
-.dynamic-flow-panel .dynamic-flow-audio-delay-field input {
+.dynamic-flow-panel .dynamic-flow-audio-delay-field:has(.dynamic-flow-audio-delay-wheel.is-expanded) {
+  z-index: 40;
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-delay-field.is-disabled {
+  opacity: 0.56;
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-delay-control {
+  position: relative;
+  flex: 0 0 86px;
   width: 86px;
-  min-height: 44px;
+  height: 44px;
+  overflow: visible;
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-delay-wheel {
+  width: 86px;
+  height: 44px;
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-delay-wheel .dynamic-interval-wheel-value {
+  touch-action: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-delay-value {
+  width: 86px;
+  height: 44px;
   border: 1px solid var(--flow-line);
   border-radius: 10px;
   padding: 0 8px;
+  display: grid;
+  place-items: center;
   color: var(--flow-ink);
   background: rgba(255, 255, 255, 0.86);
   font-size: 12px;
@@ -1973,6 +2104,16 @@
   .dynamic-flow-panel .dynamic-flow-appearance-children {
     margin-inline-start: 7px;
     padding-inline-start: 11px;
+  }
+
+  .dynamic-flow-panel .dynamic-flow-background-children {
+    margin-inline-start: 0;
+    padding-inline-start: 10px;
+  }
+
+  .dynamic-flow-panel .dynamic-flow-background-node.is-child::before {
+    inset-inline-start: -10px;
+    width: 10px;
   }
 
   .dynamic-flow-panel .dynamic-flow-parent-link-branch {

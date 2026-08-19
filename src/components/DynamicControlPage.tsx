@@ -5,9 +5,11 @@ import {
   Ban,
   CheckCircle2,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Copy,
   FlipHorizontal2,
   FlipVertical2,
   ImageIcon,
@@ -22,7 +24,6 @@ import {
   Plus,
   Repeat2,
   RotateCcw,
-  RotateCw,
   SlidersHorizontal,
   Sparkles,
   Shuffle,
@@ -95,6 +96,7 @@ import {
   DYNAMIC_CREATION_FLOW_STEPS,
   convertDynamicPlaybackOrderToLayerOrder,
   getDynamicCreationFlowSummary,
+  type DynamicAppearanceRelationTreeNode,
   type DynamicCreationFlowExperience,
   type DynamicCreationFlowSession,
   type DynamicCreationFlowStepId
@@ -152,6 +154,7 @@ interface TargetEditSnapshot {
   itemId: string
   moveMode: DynamicMoveMode
   targetMode: DynamicTargetMode
+  targetLoop: boolean
   targetPosition?: Point
 }
 
@@ -397,13 +400,60 @@ const advancedCopyFieldOptions: { id: DynamicCopyField; labelKey: string }[] = [
 const BASIC_COPY_FIELDS = basicCopyFieldOptions.map((option) => option.id)
 const ADVANCED_COPY_FIELDS = advancedCopyFieldOptions.map((option) => option.id)
 
+const buildVisibleLayerRelationTree = (
+  relationTree: DynamicAppearanceRelationTreeNode[],
+  visibleItems: DynamicItem[]
+): DynamicAppearanceRelationTreeNode[] => {
+  const visibleItemIds = new Set(visibleItems.map((item) => item.id))
+  const layerIndexByItemId = new Map(visibleItems.map((item, index) => [item.id, index]))
+  const compareByLayer = (
+    first: DynamicAppearanceRelationTreeNode,
+    second: DynamicAppearanceRelationTreeNode
+  ) => (layerIndexByItemId.get(first.itemId) ?? Number.MAX_SAFE_INTEGER)
+    - (layerIndexByItemId.get(second.itemId) ?? Number.MAX_SAFE_INTEGER)
+
+  const filterNodes = (nodes: DynamicAppearanceRelationTreeNode[]): DynamicAppearanceRelationTreeNode[] => (
+    nodes.flatMap((node) => {
+      const children = filterNodes(node.children).sort(compareByLayer)
+      if (!visibleItemIds.has(node.itemId)) return children
+      return [{ ...node, children }]
+    }).sort(compareByLayer)
+  )
+
+  return filterNodes(relationTree)
+}
+
+const getRelationTreeAncestorIds = (
+  nodes: DynamicAppearanceRelationTreeNode[],
+  targetItemId: string,
+  ancestorIds: string[] = []
+): string[] => {
+  for (const node of nodes) {
+    if (node.itemId === targetItemId) return ancestorIds
+    const childAncestorIds = getRelationTreeAncestorIds(
+      node.children,
+      targetItemId,
+      [...ancestorIds, node.itemId]
+    )
+    if (childAncestorIds.length > 0) return childAncestorIds
+  }
+  return []
+}
+
+const getRelationTreeParentIds = (nodes: DynamicAppearanceRelationTreeNode[]): string[] => (
+  nodes.flatMap((node) => [
+    ...(node.children.length > 0 ? [node.itemId] : []),
+    ...getRelationTreeParentIds(node.children)
+  ])
+)
+
 const propertyTabOptions = [
   { id: 'motion' as const, labelKey: 'control.motion', shortLabelKey: 'control.motionShort', icon: Move },
   { id: 'animation' as const, labelKey: 'control.animation', shortLabelKey: 'control.animationShort', icon: Sparkles },
   { id: 'transform' as const, labelKey: 'control.deform', shortLabelKey: 'control.deformShort', icon: SlidersHorizontal },
-  { id: 'audio' as const, labelKey: 'control.objectAudio', shortLabelKey: 'control.objectAudio', icon: Volume2 },
-  { id: 'background' as const, labelKey: 'control.objectBackground', shortLabelKey: 'control.objectBackground', icon: ImageIcon },
-  { id: 'copy' as const, labelKey: 'control.copyProperties', shortLabelKey: 'control.copyPropertiesShort', icon: RotateCw }
+  { id: 'audio' as const, labelKey: 'control.objectAudio', shortLabelKey: 'control.objectAudioShort', icon: Volume2 },
+  { id: 'background' as const, labelKey: 'control.objectBackground', shortLabelKey: 'control.objectBackgroundShort', icon: ImageIcon },
+  { id: 'copy' as const, labelKey: 'control.copyProperties', shortLabelKey: 'control.copyPropertiesShort', icon: Copy }
 ]
 
 const basicPropertyTabIds: ControlTab[] = ['motion', 'animation', 'transform', 'copy']
@@ -588,6 +638,9 @@ interface DynamicStageTargetProps {
   schedule?: DynamicAppearanceSchedule
   epochStartedAt?: number
   onArrival?: (itemId: string) => void
+  editingLabel?: string
+  editingDescriptionId?: string
+  onEditingKeyDown?: React.KeyboardEventHandler<HTMLDivElement>
   children: React.ReactNode
 }
 
@@ -764,9 +817,20 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
   schedule,
   epochStartedAt,
   onArrival,
+  editingLabel,
+  editingDescriptionId,
+  onEditingKeyDown,
   children
 }) => {
   const elementRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (!editing) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      elementRef.current?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [editing])
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -850,7 +914,18 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
   }, [appearAnimation, appearDelayMs, editing, enabled, epochStartedAt, item.id, item.moveSpeed, item.position.x, item.position.y, loop, onArrival, previewing, ready, replayId, schedule, stageSize.height, stageSize.width, targetPosition?.x, targetPosition?.y])
 
   return (
-    <div ref={elementRef} className={`dynamic-stage-item-target ${editing ? 'is-editing' : ''}`}>
+    <div
+      ref={elementRef}
+      className={`dynamic-stage-item-target ${editing ? 'is-editing' : ''}`}
+      tabIndex={editing ? 0 : undefined}
+      role={editing ? 'group' : undefined}
+      aria-label={editing ? editingLabel : undefined}
+      aria-describedby={editing ? editingDescriptionId : undefined}
+      aria-keyshortcuts={editing
+        ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Enter Escape'
+        : undefined}
+      onKeyDown={editing ? onEditingKeyDown : undefined}
+    >
       {children}
     </div>
   )
@@ -1135,8 +1210,6 @@ const getMotionPreviewStyle = (
   const orbitY92 = Math.round(orbitY * 0.924)
   const orbitY71 = Math.round(orbitY * 0.707)
   const orbitY38 = Math.round(orbitY * 0.383)
-  const orbitFrontScale = 1 + amplitudeRatio * 0.24
-  const orbitBackScale = Math.max(0.76, 1 - amplitudeRatio * 0.22)
   const moveDuration = getMoveDuration(getItemMoveSpeed(item), isLoopMove ? 8.5 : 5.5)
 
   return {
@@ -1174,11 +1247,7 @@ const getMotionPreviewStyle = (
     '--move-orbit-y-front-38': `${orbitY38}px`,
     '--move-orbit-y-back-92': `${-orbitY92}px`,
     '--move-orbit-y-back-71': `${-orbitY71}px`,
-    '--move-orbit-y-back-38': `${-orbitY38}px`,
-    '--move-orbit-scale-front': orbitFrontScale.toFixed(3),
-    '--move-orbit-scale-mid-front': (1 + amplitudeRatio * 0.12).toFixed(3),
-    '--move-orbit-scale-back': orbitBackScale.toFixed(3),
-    '--move-orbit-scale-mid-back': Math.max(0.84, 1 - amplitudeRatio * 0.11).toFixed(3)
+    '--move-orbit-y-back-38': `${-orbitY38}px`
   } as React.CSSProperties
 }
 
@@ -1194,8 +1263,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   transitionPreparing = false
 }) => {
   const { t } = useTranslation()
-  const copyFieldOptions = advancedFeaturesEnabled ? advancedCopyFieldOptions : basicCopyFieldOptions
-  const allCopyFields = advancedFeaturesEnabled ? ADVANCED_COPY_FIELDS : BASIC_COPY_FIELDS
+  const supportedCopyFieldOptions = advancedFeaturesEnabled ? advancedCopyFieldOptions : basicCopyFieldOptions
+  const supportedCopyFields = advancedFeaturesEnabled ? ADVANCED_COPY_FIELDS : BASIC_COPY_FIELDS
   const stageRef = useRef<HTMLDivElement>(null)
   const stageBackgroundVideoRef = useRef<HTMLVideoElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -1203,6 +1272,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const itemAudioInputRef = useRef<HTMLInputElement>(null)
   const backgroundAudioInputRef = useRef<HTMLInputElement>(null)
   const flowAudioInputRef = useRef<HTMLInputElement>(null)
+  const targetSetButtonRef = useRef<HTMLButtonElement>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const bgmAudioRef = useRef<{ id: string; element: HTMLAudioElement } | null>(null)
   const bgmFadeFrameRef = useRef<number | null>(null)
@@ -1301,8 +1371,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [appearPanelOpen, setAppearPanelOpen] = useState(false)
   const [selectedBackgroundIds, setSelectedBackgroundIds] = useState<string[]>([])
   const [selectedLayerItemIds, setSelectedLayerItemIds] = useState<string[]>([])
+  const [collapsedLayerItemIds, setCollapsedLayerItemIds] = useState<Set<string>>(() => new Set())
   const [copiedSourceItemId, setCopiedSourceItemId] = useState('')
-  const [selectedCopyFields, setSelectedCopyFields] = useState<DynamicCopyField[]>(() => [...allCopyFields])
+  const [selectedCopyFields, setSelectedCopyFields] = useState<DynamicCopyField[]>(() => [...supportedCopyFields])
   const [copyConfirmOpen, setCopyConfirmOpen] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const [copyErrorKey, setCopyErrorKey] = useState('')
@@ -1343,6 +1414,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [linkageErrorKey, setLinkageErrorKey] = useState('')
   const [targetEditingItemId, setTargetEditingItemId] = useState('')
   const [targetDraftPosition, setTargetDraftPosition] = useState<Point | null>(null)
+  const [targetDraftLoop, setTargetDraftLoop] = useState(false)
   const [previewingAudioId, setPreviewingAudioId] = useState('')
   const [isAddingAudio, setIsAddingAudio] = useState(false)
   const [audioFileErrorKey, setAudioFileErrorKey] = useState('')
@@ -1354,8 +1426,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     phase: 'closing' | 'opening'
     key: number
   } | null>(null)
-  const editorExperience = flowSession.experience
+  const savedEditorExperience = flowSession.experience
+  const editorExperience: DynamicCreationFlowExperience = advancedFeaturesEnabled
+    ? savedEditorExperience
+    : 'free'
   const flowStep = flowSession.step
+  const copyFieldOptions = editorExperience === 'flow'
+    ? supportedCopyFieldOptions.filter((option) => option.id !== 'linkage')
+    : supportedCopyFieldOptions
+  const allCopyFields = copyFieldOptions.map((option) => option.id)
 
   const updateFlowSession = useCallback((patch: Partial<DynamicCreationFlowSession>) => {
     setFlowSession((currentSession) => saveDynamicCreationFlowSession({
@@ -1382,6 +1461,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     targetEditSnapshotRef.current = null
     setTargetEditingItemId('')
     setTargetDraftPosition(null)
+    setTargetDraftLoop(false)
     setManipulatingItemId('')
     pointersRef.current.clear()
     gestureModeRef.current = 'none'
@@ -1438,6 +1518,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const selectedTargetActive = Boolean(
     selectedItem?.targetMode === 'target' && selectedItem.targetPosition
   )
+  const targetEditorOpen = Boolean(
+    selectedItem && targetEditingItemId === selectedItem.id
+  )
+  const selectedTargetForControls = selectedTargetActive || targetEditorOpen
   const selectedMoveSpeed = selectedItem ? getItemMoveSpeed(selectedItem) : DEFAULT_MOVE_SPEED
   const appearIntervalMs = clamp(
     group.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
@@ -2228,7 +2312,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       }
     }
 
-    video.load()
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      video.load()
+    } else {
+      playVideo()
+    }
     const retryTimer = window.setTimeout(playVideo, 60)
     video.addEventListener('loadeddata', playVideo)
     video.addEventListener('canplay', playVideo)
@@ -2769,6 +2857,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       ? (hitItemId === targetEditingItemId ? hitItemId : '')
       : hitItemId
     if (!itemId) {
+      if (targetEditingItemId) {
+        event.preventDefault()
+        return
+      }
       if (isFirstPointer) {
         setToolOpen(false)
         setBackgroundPanelOpen(false)
@@ -3754,12 +3846,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     closeLinkEditor()
   }
 
+  const focusTargetSetButton = () => {
+    window.requestAnimationFrame(() => targetSetButtonRef.current?.focus({ preventScroll: true }))
+  }
+
   const handleTargetModeChange = (targetMode: DynamicTargetMode) => {
     if (!selectedItem) return
-    if (targetMode === 'target' && !selectedItem.targetPosition) {
+
+    // The target mode choice is intentionally only actionable while entering
+    // the editor. Once the editor is open, clicking the selected choice must
+    // leave the draft position/loop value untouched.
+    if (targetMode === 'target') {
+      if (targetEditingItemId === selectedItem.id) return
       startTargetEditing()
       return
     }
+
     clearTargetEditing()
     persistAdvancedItem((item) => ({
       ...item,
@@ -3768,29 +3870,37 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleTargetLoopToggle = () => {
-    if (!selectedItem || !selectedTargetActive) return
-    persistAdvancedItem((item) => ({
-      ...item,
-      targetLoop: item.targetLoop !== true
-    }))
+    if (!selectedItem || targetEditingItemId !== selectedItem.id) return
+    setTargetDraftLoop((currentLoop) => !currentLoop)
   }
 
   const startTargetEditing = () => {
     if (!selectedItem) return
+    // Avoid reinitializing an in-progress draft when the selected mode card is
+    // clicked again.
+    if (targetEditingItemId === selectedItem.id) return
+
     clearTargetEditing()
     targetEditSnapshotRef.current = {
       itemId: selectedItem.id,
       moveMode: selectedItem.moveMode,
       targetMode: selectedItem.targetMode ?? 'loop',
+      targetLoop: selectedItem.targetLoop === true,
       targetPosition: selectedItem.targetPosition
     }
     setTargetEditingItemId(selectedItem.id)
     setTargetDraftPosition(selectedItem.targetPosition ?? selectedItem.position)
+    setTargetDraftLoop(selectedItem.targetLoop === true)
     setManipulatingItemId(selectedItem.id)
   }
 
   const cancelTargetEditing = () => {
+    // All target changes are held in the draft states until completion, so
+    // cancelling naturally leaves the persisted targetMode/targetPosition/
+    // targetLoop values untouched. Clear the draft and return focus to the
+    // single entry button.
     clearTargetEditing()
+    focusTargetSetButton()
   }
 
   const completeTargetEditing = () => {
@@ -3802,9 +3912,43 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     persistAdvancedItem((item) => ({
       ...item,
       targetMode: 'target',
-      targetPosition
+      targetPosition,
+      targetLoop: targetDraftLoop
     }))
-    cancelTargetEditing()
+    clearTargetEditing()
+    focusTargetSetButton()
+  }
+
+  const handleTargetEditingKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!targetEditingItemId) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      completeTargetEditing()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelTargetEditing()
+      return
+    }
+
+    const step = event.shiftKey ? 0.05 : 0.01
+    const offset = event.key === 'ArrowLeft'
+      ? { x: -step, y: 0 }
+      : event.key === 'ArrowRight'
+        ? { x: step, y: 0 }
+        : event.key === 'ArrowUp'
+          ? { x: 0, y: -step }
+          : event.key === 'ArrowDown'
+            ? { x: 0, y: step }
+            : null
+    if (!offset) return
+
+    event.preventDefault()
+    setTargetDraftPosition((currentPosition) => currentPosition ? {
+      x: clamp(currentPosition.x + offset.x, 0, 1),
+      y: clamp(currentPosition.y + offset.y, 0, 1)
+    } : currentPosition)
   }
 
   const sendItemAnimationState = (item: DynamicItem) => {
@@ -4097,11 +4241,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleCopyConfirm = async () => {
-    if (!selectedItem || !copySourceItem || selectedCopyFields.length === 0 || isCopying) return
+    if (!selectedItem || !copySourceItem || isCopying) return
 
     const targetItemId = selectedItem.id
     const sourceItemId = copySourceItem.id
-    const copyFields = [...selectedCopyFields]
+    const copyFields = selectedCopyFields.filter((field) => allCopyFields.includes(field))
+    if (copyFields.length === 0) return
     if (
       copyFields.includes('linkage')
       && copySourceItem.linkedAppearance
@@ -4425,7 +4570,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const handleLayerCardPointerDown = (event: React.PointerEvent<HTMLElement>, itemId: string) => {
     if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
     const target = event.target as HTMLElement
-    if (target.closest('.dynamic-layer-property-button, .dynamic-layer-delete-button, .dynamic-layer-select')) return
+    if (target.closest('.dynamic-layer-property-button, .dynamic-layer-delete-button, .dynamic-layer-select, .dynamic-layer-children-toggle')) return
 
     const sourceRect = event.currentTarget.getBoundingClientRect()
 
@@ -4910,6 +5055,38 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     return t(labelKey)
   }
   const flowSummary = getDynamicCreationFlowSummary(group)
+  const layerRelationTree: DynamicAppearanceRelationTreeNode[] = advancedFeaturesEnabled
+    ? buildVisibleLayerRelationTree(flowSummary.relationTree, layerItems)
+    : layerItems.map((item) => ({
+        itemId: item.id,
+        name: item.name,
+        order: item.order,
+        children: []
+      }))
+  const layerItemById = new Map(layerItems.map((item) => [item.id, item]))
+  const layerParentItemIds = getRelationTreeParentIds(layerRelationTree)
+  const selectedLayerAncestorIds = selectedItem
+    ? getRelationTreeAncestorIds(layerRelationTree, selectedItem.id)
+    : []
+  const layerParentItemIdsKey = layerParentItemIds.join('|')
+  const selectedLayerAncestorIdsKey = selectedLayerAncestorIds.join('|')
+
+  useEffect(() => {
+    const validParentItemIds = new Set(layerParentItemIdsKey ? layerParentItemIdsKey.split('|') : [])
+    const expandedAncestorIds = selectedLayerAncestorIdsKey ? selectedLayerAncestorIdsKey.split('|') : []
+    setCollapsedLayerItemIds((currentIds) => {
+      const nextIds = new Set(
+        Array.from(currentIds).filter((itemId) => validParentItemIds.has(itemId))
+      )
+      expandedAncestorIds.forEach((itemId) => nextIds.delete(itemId))
+      if (
+        nextIds.size === currentIds.size
+        && Array.from(currentIds).every((itemId) => nextIds.has(itemId))
+      ) return currentIds
+      return nextIds
+    })
+  }, [layerParentItemIdsKey, selectedLayerAncestorIdsKey])
+
   const flowStepIndex = DYNAMIC_CREATION_FLOW_STEPS.findIndex((step) => step.id === flowStep)
   const flowStepNumber = Math.max(1, flowStepIndex + 1)
   const flowStepTitleKey = `flow.step${flowStepNumber}Title`
@@ -4996,7 +5173,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   })
 
   const setEditorExperience = (experience: DynamicCreationFlowExperience) => {
-    if (previewMode || experience === editorExperience) return
+    if (
+      previewMode
+      || experience === editorExperience
+      || (!advancedFeaturesEnabled && experience === 'flow')
+    ) return
     stopAudioPreview()
     clearTargetEditing()
     setBackgroundPanelOpen(false)
@@ -5199,6 +5380,156 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
   const flowNextDisabled = sortedItems.length === 0
 
+  const toggleLayerChildren = (itemId: string) => {
+    setCollapsedLayerItemIds((currentIds) => {
+      const nextIds = new Set(currentIds)
+      if (nextIds.has(itemId)) nextIds.delete(itemId)
+      else nextIds.add(itemId)
+      return nextIds
+    })
+  }
+
+  const renderLayerNode = (
+    node: DynamicAppearanceRelationTreeNode,
+    depth: number
+  ): React.ReactNode => {
+    const item = layerItemById.get(node.itemId)
+    if (!item) return null
+
+    const motionLabel = getTranslatedMotionLabel(item.moveMode)
+    const linkedSourceItem = advancedFeaturesEnabled && item.linkedAppearance
+      ? sortedItems.find((entry) => entry.id === item.linkedAppearance?.triggerItemId)
+      : undefined
+    const hasChildren = node.children.length > 0
+    const childrenExpanded = hasChildren && !collapsedLayerItemIds.has(item.id)
+    const childrenId = `dynamic-layer-children-${item.id}`
+    const hasLinkedRelation = advancedFeaturesEnabled && Boolean(linkedSourceItem || hasChildren)
+
+    return (
+      <li
+        key={item.id}
+        className={`dynamic-layer-node depth-${Math.min(depth, 3)} ${depth > 0 ? 'is-child' : 'is-root'}`}
+      >
+        <article
+          data-layer-item-id={item.id}
+          className={`dynamic-layer-card ${selectedItem?.id === item.id ? 'active' : ''} ${selectedLayerItemIds.includes(item.id) ? 'is-checked' : ''} ${pressedLayerItemId === item.id ? 'is-pressed' : ''} ${draggedLayerItemId === item.id ? 'dragging' : ''} ${layerDropHint?.itemId === item.id ? `drop-${layerDropHint.placement}` : ''} ${hasLinkedRelation ? 'has-linked-relation' : ''} ${hasChildren ? 'has-children' : ''} ${depth > 0 ? 'is-child-card' : ''}`}
+          onPointerDown={(event) => handleLayerCardPointerDown(event, item.id)}
+          onClickCapture={handleLayerCardClickCapture}
+          onContextMenu={(event) => event.preventDefault()}
+          aria-grabbed={draggedLayerItemId === item.id}
+        >
+          <label
+            className="dynamic-layer-select"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={t('common.selectNamed', { name: item.name })}
+          >
+            <input
+              type="checkbox"
+              checked={selectedLayerItemIds.includes(item.id)}
+              onChange={() => toggleLayerSelection(item.id)}
+            />
+            <span aria-hidden="true" />
+          </label>
+          <button
+            type="button"
+            className="dynamic-layer-main"
+            onClick={() => selectItem(
+              item.id,
+              editorExperience !== 'flow' || flowStep !== 'objects'
+            )}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                handleLayerKeyboardMove(item.id, -1)
+              } else if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                handleLayerKeyboardMove(item.id, 1)
+              }
+            }}
+          >
+            <span className="dynamic-layer-order">{String(item.order + 1).padStart(2, '0')}</span>
+            <img src={item.media.url} alt={item.name} />
+            <span className="dynamic-layer-copy">
+              <strong>{item.name}</strong>
+              <small>{t('control.layerSummary', { motion: motionLabel, animation: item.animationId })}</small>
+              {linkedSourceItem && (
+                <span
+                  className="dynamic-layer-parent-summary"
+                  title={t('control.linkageControlledByNamed', { name: linkedSourceItem.name })}
+                >
+                  <LockKeyhole size={10} strokeWidth={2.6} aria-hidden="true" />
+                  <span>{t('control.linkageFromCompact', { name: linkedSourceItem.name })}</span>
+                </span>
+              )}
+            </span>
+          </button>
+          <div className="dynamic-layer-actions">
+            <button
+              type="button"
+              className="dynamic-layer-property-button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (editorExperience === 'flow' && flowStep === 'objects') {
+                  setCreationFlowStep('layout', item.id)
+                } else {
+                  selectItem(item.id, true)
+                }
+              }}
+              aria-label={t('control.openObjectProperties', { name: item.name })}
+              title={t('control.objectProperties')}
+            >
+              {t('control.properties')}
+            </button>
+            <button
+              type="button"
+              className="dynamic-layer-delete-button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleItemDelete(item.id)
+              }}
+              aria-label={t('control.deleteNamed', { name: item.name })}
+              title={t('items.delete')}
+            >
+              ×
+            </button>
+          </div>
+          {hasChildren && (
+            <button
+              type="button"
+              className="dynamic-layer-children-toggle"
+              aria-expanded={childrenExpanded}
+              aria-controls={childrenId}
+              aria-label={t(
+                childrenExpanded ? 'flow.collapseChildren' : 'flow.expandChildren',
+                { count: node.children.length }
+              )}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleLayerChildren(item.id)
+              }}
+            >
+              <Link2 size={15} strokeWidth={2.4} aria-hidden="true" />
+              <span>{t('flow.childCount', { count: node.children.length })}</span>
+              {childrenExpanded
+                ? <ChevronDown size={16} strokeWidth={2.4} aria-hidden="true" />
+                : <ChevronRight size={16} strokeWidth={2.4} aria-hidden="true" />}
+            </button>
+          )}
+        </article>
+
+        {hasChildren && childrenExpanded && (
+          <ol id={childrenId} className="dynamic-layer-children">
+            {node.children.map((child) => renderLayerNode(child, depth + 1))}
+          </ol>
+        )}
+      </li>
+    )
+  }
+
   return (
     <main
       className={`ipad-screen dynamic-control-screen apple-container ${editorExperience === 'flow' ? 'dynamic-flow-mode' : ''} ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} ${transitionPreparing ? 'dynamic-transition-prepared' : ''} dynamic-right-panel-${rightPanelMode}`}
@@ -5334,26 +5665,28 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </nav>
               )}
 
-              <div className="dynamic-editor-experience-switch" role="group" aria-label={t('flow.switchMode')}>
-                <button
-                  type="button"
-                  className={editorExperience === 'flow' ? 'is-active' : ''}
-                  aria-pressed={editorExperience === 'flow'}
-                  onClick={() => setEditorExperience('flow')}
-                  title={t('flow.modeGuidedDescription')}
-                >
-                  {t('flow.modeGuided')}
-                </button>
-                <button
-                  type="button"
-                  className={editorExperience === 'free' ? 'is-active' : ''}
-                  aria-pressed={editorExperience === 'free'}
-                  onClick={() => setEditorExperience('free')}
-                  title={t('flow.modeFreeDescription')}
-                >
-                  {t('flow.modeFree')}
-                </button>
-              </div>
+              {advancedFeaturesEnabled && (
+                <div className="dynamic-editor-experience-switch" role="group" aria-label={t('flow.switchMode')}>
+                  <button
+                    type="button"
+                    className={editorExperience === 'flow' ? 'is-active' : ''}
+                    aria-pressed={editorExperience === 'flow'}
+                    onClick={() => setEditorExperience('flow')}
+                    title={t('flow.modeGuidedDescription')}
+                  >
+                    {t('flow.modeGuided')}
+                  </button>
+                  <button
+                    type="button"
+                    className={editorExperience === 'free' ? 'is-active' : ''}
+                    aria-pressed={editorExperience === 'free'}
+                    onClick={() => setEditorExperience('free')}
+                    title={t('flow.modeFreeDescription')}
+                  >
+                    {t('flow.modeFree')}
+                  </button>
+                </div>
+              )}
 
               {editorExperience === 'free' && (
                 <>
@@ -5455,26 +5788,138 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const endY = targetDraftPosition.y * height
               const distance = Math.hypot(endX - startX, endY - startY)
               const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI
+              const coordinatesOverlap = distance < 8
+              const markersOverlap = distance < 36
+              const startPointLabel = String(t('control.startPoint'))
+              const endPointLabel = String(t('control.endPoint'))
+              const itemPreviewSize = getDynamicItemPreviewSize(
+                targetEditingItem,
+                itemImageSizes[targetEditingItem.media.id],
+                stageSize
+              )
+              const itemScale = Math.max(Math.abs(targetEditingItem.scale), MIN_ITEM_SCALE)
+              const rotationRadians = targetEditingItem.rotation * Math.PI / 180
+              const rotatedItemHeight = (
+                Math.abs(itemPreviewSize.height * itemScale * Math.cos(rotationRadians))
+                + Math.abs(itemPreviewSize.width * itemScale * Math.sin(rotationRadians))
+              )
+              const labelHeight = 30
+              const labelGap = 14
+              const estimateLabelWidth = (label: string) => Math.max(
+                68,
+                40 + Array.from(label).reduce((total, character) => (
+                  total + (/[^\u0000-\u00ff]/.test(character) ? 13 : 8)
+                ), 0)
+              )
+              const startLabelWidth = Math.min(width - 16, estimateLabelWidth(startPointLabel))
+              const endLabelWidth = Math.min(width - 16, estimateLabelWidth(endPointLabel))
+              const clampLabelX = (pointX: number, labelWidth: number) => {
+                const halfWidth = labelWidth / 2
+                return clamp(pointX, halfWidth + 8, width - halfWidth - 8)
+              }
+              const resolveLabelY = (pointY: number) => {
+                const aboveAnchor = pointY - rotatedItemHeight / 2 - labelGap
+                const belowAnchor = pointY + rotatedItemHeight / 2 + labelGap
+                if (aboveAnchor - labelHeight >= 8) {
+                  return { y: aboveAnchor, below: false }
+                }
+                if (belowAnchor + labelHeight <= height - 8) {
+                  return { y: belowAnchor, below: true }
+                }
+                return {
+                  y: clamp(aboveAnchor, labelHeight + 8, height - 8),
+                  below: false
+                }
+              }
+              const startLabelY = resolveLabelY(startY)
+              const endLabelY = resolveLabelY(endY)
+              let startLabelX = clampLabelX(startX, startLabelWidth)
+              let endLabelX = clampLabelX(endX, endLabelWidth)
+              const startLabelTop = startLabelY.below ? startLabelY.y : startLabelY.y - labelHeight
+              const endLabelTop = endLabelY.below ? endLabelY.y : endLabelY.y - labelHeight
+              const labelsOverlap = (
+                startLabelX + startLabelWidth / 2 + 10 > endLabelX - endLabelWidth / 2
+                && endLabelX + endLabelWidth / 2 + 10 > startLabelX - startLabelWidth / 2
+                && startLabelTop + labelHeight + 8 > endLabelTop
+                && endLabelTop + labelHeight + 8 > startLabelTop
+              )
+              if (labelsOverlap) {
+                const pairGap = 14
+                const pairWidth = startLabelWidth + pairGap + endLabelWidth
+                const pairCenter = (startX + endX) / 2
+                const pairLeft = clamp(
+                  pairCenter - pairWidth / 2,
+                  8,
+                  Math.max(8, width - pairWidth - 8)
+                )
+                startLabelX = pairLeft + startLabelWidth / 2
+                endLabelX = pairLeft + startLabelWidth + pairGap + endLabelWidth / 2
+              }
               return (
-                <div className="dynamic-target-editor-overlay" aria-hidden="true">
-                  <span
-                    className="dynamic-target-path"
-                    style={{
-                      left: `${startX}px`,
-                      top: `${startY}px`,
-                      width: `${distance}px`,
-                      transform: `rotate(${angle}deg)`
-                    }}
-                  />
-                  <span
-                    className="dynamic-target-marker origin"
-                    style={{ left: `${targetEditingItem.position.x * 100}%`, top: `${targetEditingItem.position.y * 100}%` }}
-                  />
-                  <span
-                    className="dynamic-target-marker destination"
-                    style={{ left: `${targetDraftPosition.x * 100}%`, top: `${targetDraftPosition.y * 100}%` }}
-                  />
-                </div>
+                <>
+                  <div
+                    className="dynamic-target-editor-underlay"
+                    aria-hidden="true"
+                    style={{ zIndex: 10 + targetEditingItem.order }}
+                  >
+                    <span
+                      className={`dynamic-target-path ${coordinatesOverlap ? 'is-overlapping' : ''}`}
+                      style={{
+                        left: `${startX}px`,
+                        top: `${startY}px`,
+                        width: `${distance}px`,
+                        transform: `rotate(${angle}deg)`
+                      }}
+                    />
+                    <span
+                      className="dynamic-target-origin-ghost"
+                      data-dynamic-item-id={targetEditingItem.id}
+                      style={{
+                        left: `${targetEditingItem.position.x * 100}%`,
+                        top: `${targetEditingItem.position.y * 100}%`,
+                        width: `${itemPreviewSize.width}px`,
+                        height: `${itemPreviewSize.height}px`
+                      }}
+                    >
+                      <span
+                        className="dynamic-target-origin-ghost-transform"
+                        style={{
+                          transform: `rotate(${targetEditingItem.rotation}deg) scale(${getItemFlipX(targetEditingItem) ? -targetEditingItem.scale : targetEditingItem.scale}, ${getItemFlipY(targetEditingItem) ? -targetEditingItem.scale : targetEditingItem.scale})`
+                        }}
+                      >
+                        <img src={targetEditingItem.media.url} alt="" draggable={false} decoding="async" />
+                      </span>
+                    </span>
+                  </div>
+                  <div
+                    className={`dynamic-target-editor-overlay ${markersOverlap ? 'is-overlapping' : ''}`}
+                    role="img"
+                    aria-label={`${startPointLabel}: ${targetEditingItem.name}; ${endPointLabel}: ${targetEditingItem.name}`}
+                  >
+                    <span
+                      className="dynamic-target-marker origin"
+                      aria-hidden="true"
+                      style={{ left: `${targetEditingItem.position.x * 100}%`, top: `${targetEditingItem.position.y * 100}%` }}
+                    />
+                    <span
+                      className="dynamic-target-marker destination"
+                      aria-hidden="true"
+                      style={{ left: `${targetDraftPosition.x * 100}%`, top: `${targetDraftPosition.y * 100}%` }}
+                    />
+                    <span
+                      className={`dynamic-target-label origin ${startLabelY.below ? 'is-below' : ''}`}
+                      style={{ left: `${startLabelX}px`, top: `${startLabelY.y}px`, width: `${startLabelWidth}px` }}
+                    >
+                      <span>{startPointLabel}</span>
+                    </span>
+                    <span
+                      className={`dynamic-target-label destination ${endLabelY.below ? 'is-below' : ''}`}
+                      style={{ left: `${endLabelX}px`, top: `${endLabelY.y}px`, width: `${endLabelWidth}px` }}
+                    >
+                      <span>{endPointLabel}</span>
+                    </span>
+                  </div>
+                </>
               )
             })()}
 
@@ -5549,7 +5994,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         previewing={previewMode}
                         ready={Boolean(readyItemMediaIds[item.media.id])}
                         enabled={targetEnabled}
-                        loop={item.targetLoop === true}
+                        loop={targetEditingItemId === item.id ? targetDraftLoop : item.targetLoop === true}
                         editing={targetEditingItemId === item.id}
                         item={item}
                         targetPosition={targetEditingItemId === item.id
@@ -5562,6 +6007,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         schedule={appearanceSchedule}
                         epochStartedAt={playbackEpoch?.startedAt}
                         onArrival={handleTargetArrival}
+                        editingLabel={`${item.name}: ${t('control.endPoint')}`}
+                        editingDescriptionId={`dynamic-target-edit-help-${item.id} dynamic-target-edit-position-${item.id}`}
+                        onEditingKeyDown={handleTargetEditingKeyDown}
                       >
                         <DynamicStageItemAnimation
                           animationId={resolvedAnimationId}
@@ -5610,7 +6058,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             })}
             {advancedFeaturesEnabled
               && !previewMode
-              && (toolOpen || (editorExperience === 'flow' && flowStep === 'appearance'))
+              && !targetEditingItemId
+              && (
+                (editorExperience === 'free' && toolOpen)
+                || (editorExperience === 'flow' && flowStep === 'appearance')
+              )
               && selectedStageRelations.length > 0 && (
               <div className="dynamic-linkage-stage-overlay" aria-hidden="true">
                 <svg
@@ -5809,112 +6261,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               ref={layerListRef}
               className={`dynamic-layer-list ${draggedLayerItemId ? 'is-reordering' : ''}`}
             >
-              {layerItems.map((item) => {
-                const motionLabel = getTranslatedMotionLabel(item.moveMode)
-                const linkedSourceItem = item.linkedAppearance
-                  ? sortedItems.find((entry) => entry.id === item.linkedAppearance?.triggerItemId)
-                  : undefined
-                const linkedTargetItems = sortedItems.filter((entry) => (
-                  entry.linkedAppearance?.triggerItemId === item.id
-                ))
-                const hasLinkedRelation = advancedFeaturesEnabled
-                  && (Boolean(linkedSourceItem) || linkedTargetItems.length > 0)
-                return (
-                  <article
-                    key={item.id}
-                    data-layer-item-id={item.id}
-                    className={`dynamic-layer-card ${selectedItem?.id === item.id ? 'active' : ''} ${selectedLayerItemIds.includes(item.id) ? 'is-checked' : ''} ${pressedLayerItemId === item.id ? 'is-pressed' : ''} ${draggedLayerItemId === item.id ? 'dragging' : ''} ${layerDropHint?.itemId === item.id ? `drop-${layerDropHint.placement}` : ''} ${hasLinkedRelation ? 'has-linked-relation' : ''}`}
-                    onPointerDown={(event) => handleLayerCardPointerDown(event, item.id)}
-                    onClickCapture={handleLayerCardClickCapture}
-                    onContextMenu={(event) => event.preventDefault()}
-                    aria-grabbed={draggedLayerItemId === item.id}
-                  >
-                    <label
-                      className="dynamic-layer-select"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={t('common.selectNamed', { name: item.name })}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedLayerItemIds.includes(item.id)}
-                        onChange={() => toggleLayerSelection(item.id)}
-                      />
-                      <span aria-hidden="true" />
-                    </label>
-                    <button
-                      type="button"
-                      className="dynamic-layer-main"
-                      onClick={() => selectItem(
-                        item.id,
-                        editorExperience !== 'flow' || flowStep !== 'objects'
-                      )}
-                      onKeyDown={(event) => {
-                        if (event.key === 'ArrowUp') {
-                          event.preventDefault()
-                          handleLayerKeyboardMove(item.id, -1)
-                        } else if (event.key === 'ArrowDown') {
-                          event.preventDefault()
-                          handleLayerKeyboardMove(item.id, 1)
-                        }
-                      }}
-                    >
-                      <span className="dynamic-layer-order">{String(item.order + 1).padStart(2, '0')}</span>
-                      <img src={item.media.url} alt={item.name} />
-                      <span className="dynamic-layer-copy">
-                        <strong>{item.name}</strong>
-                        <small>{t('control.layerSummary', { motion: motionLabel, animation: item.animationId })}</small>
-                        {hasLinkedRelation && (
-                          <span className="dynamic-layer-link-badges" aria-label={t('control.linkageRelation')}>
-                            {linkedTargetItems.length > 0 && (
-                              <span className="is-source" title={t('control.linkageTargetsNamed', {
-                                names: linkedTargetItems.map((entry) => entry.name).join(', ')
-                              })}>
-                                <Link2 size={10} strokeWidth={2.6} aria-hidden="true" />
-                                {t('control.linkageTargetCountCompact', { count: linkedTargetItems.length })}
-                              </span>
-                            )}
-                            {linkedSourceItem && (
-                              <span className="is-target" title={t('control.linkageControlledByNamed', { name: linkedSourceItem.name })}>
-                                <LockKeyhole size={10} strokeWidth={2.6} aria-hidden="true" />
-                                {t('control.linkageFromCompact', { name: linkedSourceItem.name })}
-                              </span>
-                            )}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                    <div className="dynamic-layer-actions">
-                      <button
-                        type="button"
-                        className="dynamic-layer-property-button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (editorExperience === 'flow' && flowStep === 'objects') {
-                            setCreationFlowStep('layout', item.id)
-                          } else {
-                            selectItem(item.id, true)
-                          }
-                        }}
-                        aria-label={t('control.openObjectProperties', { name: item.name })}
-                        title={t('control.objectProperties')}
-                      >
-                        {t('control.properties')}
-                      </button>
-                      <button
-                        type="button"
-                        className="dynamic-layer-delete-button"
-                        onClick={() => handleItemDelete(item.id)}
-                        aria-label={t('control.deleteNamed', { name: item.name })}
-                        title={t('items.delete')}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </article>
-                )
-              })}
+              <ol className="dynamic-layer-tree">
+                {layerRelationTree.map((node) => renderLayerNode(node, 0))}
+              </ol>
             </div>
           </aside>
         )}
@@ -6079,16 +6428,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <button
                       key={motion.id}
                       type="button"
-                      className={`motion-mode-button ${!selectedTargetActive && selectedItem.moveMode === motion.id ? 'active' : ''}`}
+                      className={`motion-mode-button ${!selectedTargetForControls && selectedItem.moveMode === motion.id ? 'active' : ''}`}
                       onClick={() => handleMotionChange(motion.id)}
-                      aria-pressed={!selectedTargetActive && selectedItem.moveMode === motion.id}
+                      aria-pressed={!selectedTargetForControls && selectedItem.moveMode === motion.id}
                     >
                       <span className={`motion-icon motion-icon-${motion.icon}`} />
                       <strong>{t(motion.labelKey)}</strong>
                     </button>
                   ))}
                 </div>
-                <label className={`dynamic-percent-control ${selectedTargetActive ? 'is-disabled' : ''}`}>
+                <label className={`dynamic-percent-control ${selectedTargetForControls ? 'is-disabled' : ''}`}>
                   <span>{t('control.amplitudeTrack', { percent: selectedItem.movePercent, track: getTranslatedTrackLabel(activeTrack) })}</span>
                   <input
                     type="range"
@@ -6098,7 +6447,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     value={selectedItem.movePercent}
                     onChange={(event) => handleMotionPercentChange(Number(event.target.value))}
                     className="ipad-slider"
-                    disabled={selectedTargetActive}
+                    disabled={selectedTargetForControls}
                   />
                 </label>
                 <label className="dynamic-percent-control">
@@ -6113,7 +6462,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     className="ipad-slider"
                   />
                 </label>
-                <div className={`dynamic-track-selector ${selectedTargetActive ? 'is-disabled' : ''}`} aria-label={t('control.trackSelection')}>
+                <div className={`dynamic-track-selector ${selectedTargetForControls ? 'is-disabled' : ''}`} aria-label={t('control.trackSelection')}>
                   <span>{t('control.track')}</span>
                   <div className="dynamic-track-buttons">
                     {trackOptions.map((track) => (
@@ -6122,7 +6471,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         type="button"
                         className={activeTrack === track.id ? 'active' : ''}
                         onClick={() => handleMoveTrackChange(track.id)}
-                        disabled={selectedTargetActive}
+                        disabled={selectedTargetForControls}
                       >
                         {t(track.labelKey)}
                       </button>
@@ -6137,34 +6486,61 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         ? t('control.destinationReady')
                         : t('control.setDestination')}</span>
                     </div>
-                    <div className="dynamic-target-mode-row">
-                      <button
-                        type="button"
-                        className={`dynamic-target-mode-choice ${selectedTargetActive ? 'active' : ''}`}
-                        onClick={() => handleTargetModeChange('target')}
-                        aria-pressed={selectedTargetActive}
-                      >
-                        <Target size={18} strokeWidth={2.3} aria-hidden="true" />
-                        <span>
-                          <strong>{t('control.moveToDestination')}</strong>
-                          <small>{selectedItem.targetPosition ? t('control.destinationReady') : t('control.setDestination')}</small>
-                        </span>
-                        {selectedTargetActive && <Check size={17} strokeWidth={2.5} aria-hidden="true" />}
-                      </button>
-                      <button
-                        type="button"
-                        className={`dynamic-target-loop-toggle ${selectedTargetActive && selectedItem.targetLoop === true ? 'active' : ''}`}
-                        onClick={handleTargetLoopToggle}
-                        disabled={!selectedTargetActive}
-                        aria-pressed={selectedTargetActive && selectedItem.targetLoop === true}
-                        title={t('control.loopMovement')}
-                      >
-                        <Repeat2 size={18} strokeWidth={2.3} aria-hidden="true" />
-                        <span>{t('control.loopMovement')}</span>
-                      </button>
+                    <div
+                      id={`dynamic-target-mode-${selectedItem.id}`}
+                      className="dynamic-target-mode-row"
+                      role="group"
+                      aria-label={t('control.destination')}
+                      hidden={!targetEditorOpen}
+                    >
+                      {targetEditorOpen && (
+                        <>
+                        <button
+                          type="button"
+                          className={`dynamic-target-mode-choice ${selectedTargetForControls ? 'active' : ''}`}
+                          onClick={() => handleTargetModeChange('target')}
+                          aria-pressed={selectedTargetForControls}
+                        >
+                          <Target size={18} strokeWidth={2.3} aria-hidden="true" />
+                          <span>
+                            <strong>{t('control.moveToDestination')}</strong>
+                            <small>{selectedTargetActive ? t('control.destinationReady') : t('control.setDestination')}</small>
+                          </span>
+                          {selectedTargetForControls && <Check size={17} strokeWidth={2.5} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dynamic-target-loop-toggle ${targetDraftLoop ? 'active' : ''}`}
+                          onClick={handleTargetLoopToggle}
+                          aria-pressed={targetDraftLoop}
+                          title={t('control.loopMovement')}
+                        >
+                          <Repeat2 size={18} strokeWidth={2.3} aria-hidden="true" />
+                          <span>{t('control.loopMovement')}</span>
+                        </button>
+                        </>
+                      )}
                     </div>
-                    {targetEditingItemId === selectedItem.id ? (
+                    {targetEditorOpen ? (
                       <div className="dynamic-target-edit-actions">
+                        <span
+                          id={`dynamic-target-edit-help-${selectedItem.id}`}
+                          className="dynamic-visually-hidden"
+                        >
+                          {t('control.targetEditingInstructions')}
+                        </span>
+                        <span
+                          id={`dynamic-target-edit-position-${selectedItem.id}`}
+                          className="dynamic-visually-hidden"
+                          role="status"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {t('control.targetPositionPercent', {
+                            x: Math.round((targetDraftPosition?.x ?? selectedItem.position.x) * 100),
+                            y: Math.round((targetDraftPosition?.y ?? selectedItem.position.y) * 100)
+                          })}
+                        </span>
                         <button type="button" className="ipad-button secondary-button" onClick={cancelTargetEditing}>
                           {t('common.cancel')}
                         </button>
@@ -6174,9 +6550,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <button type="button" className="dynamic-target-set-button" onClick={startTargetEditing}>
+                      <button
+                        ref={targetSetButtonRef}
+                        type="button"
+                        className="dynamic-target-set-button"
+                        onClick={startTargetEditing}
+                        aria-expanded={targetEditorOpen}
+                        aria-controls={`dynamic-target-mode-${selectedItem.id}`}
+                      >
                         <Target size={18} strokeWidth={2.3} aria-hidden="true" />
-                        <span>{selectedItem.targetPosition ? t('control.editDestination') : t('control.setDestination')}</span>
+                        <span>{selectedTargetActive ? t('control.editDestination') : t('control.setDestination')}</span>
                       </button>
                     )}
                   </section>
@@ -6282,16 +6665,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <ChevronRight size={18} strokeWidth={2.2} aria-hidden="true" />
                 </button>
 
-                {advancedFeaturesEnabled && (
+                {advancedFeaturesEnabled && editorExperience === 'free' && (
                   <section className="dynamic-object-linkage-card">
                     <div className="dynamic-property-section-heading">
-                      <strong>{t('control.objectLinkage')}</strong>
+                      <strong>{t('control.appearanceOrder')}</strong>
                       <span>{t('control.linkageCount', { count: selectedLinkedTargetItems.length })}</span>
-                    </div>
-
-                    <div className="dynamic-linkage-direction-heading">
-                      <span><Link2 size={14} strokeWidth={2.4} aria-hidden="true" />{t('control.linkageOutgoing')}</span>
-                      <strong>{selectedItem.name}</strong>
                     </div>
 
                     <div className="dynamic-linkage-relation-list">
@@ -6566,17 +6944,24 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       ))}
                     </div>
                     {selectedItem.audioTrigger === 'appearanceDelay' && (
-                      <label className="dynamic-audio-delay-field">
+                      <div
+                        className="dynamic-audio-delay-field"
+                        role="group"
+                        aria-label={t('control.delaySeconds')}
+                      >
                         <span>{t('control.delaySeconds')}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="600"
-                          step="0.1"
+                        <IntervalWheel
+                          className="dynamic-audio-delay-wheel"
                           value={Number(((selectedItem.audioDelayMs ?? 0) / 1000).toFixed(1))}
-                          onChange={(event) => handleItemAudioDelayChange(Number(event.target.value))}
+                          min={0}
+                          max={600}
+                          step={0.1}
+                          inputMode="decimal"
+                          allowDirectInput={false}
+                          onChange={handleItemAudioDelayChange}
+                          ariaLabel={t('control.delaySeconds')}
                         />
-                      </label>
+                      </div>
                     )}
                     {selectedItem.audioTrigger === 'targetArrival' && selectedItem.targetMode !== 'target' && (
                       <p className="dynamic-property-note">{t('control.targetAudioNeedsDestination')}</p>
@@ -6881,7 +7266,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           >
             <div className="drawer-heading dynamic-background-modal-heading">
               <div>
-                <p className="eyebrow">{t('control.stageBackground')}</p>
                 <h2 id="background-editor-title">{t('control.editBackground')} <span>{t('control.assetCount', { count: backgrounds.length })}</span></h2>
               </div>
               <button
@@ -6895,145 +7279,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               </button>
             </div>
 
-            <div className={`dynamic-background-playback ${group.backgroundPlayMode === 'fixed' ? 'fixed-mode' : ''}`}>
-              <div className="dynamic-mode-segmented" aria-label={t('control.backgroundPlaybackMode')}>
-                {([
-                  ['fixed', 'control.backgroundFixed'],
-                  ['random', 'control.backgroundRandom'],
-                  ['sequence', 'control.backgroundSequence']
-                ] as const).map(([mode, labelKey]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={group.backgroundPlayMode === mode ? 'active' : ''}
-                    onClick={() => setBackgroundPlayback(mode)}
-                  >
-                    {t(labelKey)}
-                  </button>
-                ))}
-              </div>
-              {group.backgroundPlayMode !== 'fixed' && (
-                <div className="dynamic-interval-input">
-                  <span>{t('control.switchInterval')}</span>
-                  <span className="dynamic-interval-fields">
-                    <IntervalWheel
-                      value={backgroundWheelValue}
-                      min={backgroundWheelMin}
-                      max={backgroundWheelMax}
-                      step={backgroundWheelStep}
-                      inputMode="decimal"
-                      onChange={handleBackgroundIntervalWheelChange}
-                      onCommit={commitBackgroundIntervalDraft}
-                      ariaLabel={t('control.backgroundInterval')}
-                    />
-                    <select
-                      value={backgroundIntervalUnit}
-                      onChange={(event) => handleBackgroundIntervalUnitChange(event.target.value as BackgroundIntervalUnit)}
-                      aria-label={t('control.backgroundIntervalUnit')}
-                    >
-                      <option value="seconds">{t('control.seconds')}</option>
-                      <option value="minutes">{t('control.minutes')}</option>
-                    </select>
+            <div className="dynamic-background-editor-layout">
+              <section className="dynamic-background-library-pane" aria-labelledby="background-library-title">
+                <div className="dynamic-background-pane-heading">
+                  <div>
+                    <h3 id="background-library-title">
+                      {t('control.stageBackground')}
+                      <span>{t('control.assetCount', { count: backgrounds.length })}</span>
+                    </h3>
+                  </div>
+                  <span className="dynamic-background-pane-count" aria-live="polite">
+                    {t('common.selectedCount', { count: selectedBackgroundIds.length })}
                   </span>
                 </div>
-              )}
-            </div>
-
-            {advancedFeaturesEnabled && (
-              <div className="dynamic-background-advanced-settings">
-                <section className="dynamic-background-entrance-panel">
-                  <div className="dynamic-background-bgm-heading">
-                    <span>
-                      <Sparkles size={17} strokeWidth={2.3} aria-hidden="true" />
-                      <strong>{t('control.backgroundTransition')}</strong>
-                    </span>
-                    <small>{selectedBackgroundIds.length > 0
-                      ? t('control.applyToSelectedBackgrounds', { count: selectedBackgroundIds.length })
-                      : t('control.applyToCurrentBackground')}</small>
-                  </div>
-                  <div className="dynamic-background-entrance-controls">
-                    <div className="dynamic-background-entrance-options" role="radiogroup" aria-label={t('control.backgroundTransition')}>
-                      {backgroundTransitionOptions.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={backgroundTransitionDraft === option.id}
-                          className={backgroundTransitionDraft === option.id ? 'active' : ''}
-                          onClick={() => setBackgroundTransitionDraft(option.id)}
-                        >
-                          <span className={`dynamic-background-transition-swatch is-${option.id}`} aria-hidden="true" />
-                          <span>{t(option.labelKey)}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="ipad-button primary-button"
-                      disabled={backgrounds.length === 0}
-                      onClick={() => void applyBackgroundTransition()}
-                    >
-                      {t('control.applyTransition')}
-                    </button>
-                  </div>
-                </section>
-
-                <section className="dynamic-background-bgm-panel">
-                  <div className="dynamic-background-bgm-heading">
-                    <span>
-                      <Music2 size={17} strokeWidth={2.3} aria-hidden="true" />
-                      <strong>{t('control.backgroundMusic')}</strong>
-                    </span>
-                    <small>{selectedBackgroundIds.length > 0
-                      ? t('control.applyToSelectedBackgrounds', { count: selectedBackgroundIds.length })
-                      : t('control.applyToCurrentBackground')}</small>
-                  </div>
-                  <div className="dynamic-background-bgm-controls">
-                    <select
-                      value={backgroundBgmDraftAudioId}
-                      onChange={(event) => setBackgroundBgmDraftAudioId(event.target.value)}
-                      aria-label={t('control.backgroundMusic')}
-                    >
-                      <option value="">{t('control.noAudio')}</option>
-                      {(group.audioLibrary ?? []).map((audio) => (
-                        <option key={audio.id} value={audio.id}>{audio.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="dynamic-background-bgm-preview"
-                      disabled={!backgroundBgmDraftAudioId}
-                      onClick={() => {
-                        const audio = group.audioLibrary?.find((entry) => entry.id === backgroundBgmDraftAudioId)
-                        if (audio) toggleAudioPreview(audio)
-                      }}
-                      aria-label={previewingAudioId === backgroundBgmDraftAudioId ? t('common.stop') : t('control.previewAudio')}
-                      title={previewingAudioId === backgroundBgmDraftAudioId ? t('common.stop') : t('control.previewAudio')}
-                    >
-                      {previewingAudioId === backgroundBgmDraftAudioId ? <Ban size={16} /> : <Play size={16} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="ipad-button secondary-button"
-                      onClick={() => backgroundAudioInputRef.current?.click()}
-                      disabled={isAddingAudio}
-                    >
-                      <Upload size={16} strokeWidth={2.3} aria-hidden="true" />
-                      {t('control.uploadAudio')}
-                    </button>
-                    <button
-                      type="button"
-                      className="ipad-button primary-button"
-                      disabled={backgrounds.length === 0}
-                      onClick={() => applyBackgroundBgm(backgroundBgmDraftAudioId || undefined)}
-                    >
-                      <Link2 size={16} strokeWidth={2.3} aria-hidden="true" />
-                      {backgroundBgmDraftAudioId ? t('control.applyMusic') : t('control.clearMusic')}
-                    </button>
-                  </div>
-                </section>
-              </div>
-            )}
 
             <div className="dynamic-background-modal-toolbar">
               <label className="dynamic-background-select-all">
@@ -7049,7 +7307,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 <strong>{t('common.selectAll')}</strong>
               </label>
               <span>{t('control.dragBackgroundHint')}</span>
-              <strong>{t('common.selectedCount', { count: selectedBackgroundIds.length })}</strong>
             </div>
 
             <div
@@ -7124,6 +7381,174 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               >
                 {t('control.addBackground')}
               </button>
+            </div>
+              </section>
+              <aside className="dynamic-background-settings-pane" aria-labelledby="background-settings-title">
+                <div className="dynamic-background-settings-scroll">
+                  <div className="dynamic-background-pane-heading dynamic-background-settings-heading">
+                    <div>
+                      <p className="dynamic-background-pane-eyebrow">{t('control.stageBackground')}</p>
+                      <h3 id="background-settings-title">{t('control.properties')}</h3>
+                    </div>
+                  </div>
+
+                  <section className="dynamic-background-settings-section">
+                    <div className="dynamic-background-section-heading">
+                      <h4>{t('control.backgroundPlaybackMode')}</h4>
+                    </div>
+                    <div className={`dynamic-background-playback ${group.backgroundPlayMode === 'fixed' ? 'fixed-mode' : ''}`}>
+                      <div
+                        className="dynamic-mode-segmented"
+                        role="group"
+                        aria-label={t('control.backgroundPlaybackMode')}
+                      >
+                        {([
+                          ['fixed', 'control.backgroundFixed'],
+                          ['random', 'control.backgroundRandom'],
+                          ['sequence', 'control.backgroundSequence']
+                        ] as const).map(([mode, labelKey]) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            aria-pressed={group.backgroundPlayMode === mode}
+                            className={group.backgroundPlayMode === mode ? 'active' : ''}
+                            onClick={() => setBackgroundPlayback(mode)}
+                          >
+                            {t(labelKey)}
+                          </button>
+                        ))}
+                      </div>
+                      {group.backgroundPlayMode !== 'fixed' && (
+                        <div className="dynamic-interval-input">
+                          <span>{t('control.switchInterval')}</span>
+                          <span className="dynamic-interval-fields">
+                            <IntervalWheel
+                              value={backgroundWheelValue}
+                              min={backgroundWheelMin}
+                              max={backgroundWheelMax}
+                              step={backgroundWheelStep}
+                              inputMode="decimal"
+                              allowDirectInput={false}
+                              onChange={handleBackgroundIntervalWheelChange}
+                              onCommit={commitBackgroundIntervalDraft}
+                              ariaLabel={t('control.backgroundInterval')}
+                            />
+                            <select
+                              value={backgroundIntervalUnit}
+                              onChange={(event) => handleBackgroundIntervalUnitChange(event.target.value as BackgroundIntervalUnit)}
+                              aria-label={t('control.backgroundIntervalUnit')}
+                            >
+                              <option value="seconds">{t('control.seconds')}</option>
+                              <option value="minutes">{t('control.minutes')}</option>
+                            </select>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+            {advancedFeaturesEnabled && (
+              <div className="dynamic-background-advanced-settings">
+                <section className="dynamic-background-entrance-panel">
+                  <div className="dynamic-background-bgm-heading">
+                    <span>
+                      <Sparkles size={17} strokeWidth={2.3} aria-hidden="true" />
+                      <strong>{t('control.backgroundTransition')}</strong>
+                    </span>
+                    <small>{selectedBackgroundIds.length > 0
+                      ? t('control.applyToSelectedBackgrounds', { count: selectedBackgroundIds.length })
+                      : t('control.applyToCurrentBackground')}</small>
+                  </div>
+                  <div className="dynamic-background-entrance-controls">
+                    <div className="dynamic-background-entrance-options" role="radiogroup" aria-label={t('control.backgroundTransition')}>
+                      {backgroundTransitionOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={backgroundTransitionDraft === option.id}
+                          className={backgroundTransitionDraft === option.id ? 'active' : ''}
+                          onClick={() => setBackgroundTransitionDraft(option.id)}
+                        >
+                          <span className={`dynamic-background-transition-swatch is-${option.id}`} aria-hidden="true" />
+                          <span>{t(option.labelKey)}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="ipad-button primary-button"
+                      disabled={backgrounds.length === 0}
+                      onClick={() => void applyBackgroundTransition()}
+                    >
+                      {t('control.applyTransition')}
+                    </button>
+                  </div>
+                </section>
+
+                <section className="dynamic-background-bgm-panel">
+                  <div className="dynamic-background-bgm-heading">
+                    <span>
+                      <Music2 size={17} strokeWidth={2.3} aria-hidden="true" />
+                      <strong>{t('control.backgroundMusic')}</strong>
+                    </span>
+                    <small>{selectedBackgroundIds.length > 0
+                      ? t('control.applyToSelectedBackgrounds', { count: selectedBackgroundIds.length })
+                      : t('control.applyToCurrentBackground')}</small>
+                  </div>
+                  <div className="dynamic-background-bgm-controls">
+                    <div className="dynamic-background-bgm-source-row">
+                      <select
+                        value={backgroundBgmDraftAudioId}
+                        onChange={(event) => setBackgroundBgmDraftAudioId(event.target.value)}
+                        aria-label={t('control.backgroundMusic')}
+                      >
+                        <option value="">{t('control.noAudio')}</option>
+                        {(group.audioLibrary ?? []).map((audio) => (
+                          <option key={audio.id} value={audio.id}>{audio.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="dynamic-background-bgm-preview"
+                        disabled={!backgroundBgmDraftAudioId}
+                        onClick={() => {
+                          const audio = group.audioLibrary?.find((entry) => entry.id === backgroundBgmDraftAudioId)
+                          if (audio) toggleAudioPreview(audio)
+                        }}
+                        aria-label={previewingAudioId === backgroundBgmDraftAudioId ? t('common.stop') : t('control.previewAudio')}
+                        title={previewingAudioId === backgroundBgmDraftAudioId ? t('common.stop') : t('control.previewAudio')}
+                      >
+                        {previewingAudioId === backgroundBgmDraftAudioId ? <Ban size={16} /> : <Play size={16} />}
+                      </button>
+                    </div>
+                    <div className="dynamic-background-bgm-actions">
+                      <button
+                        type="button"
+                        className="ipad-button secondary-button"
+                        onClick={() => backgroundAudioInputRef.current?.click()}
+                        disabled={isAddingAudio}
+                      >
+                        <Upload size={16} strokeWidth={2.3} aria-hidden="true" />
+                        {t('control.uploadAudio')}
+                      </button>
+                      <button
+                        type="button"
+                        className="ipad-button primary-button"
+                        disabled={backgrounds.length === 0}
+                        onClick={() => applyBackgroundBgm(backgroundBgmDraftAudioId || undefined)}
+                      >
+                        <Link2 size={16} strokeWidth={2.3} aria-hidden="true" />
+                        {backgroundBgmDraftAudioId ? t('control.applyMusic') : t('control.clearMusic')}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+                </div>
+              </aside>
+
             </div>
           </section>
         </div>
@@ -7276,7 +7701,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 type="button"
                 className="ipad-button primary-button"
                 onClick={() => void handleCopyConfirm()}
-                disabled={selectedCopyFields.length === 0 || isCopying}
+                disabled={!selectedCopyFields.some((field) => allCopyFields.includes(field)) || isCopying}
               >
                 {isCopying ? t('control.copying') : t('control.confirmCopy')}
               </button>

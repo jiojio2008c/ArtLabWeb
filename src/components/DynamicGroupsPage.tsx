@@ -42,6 +42,7 @@ import {
 } from '../services/dynamicArtArchiveSync.ts'
 import { waitForContainerMedia, waitForStablePaint } from '../services/transitionPerformance.ts'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
+import ContentAwareThumbnail from './ContentAwareThumbnail.tsx'
 
 interface DynamicGroupsPageProps {
   groups: DynamicGroup[]
@@ -839,7 +840,17 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         />
       )
     }
-    return <img src={preview.url} alt={compact ? '' : group.name} decoding="async" onError={() => markPreviewFailed(group.id)} />
+    if (group.thumbnail?.id !== preview.id) {
+      return <img src={preview.url} alt={compact ? '' : group.name} decoding="async" onError={() => markPreviewFailed(group.id)} />
+    }
+    return (
+      <ContentAwareThumbnail
+        src={preview.url}
+        alt={compact ? '' : group.name}
+        mimeType={preview.mimeType}
+        onError={() => markPreviewFailed(group.id)}
+      />
+    )
   }
 
   const renderMoreButton = (entity: LibraryEntity, interactive = true) => (

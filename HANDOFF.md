@@ -2727,6 +2727,48 @@ desktop-runtime/release-target-loop-final-20260817
 desktop-runtime/release-target-loop-vertical-final-20260817
 ```
 
+## 35. 2026-08-19 作品档案进入控制页后的转场末尾闪帧修复
+
+### 根因与修复
+
+- 从作品档案进入控制页时，自定义作品转场会暂时通过 `.dynamic-story-route-active` 禁用控制工作区的通用入场动画。转场结束后该类名被移除，而页面同时进入 `page-portal` 状态，原先缺少对应保护，导致 `.dynamic-control-workspace` 的 `dynamic-page-content-in` 从 `opacity: 0`、`translateY(6px)` 再播放一次，形成肉眼可见的完整透明帧。
+- 在 `src/index.css` 为 `.page-frame.page-portal.page-view-dynamicControl .dynamic-control-workspace` 增加 `animation: none !important`，让作品转场完成态无缝接管旧保护。普通 `page-forward` 进入控制页时仍保留原有轻量入场动画，不影响其他导航路径。
+- 视频舞台背景原先在转场完成时无条件执行 `video.load()`，可能把已经显示的当前视频帧重置。现在仅在 `readyState < HTMLMediaElement.HAVE_CURRENT_DATA` 时加载；已有可绘制帧时直接继续播放。
+- `scripts/verify-dynamic-creation-flow.mjs` 增加两项静态回归断言，分别约束 `page-portal` 的动画保护与视频按就绪状态加载，防止后续重构重新引入闪帧。
+
+### 实机复测与当前状态
+
+- 修复前逐帧观测到转场完成时 `opacity: 1 → 0`、`transform: none → translateY(6px)`，并在约 `247ms` 后恢复；修复后通过 Edge／CDP 连续采样 8 帧，全部保持 `opacity: 1`、`transform: none`、`animationName: none`，没有透明帧或位移。
+- 单独验证普通 `page-forward` 路径仍会得到 `opacity: 0`、`translateY(6px)` 与 `dynamic-page-content-in`，说明修复只针对作品转场交接，不会删除正常页面入场体验。
+- 本轮通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow` 及目标文件 `git diff --check`。`5173`、`5188` 测试页均保持运行并返回 HTTP `200`。
+- 本轮没有新增 Git 提交或推送，没有生成 EXE，也没有修改 `dist`；修复仍与前述 UI 调整共同位于现有未提交工作树中。
+
+## 36. 2026-08-19 进阶功能关闭后的基础编辑收敛与预览尺寸一致性
+
+### 关闭进阶功能后的单一编辑体验
+
+- 「进阶功能」关闭后不再只是隐藏部分属性，而是统一进入单一的基础自由编辑体验。`App.tsx` 对新建作品、从作品档案打开作品及从物件页进入控制页三条入口统一解析：关闭时一律使用 `free`；开启时继续使用新建作品默认创作流程或旧作品保存的上次模式。
+- 控制页增加最终兜底：会话中原有 `experience: 'flow'` 不会被删除或改写，但关闭进阶功能时实际界面强制按自由编辑渲染，因此不显示「创作流程／自由编辑」切换器、创作步骤导航、流程专用面板或流程页脚。重新开启后仍可恢复原来的流程步骤和选择状态。
+- 舞台图层在进阶开启时继续读取既有出场关系树；关闭时把当前全部物件转换为没有子节点的同级卡片。基础模式不显示父子缩进、连接线、来源锁定提示、子物件数量或展开／收起按钮，但选择、多选、删除、属性、触控拖曳及键盘排序保持不变。
+- 关闭开关不会删除 `linkedAppearance`、音源、背景绑定、目标点、出场动画或流程会话等已有数据；只隐藏并停用进阶操作。重新开启后，原有父子关系和进阶配置完整恢复。
+- 设置页五语说明同步更新；简中使用「创作流程、出场编排、音源、背景与进阶转场」，让开关范围与实际能力一致。
+
+### 04 号物件在舞台与预览中大小不一致
+
+- 截图中的 04 号物件使用「360 回环」。编辑态不播放移动，所以只显示用户设置的 `item.scale`；旧预览会在回环轨迹外层额外乘约 `0.76–1.24` 的景深缩放，桌面播放器则再乘 `0.82–1.20`，因此同一物件在预览中会周期性变大或缩小。
+- Web 预览的 `dynamic-preview-orbit` 关键帧现只改变 X／Y 位置，不再附加 `scale(...)`；相关 `--move-orbit-scale-*` 变量和计算已经删除。`desktop-runtime/renderer/player.js` 的回环移动同步固定返回 `scale: 1`，保证 iPad 编辑、iPad 预览及实际播放器使用相同的作者尺寸。
+- 本次只移除「移动方式」暗中附加的大小变化。用户设置的大小、翻转、旋转以及呼吸、弹跳等明确属于物件动画的缩放效果均保持不变。
+- Edge 在 `1180 × 820` 对同一回环物件完整采样 24 次：宽度保持 `56.12244–56.12256px`，仅有 `0.00012px` 浮点误差；高度始终为 `38.58093px`，运动矩阵全程 `scale=1`。
+
+### 实机与回归状态
+
+- 基础模式真实页面使用一个已保存 `experience: 'flow'`、且含 1 父 2 子关系的旧会话验收：保存值仍为 `flow`，但界面中模式切换器、步骤导航和流程页脚均为 `0`；3 个物件全部显示为 3 个根节点，子节点、展开按钮和来源提示均为 `0`。`1024 × 768`、`1180 × 820`、`1366 × 1024` 三个 iPad 横向尺寸均无页面 X／Y 溢出。
+- 同一作品重新以进阶模式打开后，模式切换器、步骤导航和流程页脚各恢复为 `1`；图层恢复为 1 个根节点、2 个子节点及 1 个展开按钮。两种模式均无 JavaScript 错误，`documentWidth === viewportWidth`。
+- 基础模式从真实 UI 把物件切换为「360 回环」并进入预览，待出场动画结束后连续采样 24 次：运动外层 X／Y 缩放始终为 `1`，物件宽高占舞台比例的波动小于 `0.0000002`。图层键盘上移会正常交换真实 `order`，两条隐藏的 `linkedAppearance` 关系逐字段保持不变；验收后测试作品已重新载入初始数据。
+- 自动回归新增基础模式入口／控制页兜底／平铺图层／模式切换器条件、Web 回环关键帧无缩放及桌面播放器回环 `scale: 1` 检查。
+- 本轮最终通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、桌面端 `test:target-motion`、`test:appearance`、`test:item-copy`、`test:background-order`、`test:transition-audio` 及 `git diff --check`。Vite 临时目录生产构建完成 `1761` 个模组，仅有既有主 chunk 大于 `500 kB` 的提示；临时构建目录已删除，没有修改现有 `dist`。
+- 本轮没有新增 Git 提交或推送，没有生成 EXE，也没有修改 `dist`；所有修改仍保留在现有未提交工作树中。
+
 - 創作流程核心測試新增三組聲音語義回歸：共享庫已有資產但未綁定時聲音步驟仍未配置；同一音源可同時供背景與物件引用；物件與背景懸空音源 ID 均維持可修復提醒。
 - 隔離 Edge／CDP 真實互動驗收通過：切換到 `Starlight` 後原位選擇 `Stage Music` 只更新該物件；播放時機與 `1.2s` 延遲正確寫入；上載 `flow-upload.wav` 後音源庫由 `2` 增至 `3`，全部物件與背景綁定保持不變；明確點選後才綁定，選擇「無音源」後共享庫仍保留 `3` 個資產。
 - `1024 × 768` 與 `1366 × 1024` 驗收均確認：
@@ -2828,3 +2870,223 @@ git diff --check
 ```
 
 - 生產構建仍完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；本輪修改仍在既有回退基線 `93e50c67e87ad522db94173cf57d7b68b45ba1f4` 之後的未提交工作樹中，`rollback-pre-linear-flow-20260818` 標籤沒有移動。
+
+## 31. 2026-08-18 目標點編輯辨識、起點殘影與無障礙操作
+
+### Git 備份節點與遠端狀態
+
+- 在修改目標點編輯器之前，已先把第 27–30 節的線性創作流程、背景／出場編排及聲音頁版本提交為本地 Git 回退節點：
+
+```text
+630f281f13721b8120c7116c5870474ea88a103f
+feat: add linear creation flow and streamlined audio editor
+```
+
+- 提交前的回退基線仍為 `93e50c67e87ad522db94173cf57d7b68b45ba1f4`，既有 `rollback-pre-linear-flow-20260818` 標籤沒有移動。
+- 已兩次嘗試 `git push origin main`；目前環境第一次無法連接 GitHub `443`，本輪重試則收到 `Recv failure: Connection was reset`。因此本地 `HEAD` 已在 `630f281f`，但 `origin/main` 仍停在 `93e50c67`，不可把這個節點誤記為已上傳。網路恢復後只需再次執行 `git push origin main`。
+
+### 紅色起點、青色終點與原位物件殘影
+
+- 「設定／修改目標點」期間，起始點由原本的深綠色圓點改為高辨識度紅色 `#d64545`，終點維持品牌青綠色 `#0a9a91`；兩者同時使用白色描邊、不同柔光、不同文字標籤，不只依賴顏色區分。
+- 起始點上方新增「起始點」，終點上方新增「終點」。標籤使用高對比白色半透明膠囊、彩色圓點及 `12px` 粗體，在舞台背景明暗變化下仍可閱讀。
+- 標籤位置依物件實際預覽尺寸、縮放與旋轉後包圍盒計算，預設放在物件上方；接近舞台上沿時自動翻到物件下方，左右位置會依各語言文字寬度夾在舞台安全區內，不會被 `overflow: hidden` 裁切。
+- 當起點與終點完全重合或距離很近時，圓點改為紅色外環＋青綠色內點；文字碰撞不再只看固定距離，而是依簡體／繁體／英文／葡萄牙文／波蘭文標籤的保守矩形判斷，再把兩個標籤成對移入舞台安全區。`10px`、`30px`、`70px` 近距離均不重疊。
+- 原始 `item.position` 位置保留同一物件的靜態半透明殘影：沿用同一圖片、未縮放尺寸、縮放、旋轉、水平翻轉與垂直翻轉，透明度為 `0.36`。殘影使用空 `alt`、`aria-hidden`、`pointer-events:none`，不播放第二份動畫、不進入拖拽命中、不出現在 Tab 順序，也不顯示選中框。
+- 殘影／路徑 underlay 與目標物件使用相同 `10 + item.order` 層級，但先於真實物件渲染，因此真實可拖物件始終在殘影上方，而更低圖層物件不會反過來遮住該殘影。起終點標記與文字使用 `z-index:70`；目標編輯期間暫時隱藏 `z-index:68` 的物件聯動線，避免兩套關係圖同時出現。
+- 路徑由紅色漸變至青綠色並在終點加入箭頭，使用者可直接理解「從起點移動到終點」；起終點完全重合時隱藏零長度路徑，避免雜訊。
+
+### 觸控、鍵盤與資料安全
+
+- 目標編輯期間點擊舞台空白處不再暗中關閉右側工具及取消草稿；只允許使用明確的「取消／完成」或鍵盤 `Escape／Enter` 結束操作。
+- 實際終點物件在進入編輯時取得鍵盤焦點：方向鍵每次移動 `1%`，`Shift + 方向鍵` 每次移動 `5%`，所有座標仍限制在 `0–1` 舞台範圍內。
+- 終點物件以 `aria-describedby` 連接五語鍵盤說明；每次鍵盤移動會用 `aria-live="polite"` 回報目前橫向／縱向百分比。`Escape` 或 `Enter` 結束後，焦點會回到重新出現的「設定／修改目標點」按鈕，不會遺留在失去語義的舞台節點。
+- 「設定／修改目標點」、「取消」及「完成」按鈕均提升至至少 `44px` 觸控高度，文字提升至 `12px`；滑鼠／觸控拖動物件本體、鍵盤微調及原有完成／取消流程可共同使用。
+- 拖動與鍵盤調整期間只更新 `targetDraftPosition`；React 作品狀態、`magicfloor_dynamic_groups_v1` 及 IndexedDB 均不提前改變。取消後資料完全不變；完成後只寫入既有 `targetMode: 'target'`、`targetPosition` 及相關時間戳，原始 `position`、縮放、旋轉、翻轉、背景、音源、聯動關係及其他物件保持不變。
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文新增「起始點／終點」、鍵盤操作說明及終點百分比回報；五語型別檢查無缺鍵。
+
+### 雙尺寸瀏覽器驗收與相容性
+
+- 新增本機隔離 Edge／CDP 驗收腳本：
+
+```text
+test-artifacts/dynamic-flow-20260818/verify-target-editor.mjs
+```
+
+- 腳本覆蓋 `1024 × 768` 與 `1366 × 1024`，驗證既有目標物件與新建目標物件兩種情境，包括：紅／青標記、半透明殘影、完整變形、標籤邊界、重合及近距離避碰、`44px` 操作、空白誤觸、指針拖動、方向鍵步進、草稿不持久化、取消不變、完成最小寫入、焦點回返、讀屏說明、零頁面溢出及 `window.__flowHarnessErrors=[]`。
+- 已重新產生四張專用截圖：
+
+```text
+test-artifacts/dynamic-flow-20260818/target-editor-1024x768.png
+test-artifacts/dynamic-flow-20260818/target-editor-1366x1024.png
+test-artifacts/dynamic-flow-20260818/target-editor-overlap-1024x768.png
+test-artifacts/dynamic-flow-20260818/target-editor-overlap-1366x1024.png
+```
+
+- 本輪驗證命令全部通過：
+
+```text
+npx tsc --noEmit
+npm run test:creation-flow
+node --no-warnings test-artifacts\dynamic-flow-20260818\verify-target-editor.mjs
+npm run build
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+git diff --check
+```
+
+- 生產構建完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；驗證產生的 `dist` 哈希檔已恢復，沒有把生成物混入本輪工作樹。
+- 本輪只修改 iPad 控制頁 JSX、CSS 與五語顯示／可存取文案；沒有修改 `DynamicGroup`、`DynamicItem`、IndexedDB 格式、`GroupStateSync`、Unity／PC 協定或 EXE 播放語義，因此不重新生成 EXE。最新標準版與完整翻轉版仍是：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```
+
+- 主測試頁 `5173` 與過場預覽頁 `5188` 仍在運行。本節目標點改動位於 `630f281f` 之後的未提交工作樹中，方便使用者先在 iPad 測試頁確認效果，再決定是否建立下一個 Git 節點。
+
+## 32. 2026-08-19 目標點入口收斂、屬性短標籤與背景編輯器左右分欄
+
+### 目標點預設收起與安全草稿
+
+- 物件未進入目標點編輯時，不再渲染「移動到目標點／循環移動」兩個模式選項；右側只保留目標點狀態與單一「設定目標點／修改目標點」入口，避免使用者誤以為兩張模式卡可直接操作。
+- 只有點擊「設定／修改目標點」後才展開兩個選項及「取消／完成」操作。非編輯狀態的隱藏選項不留在 DOM、Tab 順序或讀屏順序中；入口使用 `aria-expanded`、`aria-controls` 表達展開關係。
+- 目標點是否為「已設定／修改」改以 `targetMode === 'target' && targetPosition` 判斷。若物件只保留舊目標座標、目前已切回普通移動模式，介面顯示「設定目標點」，但不刪除舊座標，完成設定後仍可沿用原位置。
+- 「循環移動」在編輯期間改用 `targetDraftLoop` 草稿；切換時不寫入 React 作品狀態或 IndexedDB。按「完成」才一次寫入 `targetMode`、`targetPosition`、`targetLoop`，按「取消」則三者均維持進入編輯前的值。
+- 編輯中再次點擊已選的「移動到目標點」不會重設終點草稿；完成、取消、`Enter` 或 `Escape` 後焦點都回到單一入口按鈕。既有紅色起始點、青綠色終點、半透明物件殘影、方向鍵微調及觸控拖動語義保持不變。
+
+### 物件屬性導航
+
+- 屬性導航顯示改為「移動／動畫／變形／音源／背景／複製」；面板內部仍保留「移動方式、物件音源、物件背景、屬性複製」等完整名稱，沒有改動資料欄位或功能語義。
+- 「屬性複製」由容易被理解成旋轉／重做的順時針箭頭，改為兩張頁面疊放的 `Copy` 圖示；按鈕的完整 `aria-label` 與提示仍為複製屬性。
+- 簡體中文、繁體中文、英文、葡萄牙文及波蘭文均補齊音源與背景短標籤；英文、葡萄牙文及波蘭文原有動畫／變形縮寫保留，避免六個屬性分頁在窄面板中擁擠。
+
+### 背景編輯器左右分欄與單列卡片
+
+- 「編輯背景」由原本上下堆疊改成左右分欄：左側為背景素材庫、全選、拖動排序與新增／刪除操作；右側為播放方式、切換間隔、背景轉場及背景音樂設定。
+- 左右區域各自具備受控滾動；背景素材列表滾動時，右側設定不會被帶走，左側底部的新增／刪除操作也保持可見。標題、卡片文字、輸入框及主要觸控按鈕同步放大，關鍵操作高度至少 `44px`。
+- 依使用者最終確認，背景素材列表固定為單列：最終層使用 `.dynamic-background-modal .background-library-list { grid-template-columns: minmax(0, 1fr) !important; }`，每張 `.background-library-card` 寬度為 `100%`，因此始終「一行一張」，不會恢復成一行兩張。
+- iPad 橫向及一般桌面維持左右雙欄；窄螢幕與直向 iPad 自動退化為上下單欄，保留同一資訊順序、觸控尺寸與獨立滾動，不產生頁面級橫向捲動。
+- 背景選取、設為目前背景、長按拖動排序、全選、上傳、刪除、切換模式、轉場與背景音樂套用邏輯全部沿用既有實作，沒有修改資料模型或播放語義。
+
+### 瀏覽器實測、構建與目前狀態
+
+- 已在真實 `5173` harness 頁打開「編輯背景」彈窗完成雙尺寸驗收：
+  - `1024 × 768`：彈窗 `968 × 694`；左右欄計算寬度為 `509.594px / 400.406px`，間距 `16px`，重疊面積 `0`；背景列表只有一個 `458.594px` 列軌道，卡片完整佔滿該列。
+  - `1366 × 1024`：彈窗 `1080 × 760`；左右欄計算寬度為 `572.312px / 449.688px`，間距 `16px`，重疊面積 `0`；背景列表只有一個 `521.312px` 列軌道，卡片完整佔滿該列。
+- 兩個尺寸的彈窗均完整位於視口內，`document.scrollWidth/scrollHeight` 與視口相同，沒有頁面 X/Y 溢出，左右欄沒有交疊，`window.__flowHarnessErrors=[]`。
+- 追加直向驗收 `768 × 1024` 與 `820 × 1180`：背景編輯器正確退化為「素材庫在上、設定在下」的單欄，列表仍只有一個列軌道（分別 `619px`、`627px`），卡片寬度與列表一致，兩個窗格無交疊，設定區滾動後背景音樂區可達，素材操作列可達，測試錯誤陣列為空。為避免控制頁在未掛載正式直向提示層的測試 harness 中繼承全域 `min-width: 960px`，本輪新增窄／直向 `.dynamic-control-screen { width: 100%; min-width: 0; min-height: 0; }` 覆蓋；兩個直向尺寸的頁面 `document.scrollWidth/scrollHeight` 現已與視口一致，沒有隱藏的頁面級 X 溢出。正式 App 原有的 `.portrait-lock` 仍保留。
+- 本輪驗證通過：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-target-editor.mjs
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-audio-flow.mjs
+npm run build
+git diff --check
+```
+
+- 生產構建完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示。構建驗證後已清理／還原 `dist` 哈希生成物，不把機械產物混入本輪來源碼修改。
+- `npm run lint` 目前無法執行，原因是倉庫本身沒有 ESLint 設定檔；命令在載入專案程式碼前即由 ESLint 終止，不能記成程式碼 lint 錯誤，也不能記成 lint 已通過。
+- 修改前的本地 Git 備份節點仍是 `630f281f13721b8120c7116c5870474ea88a103f`（`feat: add linear creation flow and streamlined audio editor`）。本節修改仍在該節點之後的未提交工作樹；沒有新增提交，也沒有宣稱已推送，`origin/main` 仍是先前記錄的 `93e50c67`。
+- 主測試頁 `http://localhost:5173/` 保持運行，同一區域網路可使用 `http://192.168.12.101:5173/`；兩個地址均已回傳 HTTP `200`。既有 `5188` 預覽服務也未被關閉。本輪只改 iPad 控制頁 JSX、CSS 與五語介面文字，沒有修改 Unity／PC 通訊協定、IndexedDB 格式或 EXE 播放語義，因此不重新生成 EXE；最新標準版與完整翻轉版仍為：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```
+
+## 33. 2026-08-19 背景編輯器右側設定欄防裁切重構
+
+### 問題根因與介面重排
+
+- 使用者回報「編輯背景」在 iPad 橫向時右側顯示不完整。檢查後確認，舊版高優先級 `.dynamic-background-modal.is-advanced .dynamic-background-playback:not(.fixed-mode)` 仍要求 `300px + 230px` 的橫向雙欄；右側實際可用寬度不足時，`切換間隔` 被父層 `overflow-x: hidden` 裁掉。
+- 右側設定欄改為單一縱向設定流：`播放方式 → 切換間隔（非固定模式才顯示）→ 背景轉場 → 背景音樂`。播放方式維持三段式按鈕；轉場固定使用 `2 × 2` 選項，`應用轉場` 獨占一行；背景音樂拆成「音源選擇＋試聽」及「新增音源＋應用／清除音樂」兩行，避免四個控件在同一行互相擠壓。
+- 右欄標題改為簡潔的「屬性」，每個設定概念以清楚的區塊標題呈現；轉場／音樂的套用範圍文字允許自然換行，不再被單行省略號截斷。所有主要按鈕與選擇控件維持至少 `44px` 觸控高度，音源下拉框維持 `16px` 字級以避免 iPad Safari 自動縮放。
+
+### CSS 防溢出與觸控行為
+
+- 背景編輯器雙欄比例調整為左側素材庫與右側設定欄約 `0.96fr / 1.04fr`，右側最小欄寬 `400px`；設定滾動容器及其子項明確設定 `width: 100%`、`min-width: 0`、`max-width: 100%`、`box-sizing: border-box`，並以單列 grid 讓所有內容沿欄寬收縮。
+- 高優先級覆蓋舊版播放雙欄規則，避免未來級聯再次把間隔控件撐出欄外。背景音樂操作按鈕使用兩等分 grid，並對直接子按鈕補齊可收縮約束。
+- 將背景彈窗祖先的 `touch-action: none` 改為 `pan-y`，設定滾動區使用 `touch-action: pan-y` 及 `-webkit-overflow-scrolling: touch`，確保真實 iPad／WebView 可以用手指捲到下方背景音樂區。未修改素材選取、拖曳排序、轉場套用、音源綁定或資料格式。
+- 背景素材列表仍以 `.dynamic-background-modal .background-library-list { grid-template-columns: minmax(0, 1fr) !important; }` 固定單列，一行一張卡片；窄螢幕／直向仍維持素材庫在上、設定在下的順序。
+
+### 三尺寸瀏覽器驗收
+
+- 強制刷新 `5173` 測試頁後，在 `1024 × 768`、`1180 × 820`、`1366 × 1024` 驗證右欄：
+  - 設定滾動區 `clientWidth / scrollWidth` 分別為 `428 / 428`、`486 / 486`、`486 / 486`；所有主要後代右邊界均不超出滾動區，沒有水平溢出。
+  - 背景音樂面板及其 source／actions 兩列均無水平溢出；設定區可完整捲到底，`maxScrollTop` 分別為 `149`、`101`、`87`，背景音樂選擇、試聽、新增音源及應用音樂均可達。
+  - 首次開啟 `1024 × 768` 時，右欄標題、三個播放模式、切換間隔與整個轉場 `2 × 2` 區塊均完整可見；向下捲動後背景音樂區完整呈現。
+  - 三個尺寸的素材列表均只有一個 grid 列軌道，背景卡片保持一行一張；無欄位重疊，測試頁 `window.__flowHarnessErrors=[]`，沒有 JavaScript Runtime exception。驗收期間只見測試 harness 既有資源 `404`／外部連線拒絕訊息。
+
+### 回歸、構建與目前狀態
+
+- 本輪通過：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-target-editor.mjs
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-audio-flow.mjs
+npm run build
+git diff --check
+```
+
+- `npm run build` 完成 `1760` 個模組；只保留既有主 chunk 大於 `500 kB` 的提示。構建後產生的 `dist` 哈希檔及 `dist/index.html` 已恢復，沒有把機械生成物留在工作樹。
+- 本輪修改仍在本地 `630f281f` 之後的未提交工作樹，沒有新增提交或推送；未修改 Unity／PC 協定、IndexedDB 格式、EXE 或播放語義。`5173`（PID `15740`）及 `5188`（PID `9868`）均保持運行並回傳 HTTP `200`。
+
+## 34. 2026-08-19 圖層／背景父子樹、流程聯動收斂與時間滾輪統一
+
+### 舞台圖層與創作流程職責分離
+
+- 「舞台結構／圖層」已由平鋪卡片改為沿用現有圖層視覺的父子樹。父子歸屬只讀取既有 `linkedAppearance`／`flowSummary.relationTree`；每個卡片仍顯示自己的真實 `item.order` 圖層編號，並以縮圖左上角角標呈現，因此父子分組不會被誤解為實際 Z 軸順序。
+- 每個含子物件的圖層卡新增獨立 `44px` 展開／收起按鈕；收起時子分支會從 DOM 中卸載，拖曳命中不會抓到零尺寸隱藏卡。從舞台選中被收起的子物件時會自動展開其祖先，避免目前物件在圖層面板中消失。
+- 圖層樹同級仍依真實圖層前後順序排列；拖曳與鍵盤上下移動只調整目前物件的單一 `item.order`，不攜帶整個子樹、不改 `linkedAppearance`。刪除父物件仍沿用既有單物件刪除／關係清理流程，不新增級聯刪除。
+- 子物件使用連接線、較輕卡片背景、左側結構邊與「由父物件」短標籤共同表達層級，不只依賴顏色。每級總縮排控制在 `10–12px`，深度 3 後停止繼續縮排，避免 iPad 窄側欄壓縮名稱與摘要。
+- 創作流程前期的動畫屬性不再顯示「物件聯動」卡；流程的物件佈局／動畫步驟也不再顯示舞台聯動虛線或屬性複製中的聯動選項。第三步「出場編排」維持唯一的流程關係設定入口；自由編輯仍保留完整關係編輯能力。
+
+### 出場編排與背景父子繼承
+
+- 第三步模式文案已在簡中、繁中、英文、葡萄牙文與波蘭文統一縮短；簡中由「全部同時出現／依主順序逐個出現」改為「全部出現／逐個出現」。兩個按鈕使用 roving `tabIndex`，支援左右方向鍵、Home、End 與至少 `44px` 觸控高度。
+- 第四步「背景」的物件列表改為獨立可收起父子樹，收起狀態不與第三步共用。有效根物件可以選擇並設定背景；所有子物件改為只讀卡片，顯示鎖定圖示及「跟隨：父物件」，不再提供會誤導使用者的背景設定入口。
+- 多層關係會解析到最上層根物件作為實際背景擁有者。若從其他步驟帶入子物件，背景設定區首幀即使用根物件資料，並同步把外部選中狀態切到根物件；循環、缺失父節點等異常資料維持鎖定兜底，不會錯誤開放編輯。
+- 新增五語專用鍵 `flow.backgroundInheritedCardLabel` 與 `flow.backgroundFollowsNamed`，子物件的可見狀態及可存取名稱均包含父物件，不依賴縮排或鎖圖示才能理解。
+
+### 背景／聲音時間輸入與自由編輯動畫
+
+- `IntervalWheel` 新增相容參數 `allowDirectInput` 與 `className`；預設仍允許舊呼叫直接輸入，這輪三個指定位置均傳入 `allowDirectInput={false}`，因此完全不渲染 `input[type="number"]`，但保留上下拖動、滑鼠滾輪、方向鍵、相鄰值按鈕及 `spinbutton` 語義。
+- 「編輯背景」的切換間隔只保留滑動滾輪，不再允許鍵盤數字輸入；秒／分鐘單位選擇保留，原有最小值、最大值、提交與背景播放資料語義均未改變。
+- 創作流程聲音頁與自由編輯「音源」頁的延遲播放均改用同一滑動滾輪，範圍維持 `0–600` 秒、步長 `0.1` 秒。流程回調仍以毫秒寫入，自由編輯 handler 仍接收秒並轉為毫秒，沒有重複換算。
+- 流程聲音延遲保持原 `86 × 44px` 區域；自由編輯延遲保持原 `78 × 30px` 視覺盒，實際拖動／鍵盤按鈕命中高度擴大到 `44px`。自由編輯數字視窗使用 `44 × 30px` 裁切與 `-7px` 軸心修正，長數值不會偏低或被水平裁切。
+- 自由編輯動畫頁的「物件聯動」標題改為專用五語鍵 `control.appearanceOrder`（簡中「出場排序」），刪除重複的「由此物件觸發」標題行；既有關係卡、增加關係及「由其他物件控制」區域保留。
+- 動畫預覽已擴展至左右切換按鈕原本佔用的整行寬度；兩個切換按鈕改為覆蓋在預覽左右邊緣的嚴格 `44 × 44px` 正圓，並分別覆蓋 hover、active 與 `ui-pressed` 變形，按下時不會垂直跳動。
+
+### 三尺寸實機驗收、回歸與目前狀態
+
+- 使用隔離 Edge／CDP harness 在 `1024 × 768`、`1180 × 820`、`1366 × 1024` 三個 iPad 橫向尺寸完成實測；一次性驗收腳本及臨時截圖已清理，不留在工作樹。
+- 三個尺寸均確認：圖層根節點為 `Paper Plane`、兩個子節點按真實圖層方向排列、收起後 DOM 卡片由 `3 → 1`、真實圖層號可見、展開按鈕為 `44px`；背景樹只有 `1` 個可編輯根卡與 `2` 個只讀子卡，從子物件進入會解析至根物件。
+- 三個尺寸均確認：流程佈局動畫頁沒有聯動卡／舞台虛線，流程複製彈窗沒有聯動複製項；「全部出現／逐個出現」文案與鍵盤單選語義正確；背景／流程聲音／自由聲音三處均沒有數字輸入框。
+- 動畫預覽寬度與 carousel 寬度逐像素一致；左右按鈕均為 `44 × 44px` 且計算圓角為 `50%`。流程聲音滾輪為 `86 × 44px`；自由聲音滾輪視覺盒為 `78 × 30px`、命中高度為 `44px`。三個尺寸均有 `documentWidth === viewportWidth`、`window.__flowHarnessErrors=[]`。
+- 本輪驗證通過：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-audio-flow.mjs
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:item-copy
+npm run build
+git diff --check
+```
+
+- `npm run build` 完成 `1760` 個模組，只保留既有主 chunk 大於 `500 kB` 的提示；構建後已恢復原有 `dist` 哈希產物，沒有把機械生成檔留在本輪工作樹。`npm run lint` 仍因倉庫沒有 ESLint 設定檔而在讀取專案程式碼前終止，不能記為 lint 通過或本輪程式碼錯誤。
+- 本輪沒有新增 Git 提交或推送，修改仍位於本地回退節點 `630f281f13721b8120c7116c5870474ea88a103f` 之後的未提交工作樹；沒有改動 Unity／PC 協定、IndexedDB 格式、EXE 或播放語義，也沒有重新生成 EXE。最新標準版與完整翻轉版仍為：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```

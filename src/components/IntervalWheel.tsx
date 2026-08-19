@@ -16,6 +16,8 @@ interface IntervalWheelProps {
   max?: number
   step?: number
   inputMode?: 'numeric' | 'decimal'
+  allowDirectInput?: boolean
+  className?: string
   onChange: (value: number) => void
   onCommit?: (value: number) => void
   ariaLabel: string
@@ -52,6 +54,8 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   max = 100,
   step = 1,
   inputMode = 'numeric',
+  allowDirectInput = true,
+  className,
   onChange,
   onCommit,
   ariaLabel
@@ -73,10 +77,18 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   const selectionSoundTimerRef = useRef<number | null>(null)
   const suppressClickRef = useRef(false)
   const cancelEditRef = useRef(false)
+  const isEditing = allowDirectInput && editing
 
   useEffect(() => {
     if (!editing) setDraft(String(boundedValue))
   }, [boundedValue, editing])
+
+  useEffect(() => {
+    if (allowDirectInput || !editing) return
+    cancelEditRef.current = false
+    setDraft(String(boundedValue))
+    setEditing(false)
+  }, [allowDirectInput, boundedValue, editing])
 
   useEffect(() => () => {
     if (collapseTimerRef.current !== null) window.clearTimeout(collapseTimerRef.current)
@@ -152,7 +164,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   }
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (editing || event.button !== 0) return
+    if (isEditing || event.button !== 0) return
     event.stopPropagation()
     prepareIntervalWheelAudio()
     clearCollapseTimer()
@@ -210,7 +222,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   }
 
   const beginEditing = () => {
-    if (suppressClickRef.current) return
+    if (!allowDirectInput || suppressClickRef.current) return
     clearCollapseTimer()
     cancelEditRef.current = false
     setDraft(String(boundedValue))
@@ -239,7 +251,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   }
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (editing || Math.abs(event.deltaY) < 1) return
+    if (isEditing || Math.abs(event.deltaY) < 1) return
     event.preventDefault()
     stepValue(event.deltaY > 0 ? 1 : -1)
   }
@@ -255,6 +267,13 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     && (offset === 0 || Math.abs(wheelValue - boundedValue) > EPSILON)
   ))
   const wheelStyle = { '--dynamic-interval-wheel-offset': `${dragOffset}px` } as CSSProperties
+  const rootClassName = [
+    'dynamic-interval-wheel',
+    expanded && 'is-expanded',
+    dragging && 'is-dragging',
+    isEditing && 'is-editing',
+    className
+  ].filter(Boolean).join(' ')
 
   const renderDigitWindow = (position: 'previous' | 'current' | 'next') => (
     <div
@@ -277,7 +296,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
 
   return (
     <div
-      className={`dynamic-interval-wheel ${expanded ? 'is-expanded' : ''} ${dragging ? 'is-dragging' : ''} ${editing ? 'is-editing' : ''}`}
+      className={rootClassName}
       onWheel={handleWheel}
     >
       <div className="dynamic-interval-wheel-viewport">
@@ -288,17 +307,17 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
                 type="button"
                 className="dynamic-interval-wheel-cell dynamic-interval-wheel-neighbor dynamic-interval-wheel-previous"
                 onClick={() => stepValue(-1)}
-                disabled={editing}
+                disabled={isEditing}
                 tabIndex={expanded ? 0 : -1}
                 aria-label={`${ariaLabel}: ${previousValue}`}
                 data-silent="true"
               />
-              {!editing && renderDigitWindow('previous')}
+              {!isEditing && renderDigitWindow('previous')}
             </>
           )}
 
           <div className="dynamic-interval-wheel-cell dynamic-interval-wheel-current">
-            {editing ? (
+            {isEditing ? (
               <input
                 ref={inputRef}
                 type="number"
@@ -327,7 +346,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
                 aria-valuemax={max}
                 aria-valuenow={boundedValue}
                 aria-label={`${ariaLabel}: ${boundedValue}`}
-                onClick={beginEditing}
+                onClick={allowDirectInput ? beginEditing : undefined}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={(event) => finishDrag(event)}
@@ -353,16 +372,16 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
                 type="button"
                 className="dynamic-interval-wheel-cell dynamic-interval-wheel-neighbor dynamic-interval-wheel-next"
                 onClick={() => stepValue(1)}
-                disabled={editing}
+                disabled={isEditing}
                 tabIndex={expanded ? 0 : -1}
                 aria-label={`${ariaLabel}: ${nextValue}`}
                 data-silent="true"
               />
-              {!editing && renderDigitWindow('next')}
+              {!isEditing && renderDigitWindow('next')}
             </>
           )}
 
-          {!editing && renderDigitWindow('current')}
+          {!isEditing && renderDigitWindow('current')}
         </div>
       </div>
     </div>

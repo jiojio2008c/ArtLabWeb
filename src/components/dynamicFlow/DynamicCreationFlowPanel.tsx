@@ -24,8 +24,9 @@ import {
   Upload,
   Volume2
 } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import IntervalWheel from '../IntervalWheel.tsx'
 import './DynamicCreationFlow.css'
 import type {
   DynamicCreationAppearAnimation,
@@ -120,13 +121,37 @@ const DynamicCreationFlowPanel = ({
 }: DynamicCreationFlowPanelProps) => {
   const { t } = useTranslation()
   const [collapsedAppearanceItemIds, setCollapsedAppearanceItemIds] = useState<Set<string>>(() => new Set())
+  const [collapsedBackgroundItemIds, setCollapsedBackgroundItemIds] = useState<Set<string>>(() => new Set())
   const audioObjectRailRef = useRef<HTMLDivElement>(null)
+  const audioDelayLabelId = useId()
   const activeStep = PANEL_STEPS.find((entry) => entry.id === step) ?? PANEL_STEPS[0]
   const orderedItems = [...items].sort((first, second) => first.order - second.order)
   const itemById = new Map(orderedItems.map((item) => [item.id, item]))
+  const backgroundRootItemIdById = new Map<string, string>()
+  const indexBackgroundTree = (node: DynamicCreationFlowAppearanceNode, rootItemId: string) => {
+    backgroundRootItemIdById.set(node.itemId, rootItemId)
+    node.children.forEach((child) => indexBackgroundTree(child, rootItemId))
+  }
+  appearanceTree.forEach((node) => indexBackgroundTree(node, node.itemId))
   const availableAudioIds = new Set(audioLibrary.map((audio) => audio.id))
   const selectedFlowItem = orderedItems.find((item) => item.id === selectedItemId) ?? orderedItems[0]
   const selectedFlowItemId = selectedFlowItem?.id
+  const selectedBackgroundRootItemId = selectedFlowItem
+    ? backgroundRootItemIdById.get(selectedFlowItem.id)
+    : undefined
+  const resolvedBackgroundOwnerItem = selectedBackgroundRootItemId
+    ? itemById.get(selectedBackgroundRootItemId)
+    : undefined
+  const backgroundOwnerItem = resolvedBackgroundOwnerItem ?? selectedFlowItem
+  const backgroundOwnerItemId = backgroundOwnerItem?.id
+  const hasResolvedBackgroundParent = Boolean(
+    selectedFlowItemId
+    && backgroundOwnerItemId
+    && selectedFlowItemId !== backgroundOwnerItemId
+  )
+  const hasBackgroundInheritanceFallback = Boolean(
+    selectedFlowItem?.linkedAppearance && !hasResolvedBackgroundParent
+  )
   const selectedAudioAvailable = Boolean(
     selectedFlowItem?.audioId && availableAudioIds.has(selectedFlowItem.audioId)
   )
@@ -144,6 +169,23 @@ const DynamicCreationFlowPanel = ({
     ).find((button) => button.dataset.itemId === selectedFlowItemId)
     selectedButton?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
   }, [selectedFlowItemId, step])
+
+  useEffect(() => {
+    if (
+      step !== 'backgrounds'
+      || !selectedFlowItemId
+      || !backgroundOwnerItemId
+      || selectedFlowItemId === backgroundOwnerItemId
+      || hasBackgroundInheritanceFallback
+    ) return
+    onSelectItem(backgroundOwnerItemId)
+  }, [
+    backgroundOwnerItemId,
+    hasBackgroundInheritanceFallback,
+    onSelectItem,
+    selectedFlowItemId,
+    step
+  ])
 
   const handleRadioKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -183,6 +225,15 @@ const DynamicCreationFlowPanel = ({
 
   const toggleAppearanceChildren = (itemId: string) => {
     setCollapsedAppearanceItemIds((currentIds) => {
+      const nextIds = new Set(currentIds)
+      if (nextIds.has(itemId)) nextIds.delete(itemId)
+      else nextIds.add(itemId)
+      return nextIds
+    })
+  }
+
+  const toggleBackgroundChildren = (itemId: string) => {
+    setCollapsedBackgroundItemIds((currentIds) => {
       const nextIds = new Set(currentIds)
       if (nextIds.has(itemId)) nextIds.delete(itemId)
       else nextIds.add(itemId)
@@ -344,6 +395,98 @@ const DynamicCreationFlowPanel = ({
     )
   }
 
+  const renderBackgroundNode = (
+    node: DynamicCreationFlowAppearanceNode,
+    depth: number
+  ) => {
+    const item = itemById.get(node.itemId)
+    if (!item) return null
+    const children = [...node.children].sort((first, second) => first.order - second.order)
+    const isRoot = depth === 0 && !node.relation
+    const isEditableRoot = isRoot && !item.linkedAppearance
+    const selected = isEditableRoot && item.id === backgroundOwnerItemId
+    const childrenExpanded = !collapsedBackgroundItemIds.has(item.id)
+    const childrenId = `dynamic-flow-background-children-${item.id}`
+    const parentName = node.relation?.sourceItemName ?? item.linkedAppearance?.sourceName
+    const backgroundStatus = isEditableRoot
+      ? item.backgroundLabel
+      : parentName
+        ? t('flow.backgroundFollowsNamed', { parent: parentName })
+        : t('flow.backgroundInheritedTitle')
+    const inheritedCardLabel = parentName
+      ? t('flow.backgroundInheritedCardLabel', { child: item.name, parent: parentName })
+      : `${item.name}. ${backgroundStatus}`
+    const cardContent = (
+      <>
+        <img src={item.imageUrl} alt="" loading="lazy" />
+        <span className="dynamic-flow-background-object-copy">
+          <strong>{item.name}</strong>
+          <small>{backgroundStatus}</small>
+        </span>
+        {isEditableRoot
+          ? selected
+            ? <Check className="dynamic-flow-object-status-icon is-selected" aria-hidden="true" />
+            : <ChevronRight className="dynamic-flow-object-status-icon" aria-hidden="true" />
+          : <LockKeyhole className="dynamic-flow-object-status-icon is-locked" aria-hidden="true" />}
+      </>
+    )
+
+    return (
+      <li
+        key={node.itemId}
+        className={`dynamic-flow-background-node depth-${Math.min(depth, 3)} ${isRoot ? 'is-root' : 'is-child'}`}
+      >
+        <article className={`dynamic-flow-background-object-card ${selected ? 'is-selected' : ''} ${isEditableRoot ? '' : 'is-inherited'}`}>
+          {isEditableRoot ? (
+            <button
+              type="button"
+              className="dynamic-flow-background-object-select"
+              aria-pressed={selected}
+              onClick={() => onSelectItem(item.id)}
+            >
+              {cardContent}
+            </button>
+          ) : (
+            <div
+              className="dynamic-flow-background-object-summary"
+              aria-label={inheritedCardLabel}
+            >
+              {cardContent}
+            </div>
+          )}
+
+          {children.length > 0 && (
+            <button
+              type="button"
+              className="dynamic-flow-background-children-toggle"
+              aria-expanded={childrenExpanded}
+              aria-controls={childrenId}
+              aria-label={t(
+                childrenExpanded ? 'flow.collapseChildren' : 'flow.expandChildren',
+                { count: children.length }
+              )}
+              onClick={() => toggleBackgroundChildren(item.id)}
+            >
+              <Link2 aria-hidden="true" />
+              <span>{t('flow.childCount', { count: children.length })}</span>
+              {childrenExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+            </button>
+          )}
+        </article>
+
+        {children.length > 0 && (
+          <ol
+            id={childrenId}
+            className="dynamic-flow-background-children"
+            hidden={!childrenExpanded}
+          >
+            {children.map((child) => renderBackgroundNode(child, depth + 1))}
+          </ol>
+        )}
+      </li>
+    )
+  }
+
   const renderAppearance = () => (
     <div className="dynamic-flow-view dynamic-flow-appearance-view">
       <section className="dynamic-flow-section">
@@ -370,13 +513,20 @@ const DynamicCreationFlowPanel = ({
           </div>
         </div>
 
-        <div className="dynamic-flow-mode-grid" role="radiogroup" aria-label={t('flow.mainOrder')}>
+        <div
+          className="dynamic-flow-mode-grid"
+          role="radiogroup"
+          aria-label={t('flow.mainOrder')}
+          aria-orientation="horizontal"
+        >
           <button
             type="button"
             role="radio"
             aria-checked={appearMode === 'all'}
             className={appearMode === 'all' ? 'is-active' : ''}
             onClick={() => onSetAppearMode('all')}
+            onKeyDown={(event) => handleRadioKeyDown(event, 'horizontal')}
+            tabIndex={appearMode === 'all' ? 0 : -1}
           >
             <Layers3 aria-hidden="true" />
             <span>{t('flow.appearAll')}</span>
@@ -387,6 +537,8 @@ const DynamicCreationFlowPanel = ({
             aria-checked={appearMode === 'sequence'}
             className={appearMode === 'sequence' ? 'is-active' : ''}
             onClick={() => onSetAppearMode('sequence')}
+            onKeyDown={(event) => handleRadioKeyDown(event, 'horizontal')}
+            tabIndex={appearMode === 'sequence' ? 0 : -1}
           >
             <Timer aria-hidden="true" />
             <span>{t('flow.appearSequence')}</span>
@@ -450,41 +602,22 @@ const DynamicCreationFlowPanel = ({
         </div>
 
         {orderedItems.length === 0 ? renderEmptyItems() : (
-          <div className="dynamic-flow-background-object-list">
-            {orderedItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={item.id === selectedItemId ? 'is-selected' : ''}
-                aria-pressed={item.id === selectedItemId}
-                onClick={() => onSelectItem(item.id)}
-              >
-                <img src={item.imageUrl} alt="" loading="lazy" />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>{item.backgroundLabel}</small>
-                </span>
-                {item.linkedAppearance
-                  ? <LockKeyhole className="dynamic-flow-object-status-icon is-locked" aria-hidden="true" />
-                  : item.id === selectedItemId
-                    ? <Check className="dynamic-flow-object-status-icon is-selected" aria-hidden="true" />
-                    : <ChevronRight className="dynamic-flow-object-status-icon" aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
+          <ol className="dynamic-flow-background-object-list dynamic-flow-background-tree">
+            {appearanceTree.map((node) => renderBackgroundNode(node, 0))}
+          </ol>
         )}
       </section>
 
-      {selectedFlowItem && (
+      {backgroundOwnerItem && (
         <section className="dynamic-flow-section dynamic-flow-background-assignment">
           <div className="dynamic-flow-section-heading is-compact">
             <span className="dynamic-flow-task-number" aria-hidden="true">2</span>
             <div>
-              <h3 aria-live="polite">{t('flow.backgroundChooseStageDescription', { name: selectedFlowItem.name })}</h3>
+              <h3 aria-live="polite">{t('flow.backgroundChooseStageDescription', { name: backgroundOwnerItem.name })}</h3>
             </div>
           </div>
 
-          {selectedFlowItem.linkedAppearance ? (
+          {hasBackgroundInheritanceFallback && selectedFlowItem?.linkedAppearance ? (
             <div className="dynamic-flow-background-inherited">
               <span><LockKeyhole aria-hidden="true" /></span>
               <div>
@@ -523,10 +656,10 @@ const DynamicCreationFlowPanel = ({
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={selectedFlowItem.backgroundIds.length === 0}
-                  className={selectedFlowItem.backgroundIds.length === 0 ? 'is-active' : ''}
+                  aria-checked={backgroundOwnerItem.backgroundIds.length === 0}
+                  className={backgroundOwnerItem.backgroundIds.length === 0 ? 'is-active' : ''}
                   disabled={!advancedFeaturesEnabled}
-                  onClick={() => onSetItemBackgrounds(selectedFlowItem.id, [])}
+                  onClick={() => onSetItemBackgrounds(backgroundOwnerItem.id, [])}
                 >
                   <Layers3 aria-hidden="true" />
                   <span>
@@ -537,13 +670,13 @@ const DynamicCreationFlowPanel = ({
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={selectedFlowItem.backgroundIds.length > 0}
-                  className={selectedFlowItem.backgroundIds.length > 0 ? 'is-active' : ''}
+                  aria-checked={backgroundOwnerItem.backgroundIds.length > 0}
+                  className={backgroundOwnerItem.backgroundIds.length > 0 ? 'is-active' : ''}
                   disabled={!advancedFeaturesEnabled}
                   onClick={() => onSetItemBackgrounds(
-                    selectedFlowItem.id,
-                    selectedFlowItem.backgroundIds.length > 0
-                      ? selectedFlowItem.backgroundIds
+                    backgroundOwnerItem.id,
+                    backgroundOwnerItem.backgroundIds.length > 0
+                      ? backgroundOwnerItem.backgroundIds
                       : [backgrounds[0].id]
                   )}
                 >
@@ -555,11 +688,11 @@ const DynamicCreationFlowPanel = ({
                 </button>
               </div>
 
-              {selectedFlowItem.backgroundIds.length > 0 && (
+              {backgroundOwnerItem.backgroundIds.length > 0 && (
                 <div className="dynamic-flow-background-choice-grid" role="group" aria-label={t('control.specifiedBackgrounds')}>
                   {backgrounds.map((background) => {
-                    const checked = selectedFlowItem.backgroundIds.includes(background.id)
-                    const onlySelected = checked && selectedFlowItem.backgroundIds.length === 1
+                    const checked = backgroundOwnerItem.backgroundIds.includes(background.id)
+                    const onlySelected = checked && backgroundOwnerItem.backgroundIds.length === 1
                     return (
                       <button
                         key={background.id}
@@ -569,10 +702,10 @@ const DynamicCreationFlowPanel = ({
                         className={checked ? 'is-selected' : ''}
                         disabled={!advancedFeaturesEnabled || onlySelected}
                         onClick={() => onSetItemBackgrounds(
-                          selectedFlowItem.id,
+                          backgroundOwnerItem.id,
                           checked
-                            ? selectedFlowItem.backgroundIds.filter((backgroundId) => backgroundId !== background.id)
-                            : [...selectedFlowItem.backgroundIds, background.id]
+                            ? backgroundOwnerItem.backgroundIds.filter((backgroundId) => backgroundId !== background.id)
+                            : [...backgroundOwnerItem.backgroundIds, background.id]
                         )}
                       >
                         <span className="dynamic-flow-background-choice-preview">
@@ -795,21 +928,36 @@ const DynamicCreationFlowPanel = ({
                     </div>
 
                     {selectedFlowItem.audioTrigger === 'appearanceDelay' && (
-                      <label className="dynamic-flow-audio-delay-field">
-                        <span>{t('control.delaySeconds')}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="600"
-                          step="0.1"
-                          value={Number((selectedFlowItem.audioDelayMs / 1000).toFixed(1))}
-                          onChange={(event) => onSetItemAudioDelay(
-                            selectedFlowItem.id,
-                            Number(event.target.value) * 1000
+                      <div
+                        className={`dynamic-flow-audio-delay-field ${advancedFeaturesEnabled ? '' : 'is-disabled'}`}
+                        role="group"
+                        aria-labelledby={audioDelayLabelId}
+                        aria-disabled={!advancedFeaturesEnabled}
+                      >
+                        <span id={audioDelayLabelId}>{t('control.delaySeconds')}</span>
+                        <div className="dynamic-flow-audio-delay-control">
+                          {advancedFeaturesEnabled ? (
+                            <IntervalWheel
+                              className="dynamic-flow-audio-delay-wheel"
+                              value={Number((selectedFlowItem.audioDelayMs / 1000).toFixed(1))}
+                              min={0}
+                              max={600}
+                              step={0.1}
+                              inputMode="decimal"
+                              allowDirectInput={false}
+                              onChange={(seconds) => onSetItemAudioDelay(
+                                selectedFlowItem.id,
+                                seconds * 1000
+                              )}
+                              ariaLabel={t('control.delaySeconds')}
+                            />
+                          ) : (
+                            <output className="dynamic-flow-audio-delay-value">
+                              {Number((selectedFlowItem.audioDelayMs / 1000).toFixed(1))}
+                            </output>
                           )}
-                          disabled={!advancedFeaturesEnabled}
-                        />
-                      </label>
+                        </div>
+                      </div>
                     )}
 
                     {selectedFlowItem.audioTrigger === 'targetArrival' && selectedFlowItem.audioTargetMissing && (

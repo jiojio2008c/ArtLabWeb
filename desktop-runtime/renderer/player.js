@@ -1529,11 +1529,10 @@ const getMotionTransform = (item, itemIndex, now, animationElapsedMs) => {
       const radiusY = percent * STAGE_HEIGHT * 0.18
       const x = Math.cos(phase) * radiusX
       const y = Math.sin(phase) * radiusY
-      const depth = (Math.sin(phase) + 1) / 2
       return {
         x,
         y,
-        scale: lerp(0.82, 1.2, depth),
+        scale: 1,
         rotation: 0
       }
     }
