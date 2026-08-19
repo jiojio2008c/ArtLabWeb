@@ -1465,6 +1465,24 @@
   height: 10px;
 }
 
+.dynamic-flow-panel .dynamic-flow-item-select > .dynamic-item-bubble-thumbnail,
+.dynamic-flow-panel .dynamic-flow-background-object-select > .dynamic-item-bubble-thumbnail,
+.dynamic-flow-panel .dynamic-flow-background-object-summary > .dynamic-item-bubble-thumbnail {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(23, 60, 70, 0.08);
+  border-radius: 12px;
+  background: rgba(236, 243, 242, 0.78);
+}
+
+.dynamic-flow-panel .dynamic-flow-audio-object-preview > .dynamic-item-bubble-thumbnail {
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(23, 60, 70, 0.08);
+  border-radius: 12px;
+  background: rgba(236, 243, 242, 0.78);
+}
+
 .dynamic-flow-panel .dynamic-flow-audio-assignment {
   position: relative;
   margin-top: 11px;

@@ -97,7 +97,9 @@ const toItemPayload = (item: DynamicItem) => {
   }
 
   if (isDynamicBubbleItem(item)) {
-    const imageAssetId = item.bubble.image?.id ?? null
+    const imageAssetId = item.bubble.bubbleType === 'thought'
+      ? item.bubble.image?.id ?? null
+      : null
     return {
       ...commonPayload,
       assetId: null,
@@ -115,7 +117,10 @@ const toItemPayload = (item: DynamicItem) => {
         fontSizePx: item.bubble.fontSizePx,
         textColor: item.bubble.textColor,
         surfaceId: item.bubble.surfaceId,
+        titleMaskId: item.bubble.titleMaskId,
         paletteId: item.bubble.paletteId,
+        maskColor: item.bubble.maskColor,
+        maskOpacity: item.bubble.maskOpacity,
         widthPx: item.bubble.widthPx,
         heightPx: item.bubble.heightPx,
         imageAssetId
@@ -217,7 +222,8 @@ const getGroupAssetSignature = (group: DynamicGroup) => {
     .sort((a, b) => a.order - b.order)
     .map((item) => {
       if (isDynamicBubbleItem(item)) {
-        const { image, ...bubbleContent } = item.bubble
+        const { image: bubbleImage, ...bubbleContent } = item.bubble
+        const image = item.bubble.bubbleType === 'thought' ? bubbleImage : undefined
         return [
           'bubble',
           item.id,
@@ -314,9 +320,10 @@ const syncDynamicGroupToReceiver = async ({
   const syncPromise = (async () => {
     const backgrounds = getBackgrounds(group)
     const audioLibrary = group.audioLibrary ?? []
-    const itemAssetCount = group.items.reduce((count, item) => (
-      count + (isDynamicMediaItem(item) || item.bubble.image ? 1 : 0)
-    ), 0)
+    const itemAssetCount = group.items.reduce((count, item) => {
+      if (isDynamicMediaItem(item)) return count + 1
+      return count + (item.bubble.bubbleType === 'thought' && item.bubble.image ? 1 : 0)
+    }, 0)
     const total = backgrounds.length + itemAssetCount + audioLibrary.length
     let current = 0
 
@@ -336,7 +343,11 @@ const syncDynamicGroupToReceiver = async ({
 
     const sortedItems = group.items.slice().sort((a, b) => a.order - b.order)
     for (const item of sortedItems) {
-      const media = isDynamicMediaItem(item) ? item.media : item.bubble.image
+      const media = isDynamicMediaItem(item)
+        ? item.media
+        : item.bubble.bubbleType === 'thought'
+          ? item.bubble.image
+          : undefined
       if (!media) continue
 
       current += 1

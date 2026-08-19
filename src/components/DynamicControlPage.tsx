@@ -5,7 +5,6 @@ import {
   Ban,
   CheckCircle2,
   Check,
-  Cloud,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -78,7 +77,6 @@ import {
   type DynamicBackground,
   type DynamicBackgroundPlayMode,
   type DynamicBackgroundTransition,
-  type DynamicBubbleContent,
   type DynamicBubbleInput,
   type DynamicCopyField,
   type DynamicGroup,
@@ -1527,8 +1525,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     ? sortedItems
     : displayedItems
   const selectedItem = selectableItems.find((item) => item.id === selectedItemId) ?? selectableItems[0]
-  const editingBubbleItem = editingBubbleItemId
-    ? sortedItems.find((item) => item.id === editingBubbleItemId && isDynamicBubbleItem(item))
+  const editingBubbleItemCandidate = editingBubbleItemId
+    ? sortedItems.find((item) => item.id === editingBubbleItemId)
+    : undefined
+  const editingBubbleItem = editingBubbleItemCandidate && isDynamicBubbleItem(editingBubbleItemCandidate)
+    ? editingBubbleItemCandidate
     : undefined
   const displayedItemsAudioKey = displayedItems.map((item) => [
     item.id,
@@ -4052,6 +4053,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   const openImagePreview = () => {
     if (!selectedItem) return
+    if (isDynamicBubbleItem(selectedItem)) {
+      setEditingBubbleItemId(selectedItem.id)
+      setBubbleEditorOpen(true)
+      setToolOpen(false)
+      setBackgroundPanelOpen(false)
+      setAppearPanelOpen(false)
+      setRightPanelCollapsed(false)
+      return
+    }
     resetImagePreview()
     setIsImagePreviewOpen(true)
   }
@@ -5070,9 +5080,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   const closeBubbleEditor = () => {
     if (isSavingBubble) return
+    const returnToProperties = Boolean(editingBubbleItemId)
     setBubbleEditorOpen(false)
     setEditingBubbleItemId('')
-    window.requestAnimationFrame(() => addItemButtonRef.current?.focus({ preventScroll: true }))
+    if (returnToProperties) {
+      setToolOpen(true)
+      setRightPanelCollapsed(false)
+    }
+    window.requestAnimationFrame(() => {
+      const focusTarget = returnToProperties
+        ? propertyThumbnailButtonRef.current
+        : addItemButtonRef.current
+      focusTarget?.focus({ preventScroll: true })
+    })
   }
 
   const uploadBubbleImage = (file: File, nextGroup: DynamicGroup, itemId: string) => {
@@ -5106,9 +5126,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       flushPendingTransformPersist()
       const input: DynamicBubbleInput = {
         ...value,
-        name: value.title.trim()
-          || value.bodyText.trim().split(/\r?\n/, 1)[0]?.slice(0, 28)
-          || (value.bubbleType === 'thought' ? '想象气泡' : '对话气泡')
+        name: value.bodyText.trim().split(/\r?\n/, 1)[0]?.slice(0, 28)
+          || value.title.trim()
+          || (value.bubbleType === 'title'
+            ? '标题遮罩'
+            : value.bubbleType === 'thought' ? '想象气泡' : '对话气泡')
       }
       const currentGroup = latestGroupRef.current
       const nextGroup = editingBubbleItem
@@ -5130,6 +5152,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       setRightPanelCollapsed(false)
       sendGroupStateSync(nextGroup)
       playUiSound('success')
+      window.requestAnimationFrame(() => propertyThumbnailButtonRef.current?.focus({ preventScroll: true }))
     } finally {
       setIsSavingBubble(false)
     }
@@ -5874,7 +5897,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const endPointLabel = String(t('control.endPoint'))
               const itemPreviewSize = getDynamicItemPreviewSize(
                 targetEditingItem,
-                itemImageSizes[targetEditingItem.media.id],
+                isDynamicMediaItem(targetEditingItem)
+                  ? itemImageSizes[targetEditingItem.media.id]
+                  : undefined,
                 stageSize
               )
               const itemScale = Math.max(Math.abs(targetEditingItem.scale), MIN_ITEM_SCALE)
@@ -5967,7 +5992,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           transform: `rotate(${targetEditingItem.rotation}deg) scale(${getItemFlipX(targetEditingItem) ? -targetEditingItem.scale : targetEditingItem.scale}, ${getItemFlipY(targetEditingItem) ? -targetEditingItem.scale : targetEditingItem.scale})`
                         }}
                       >
-                        <img src={targetEditingItem.media.url} alt="" draggable={false} decoding="async" />
+                        {isDynamicBubbleItem(targetEditingItem) ? (
+                          <DynamicBubbleVisual
+                            bubble={toDynamicBubbleDraft(targetEditingItem.bubble)}
+                            className="dynamic-stage-bubble-visual"
+                          />
+                        ) : (
+                          <img src={targetEditingItem.media.url} alt="" draggable={false} decoding="async" />
+                        )}
                       </span>
                     </span>
                   </div>
@@ -6030,7 +6062,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const animationStartedAtMs = playbackEpoch
                 ? playbackEpoch.startedAt + appearanceSchedule!.activeStartMs
                 : undefined
-              const itemPreviewSize = getDynamicItemPreviewSize(item, itemImageSizes[item.media.id], stageSize)
+              const cachedItemSize = isDynamicMediaItem(item)
+                ? itemImageSizes[item.media.id]
+                : undefined
+              const itemReady = isDynamicBubbleItem(item)
+                || Boolean(readyItemMediaIds[item.media.id])
+              const itemPreviewSize = getDynamicItemPreviewSize(item, cachedItemSize, stageSize)
               const compositorSize = {
                 width: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.width),
                 height: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.height)
@@ -6059,7 +6096,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <div className="dynamic-stage-item-wave">
                     <DynamicStageAppearance
                       previewing={previewMode}
-                      ready={Boolean(readyItemMediaIds[item.media.id])}
+                      ready={itemReady}
                       appearDelayMs={appearDelayMs}
                       appearAnimation={displayedAppearAnimation}
                       track={getItemTrack(item)}
@@ -6072,7 +6109,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     >
                       <DynamicStageTarget
                         previewing={previewMode}
-                        ready={Boolean(readyItemMediaIds[item.media.id])}
+                        ready={itemReady}
                         enabled={targetEnabled}
                         loop={targetEditingItemId === item.id ? targetDraftLoop : item.targetLoop === true}
                         editing={targetEditingItemId === item.id}
@@ -6113,20 +6150,31 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                                 height: `${itemPreviewSize.height}px`
                               }}
                             >
-                              <DynamicStageMedia
-                                src={item.media.url}
-                                name={item.name}
-                                mediaId={item.media.id}
-                                animationId={resolvedAnimationId}
-                                previewMode={previewMode}
-                                replayId={previewReplayId}
-                                playbackKey={playbackEpoch?.key}
-                                animationStartedAtMs={animationStartedAtMs}
-                                active={!previewMode && selectedItem?.id === item.id}
-                                copyPulse={copyFeedbackItemId === item.id}
-                                onImageLoad={handleItemImageLoad}
-                                onImageError={handleItemImageError}
-                              />
+                              {isDynamicBubbleItem(item) ? (
+                                <DynamicBubbleVisual
+                                  bubble={toDynamicBubbleDraft(item.bubble)}
+                                  animate={previewMode}
+                                  playbackKey={playbackEpoch?.key ?? previewReplayId}
+                                  revealDelayMs={Math.max(0, motionDelayMs)}
+                                  className={`dynamic-stage-bubble-visual ${!previewMode && selectedItem?.id === item.id ? 'is-active' : ''} ${copyFeedbackItemId === item.id ? 'is-copy-pulse' : ''}`}
+                                  ariaLabel={item.name}
+                                />
+                              ) : (
+                                <DynamicStageMedia
+                                  src={item.media.url}
+                                  name={item.name}
+                                  mediaId={item.media.id}
+                                  animationId={resolvedAnimationId}
+                                  previewMode={previewMode}
+                                  replayId={previewReplayId}
+                                  playbackKey={playbackEpoch?.key}
+                                  animationStartedAtMs={animationStartedAtMs}
+                                  active={!previewMode && selectedItem?.id === item.id}
+                                  copyPulse={copyFeedbackItemId === item.id}
+                                  onImageLoad={handleItemImageLoad}
+                                  onImageError={handleItemImageError}
+                                />
+                              )}
                             </div>
                           </div>
                         </DynamicStageItemAnimation>
@@ -6327,7 +6375,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       </button>
                       <button type="button" role="menuitem" onClick={() => openBubbleEditor()}>
                         <span className="dynamic-add-item-menu-icon is-bubble"><MessageCircleMore aria-hidden="true" /></span>
-                        <span><strong>添加气泡</strong><small>对话或想象内容</small></span>
+                        <span><strong>添加气泡</strong><small>对话、想象或标题</small></span>
                       </button>
                     </div>
                   </>
@@ -6417,12 +6465,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   type="button"
                   className="dynamic-property-thumbnail-button"
                   onClick={openImagePreview}
-                  aria-label={t('control.previewNamed', { name: selectedItem.name })}
-                  title={t('control.previewImage')}
+                  aria-label={isDynamicBubbleItem(selectedItem)
+                    ? `编辑${selectedItem.name}`
+                    : t('control.previewNamed', { name: selectedItem.name })}
+                  title={isDynamicBubbleItem(selectedItem)
+                    ? selectedItem.bubble.bubbleType === 'title' ? '编辑标题遮罩' : '编辑气泡'
+                    : t('control.previewImage')}
                 >
                   <DynamicItemThumbnail item={selectedItem} decorative />
                   <span className="dynamic-property-thumbnail-icon" aria-hidden="true">
-                    <Maximize2 size={14} strokeWidth={2.4} />
+                    {isDynamicBubbleItem(selectedItem)
+                      ? <Pencil size={14} strokeWidth={2.4} />
+                      : <Maximize2 size={14} strokeWidth={2.4} />}
                   </span>
                 </button>
                 <div className="dynamic-property-title-copy">
@@ -7173,7 +7227,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       onClick={(event) => openCopyConfirm(item.id, event.currentTarget)}
                       aria-haspopup="dialog"
                     >
-                      <img src={item.media.url} alt="" draggable={false} />
+                      <DynamicItemThumbnail item={item} decorative />
                       <span className="dynamic-copy-source-copy">
                         <strong>{item.name}</strong>
                         <small>{t('control.sourceObject')}</small>
@@ -7208,7 +7262,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               }}
               aria-hidden="true"
             >
-              <img src={draggedItem.media.url} alt="" />
+              <DynamicItemThumbnail item={draggedItem} decorative />
               <span>
                 <strong>{draggedItem.name}</strong>
                 <small>{t('control.layerSummary', { motion: motionLabel, animation: draggedItem.animationId })}</small>
@@ -7668,7 +7722,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         </div>
       )}
 
-      {isImagePreviewOpen && selectedItem && (
+      {isImagePreviewOpen && selectedItem && isDynamicMediaItem(selectedItem) && (
         <div className="dynamic-modal-overlay dynamic-image-preview-overlay" role="presentation">
           <div className="settings-scrim" aria-hidden="true" />
           <section
@@ -7758,13 +7812,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
             <div className="dynamic-copy-route">
               <div className="dynamic-copy-route-item">
-                <img src={copySourceItem.media.url} alt={copySourceItem.name} />
+                <DynamicItemThumbnail item={copySourceItem} />
                 <span>{t('control.source')}</span>
                 <strong>{copySourceItem.name}</strong>
               </div>
               <span className="dynamic-copy-route-arrow" aria-hidden="true">→</span>
               <div className="dynamic-copy-route-item target">
-                <img src={selectedItem.media.url} alt={selectedItem.name} />
+                <DynamicItemThumbnail item={selectedItem} />
                 <span>{t('control.target')}</span>
                 <strong>{selectedItem.name}</strong>
               </div>
@@ -7934,13 +7988,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
             <div className="dynamic-link-route" aria-label={t('control.linkageRelation')}>
               <span className="is-source">
-                <img src={selectedItem.media.url} alt="" draggable={false} />
+                <DynamicItemThumbnail item={selectedItem} decorative />
                 <span><small>{t('control.linkageTrigger')}</small><strong>{selectedItem.name}</strong></span>
               </span>
               <ArrowRight size={22} strokeWidth={2.5} aria-hidden="true" />
               <span className={`is-target ${pendingLinkTargetItem ? '' : 'is-empty'}`}>
                 {pendingLinkTargetItem ? (
-                  <img src={pendingLinkTargetItem.media.url} alt="" draggable={false} />
+                  <DynamicItemThumbnail item={pendingLinkTargetItem} decorative />
                 ) : (
                   <LockKeyhole size={19} strokeWidth={2.3} aria-hidden="true" />
                 )}
@@ -7964,7 +8018,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     className={pendingLinkTargetItemId === item.id ? 'active' : ''}
                     onClick={() => selectLinkTargetItem(item.id)}
                   >
-                    <img src={item.media.url} alt="" draggable={false} />
+                    <DynamicItemThumbnail item={item} decorative />
                     <span>
                       <strong>{item.name}</strong>
                       <small>{existingSource
@@ -8082,6 +8136,21 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           </section>
         </div>
       )}
+
+      <DynamicBubbleEditor
+        open={bubbleEditorOpen}
+        mode={editingBubbleItem ? 'edit' : 'create'}
+        initialValue={editingBubbleItem
+          ? toDynamicBubbleDraft(editingBubbleItem.bubble)
+          : undefined}
+        stageBackgroundUrl={displayedBackground?.type === 'image'
+          ? displayedBackground.url
+          : undefined}
+        busy={isSavingBubble}
+        resetKey={editingBubbleItem?.id ?? 'new'}
+        onCancel={closeBubbleEditor}
+        onSubmit={handleBubbleSubmit}
+      />
     </main>
   )
 }

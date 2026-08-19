@@ -4203,7 +4203,7 @@ code {
   -webkit-tap-highlight-color: transparent;
 }
 
-.dynamic-property-thumbnail-button img {
+.dynamic-property-thumbnail-button > img {
   width: 100%;
   height: 100%;
   border-radius: 0;
@@ -5428,7 +5428,7 @@ code {
 
 .dynamic-group-card img,
 .dynamic-group-card video,
-.dynamic-item-card img {
+.dynamic-item-card > img {
   width: 100%;
   height: 100%;
   display: block;
@@ -5436,7 +5436,7 @@ code {
 }
 
 .dynamic-group-name,
-.dynamic-item-card span {
+.dynamic-item-card > span:not(.dynamic-item-bubble-thumbnail) {
   position: absolute;
   left: 8px;
   right: 8px;
@@ -5845,7 +5845,7 @@ code {
   cursor: pointer;
 }
 
-.dynamic-layer-main img {
+.dynamic-layer-main > img {
   width: 54px;
   height: 48px;
   border-radius: 6px;
@@ -5853,7 +5853,7 @@ code {
   background: rgba(23, 23, 23, 0.04);
 }
 
-.dynamic-layer-main span {
+.dynamic-layer-main > span:not(.dynamic-item-bubble-thumbnail) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6467,7 +6467,7 @@ code {
   margin-left: 0;
 }
 
-.entry-item-bubble img {
+.entry-item-bubble > img {
   width: 100%;
   height: 100%;
   display: block;
@@ -7779,14 +7779,14 @@ button.ui-pressed {
 
 .dynamic-group-card img,
 .dynamic-group-card video,
-.dynamic-item-card img {
+.dynamic-item-card > img {
   object-fit: contain;
   padding: 8px;
   background: #f7f9f9;
 }
 
 .dynamic-group-name,
-.dynamic-item-card span {
+.dynamic-item-card > span:not(.dynamic-item-bubble-thumbnail) {
   left: 7px;
   right: 7px;
   bottom: 7px;
@@ -8046,7 +8046,7 @@ button.ui-pressed {
   text-align: center;
 }
 
-.dynamic-layer-main img {
+.dynamic-layer-main > img {
   width: 52px;
   height: 52px;
   object-fit: contain;
@@ -8280,7 +8280,7 @@ button.ui-pressed {
   cursor: pointer;
 }
 
-.copy-source-button img {
+.copy-source-button > img {
   width: 48px;
   height: 48px;
   border-radius: 6px;
@@ -8288,7 +8288,7 @@ button.ui-pressed {
   background: #f1f4f4;
 }
 
-.copy-source-button > span:not(.copy-source-check) {
+.copy-source-button > span:not(.copy-source-check, .dynamic-item-bubble-thumbnail) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8437,7 +8437,7 @@ button.ui-pressed {
   background: rgba(18, 169, 201, 0.06);
 }
 
-.dynamic-copy-route-item img {
+.dynamic-copy-route-item > img {
   grid-row: 1 / 3;
   width: 54px;
   height: 54px;
@@ -8446,7 +8446,7 @@ button.ui-pressed {
   background: #f0f3f3;
 }
 
-.dynamic-copy-route-item span {
+.dynamic-copy-route-item > span:not(.dynamic-item-bubble-thumbnail) {
   color: var(--muted);
   font-size: 10px;
   font-weight: 900;
@@ -8629,7 +8629,7 @@ button.ui-pressed {
     min-height: 46px;
   }
 
-  .dynamic-layer-main img {
+  .dynamic-layer-main > img {
     width: 46px;
     height: 46px;
   }
@@ -8938,7 +8938,7 @@ button.ui-pressed {
   display: none;
 }
 
-.dynamic-layer-main img {
+.dynamic-layer-main > img {
   width: 42px;
   height: 48px;
   border-radius: 4px;
@@ -9245,7 +9245,7 @@ button.ui-pressed {
     min-height: 50px;
   }
 
-  .dynamic-layer-main img {
+  .dynamic-layer-main > img {
     width: 40px;
     height: 44px;
   }
@@ -9520,7 +9520,7 @@ button.ui-pressed {
   -webkit-backdrop-filter: blur(18px) saturate(1.16);
 }
 
-.dynamic-layer-drag-preview img {
+.dynamic-layer-drag-preview > img {
   width: 44px;
   height: 48px;
   border-radius: 4px;
@@ -9528,7 +9528,7 @@ button.ui-pressed {
   background: #171b19;
 }
 
-.dynamic-layer-drag-preview span {
+.dynamic-layer-drag-preview > span:not(.dynamic-item-bubble-thumbnail) {
   min-width: 0;
   display: grid;
   gap: 4px;
@@ -9906,7 +9906,7 @@ button.ui-pressed {
   background: #fff;
 }
 
-.dynamic-control-screen .dynamic-layer-main img {
+.dynamic-control-screen .dynamic-layer-main > img {
   background: #f2f5f5;
 }
 
@@ -18981,5 +18981,359 @@ button.ui-pressed {
   .dynamic-control-screen .dynamic-layer-children-toggle,
   .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-arrow {
     transition: none;
+  }
+}
+
+.dynamic-control-screen .dynamic-add-item-menu-anchor {
+  position: relative;
+  z-index: 90;
+  min-width: 40px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu-scrim {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(15, 29, 28, 0.08);
+  cursor: default;
+  touch-action: manipulation;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 9px);
+  inset-inline-end: 0;
+  width: min(264px, calc(100vw - 32px));
+  min-width: 224px;
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(5, 125, 152, 0.2);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 18px 38px rgba(24, 48, 43, 0.2), 0 0 0 3px rgba(18, 169, 201, 0.08);
+  backdrop-filter: blur(18px) saturate(1.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+  animation: dynamic-add-item-menu-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--ink);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button:hover,
+.dynamic-control-screen .dynamic-add-item-menu > button:focus-visible {
+  border-color: rgba(5, 125, 152, 0.2);
+  background: rgba(18, 169, 201, 0.08);
+  outline: none;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button:active {
+  transform: scale(0.985);
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button strong,
+.dynamic-control-screen .dynamic-add-item-menu > button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button strong {
+  color: #243933;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button small {
+  color: #74827c;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #087f75;
+  background: rgba(18, 169, 201, 0.12);
+}
+
+.dynamic-control-screen .dynamic-add-item-menu-icon.is-bubble {
+  color: #7567b4;
+  background: rgba(117, 103, 180, 0.13);
+}
+
+.dynamic-control-screen .dynamic-add-item-menu-icon svg {
+  width: 21px;
+  height: 21px;
+  stroke-width: 2.2;
+}
+
+.dynamic-control-screen .dynamic-add-item-menu > button:focus-visible .dynamic-add-item-menu-icon {
+  box-shadow: 0 0 0 3px rgba(18, 169, 201, 0.2);
+}
+
+.dynamic-item-bubble-thumbnail {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    linear-gradient(145deg, rgba(237, 247, 245, 0.96), rgba(226, 237, 233, 0.92));
+  isolation: isolate;
+}
+
+.dynamic-item-bubble-thumbnail > .dynamic-bubble-visual {
+  width: 94%;
+  height: auto;
+  max-width: 100%;
+  max-height: 88%;
+  filter: drop-shadow(0 4px 7px rgba(24, 55, 48, 0.16));
+}
+
+.dynamic-item-bubble-thumbnail > .dynamic-bubble-visual .dynamic-bubble-surface {
+  border-width: max(1px, 0.42cqw);
+}
+
+.dynamic-item-bubble-thumbnail > .dynamic-bubble-visual .dynamic-bubble-body {
+  font-size: max(8px, var(--dynamic-bubble-font-size));
+}
+
+.dynamic-item-bubble-thumbnail > .dynamic-bubble-visual .dynamic-bubble-title-row strong {
+  font-size: max(7px, var(--dynamic-bubble-font-size));
+}
+
+.dynamic-item-bubble-thumbnail > .dynamic-bubble-visual .dynamic-bubble-title-row {
+  min-height: 20%;
+}
+
+.dynamic-item-bubble-thumbnail-badge {
+  position: absolute;
+  z-index: 5;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  color: #fff;
+  background: #7567b4;
+  box-shadow: 0 2px 6px rgba(28, 42, 39, 0.22);
+  pointer-events: none;
+}
+
+.dynamic-item-bubble-thumbnail-badge svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.6;
+}
+
+.dynamic-item-card > .dynamic-item-bubble-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.entry-item-bubble > .dynamic-item-bubble-thumbnail {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.entry-item-bubble > .dynamic-item-bubble-thumbnail .dynamic-item-bubble-thumbnail-badge {
+  display: none;
+}
+
+.dynamic-control-screen .dynamic-layer-main > .dynamic-item-bubble-thumbnail {
+  width: 42px;
+  height: 48px;
+}
+
+.dynamic-control-screen .dynamic-property-thumbnail-button > .dynamic-item-bubble-thumbnail,
+.dynamic-control-screen .dynamic-transform-live-preview-object > .dynamic-item-bubble-thumbnail {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.dynamic-control-screen .dynamic-linkage-relation-thumbnail > .dynamic-item-bubble-thumbnail {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.dynamic-control-screen .dynamic-linkage-incoming > button > .dynamic-item-bubble-thumbnail,
+.dynamic-control-screen .dynamic-link-route > span > .dynamic-item-bubble-thumbnail {
+  border-radius: inherit;
+}
+
+.dynamic-control-screen .dynamic-linkage-incoming > button > .dynamic-item-bubble-thumbnail {
+  width: 36px;
+  height: 36px;
+}
+
+.dynamic-control-screen .dynamic-link-route > span > .dynamic-item-bubble-thumbnail {
+  width: 46px;
+  height: 46px;
+}
+
+.dynamic-control-screen .dynamic-link-trigger-list > button > .dynamic-item-bubble-thumbnail {
+  width: 52px;
+  height: 48px;
+}
+
+.dynamic-control-screen .copy-source-button > .dynamic-item-bubble-thumbnail {
+  width: 46px;
+  height: 48px;
+  border-radius: 6px;
+}
+
+.dynamic-control-screen .dynamic-copy-route-item > .dynamic-item-bubble-thumbnail {
+  grid-row: 1 / 3;
+  width: 54px;
+  height: 54px;
+  border-radius: 7px;
+}
+
+.dynamic-control-screen .dynamic-layer-drag-preview > .dynamic-item-bubble-thumbnail {
+  width: 44px;
+  height: 48px;
+  border-radius: 4px;
+  background: #171b19;
+}
+
+.dynamic-control-screen .dynamic-target-origin-ghost .dynamic-stage-bubble-visual,
+.dynamic-control-screen .dynamic-stage-item-visual-frame > .dynamic-stage-bubble-visual {
+  width: 100%;
+  height: 100%;
+  min-width: 1px;
+  min-height: 1px;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: auto;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.18));
+}
+
+.dynamic-control-screen .dynamic-stage-item-visual-frame:has(> .dynamic-stage-bubble-visual),
+.dynamic-control-screen .dynamic-target-origin-ghost-transform:has(> .dynamic-stage-bubble-visual) {
+  overflow: visible;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open
+  > .dynamic-layer-panel:has(.dynamic-add-item-menu) {
+  overflow: visible;
+}
+
+.dynamic-control-screen .dynamic-stage-bubble-visual.is-active {
+  outline: 3px solid var(--aqua);
+  outline-offset: 4px;
+}
+
+.dynamic-control-screen .dynamic-stage-bubble-visual.is-copy-pulse {
+  animation: dynamic-stage-bubble-copy-pulse 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes dynamic-add-item-menu-in {
+  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes dynamic-stage-bubble-copy-pulse {
+  0% {
+    outline: 3px solid rgba(47, 156, 100, 0);
+    outline-offset: 4px;
+  }
+  45% {
+    outline: 5px solid rgba(47, 156, 100, 0.95);
+    outline-offset: 10px;
+  }
+  100% {
+    outline: 3px solid rgba(18, 169, 201, 0.95);
+    outline-offset: 4px;
+  }
+}
+
+@media (max-width: 760px), (orientation: portrait) and (max-width: 1020px) {
+  .dynamic-control-screen .dynamic-add-item-menu {
+    width: min(252px, calc(100vw - 24px));
+  }
+
+  .dynamic-control-screen .dynamic-add-item-menu > button {
+    min-height: 62px;
+  }
+
+  .dynamic-control-screen .dynamic-layer-main > .dynamic-item-bubble-thumbnail {
+    width: 40px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dynamic-control-screen .dynamic-add-item-menu {
+    inset-inline-end: -5px;
+    width: min(240px, calc(100vw - 20px));
+  }
+
+  .dynamic-item-bubble-thumbnail-badge {
+    right: 2px;
+    bottom: 2px;
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-control-screen .dynamic-add-item-menu,
+  .dynamic-control-screen .dynamic-stage-bubble-visual.is-copy-pulse {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
 }

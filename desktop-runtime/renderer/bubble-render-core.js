@@ -4,13 +4,41 @@ const MIN_BUBBLE_WIDTH = 220
 const MAX_BUBBLE_WIDTH = 1600
 const MIN_BUBBLE_HEIGHT = 140
 const MAX_BUBBLE_HEIGHT = 1000
+const DEFAULT_TITLE_WIDTH = 900
+const DEFAULT_TITLE_HEIGHT = 220
 
 export const BUBBLE_STYLE_IDS = Object.freeze([
-  'dialogue-rounded',
-  'dialogue-soft',
-  'dialogue-comic',
-  'thought-cloud',
-  'thought-soft'
+  'dialogue-rounded-left',
+  'dialogue-rounded-right',
+  'dialogue-soft-left',
+  'dialogue-soft-right',
+  'dialogue-comic-left',
+  'dialogue-comic-right',
+  'thought-cloud-left',
+  'thought-cloud-right',
+  'thought-soft-left',
+  'thought-soft-right',
+  'title-rounded',
+  'title-pill',
+  'title-ticket',
+  'title-underline',
+  'title-none'
+])
+
+export const BUBBLE_TITLE_STYLE_IDS = Object.freeze([
+  'title-rounded',
+  'title-pill',
+  'title-ticket',
+  'title-underline',
+  'title-none'
+])
+
+export const BUBBLE_TITLE_MASK_IDS = Object.freeze([
+  'rounded',
+  'pill',
+  'ticket',
+  'underline',
+  'none'
 ])
 
 export const BUBBLE_PALETTE_IDS = Object.freeze([
@@ -22,8 +50,17 @@ export const BUBBLE_PALETTE_IDS = Object.freeze([
 ])
 
 const STYLE_BY_TYPE = Object.freeze({
-  dialogue: 'dialogue-rounded',
-  thought: 'thought-cloud'
+  dialogue: 'dialogue-rounded-right',
+  thought: 'thought-cloud-right',
+  title: 'title-rounded'
+})
+
+const LEGACY_STYLE_ALIASES = Object.freeze({
+  'dialogue-rounded': 'dialogue-rounded-right',
+  'dialogue-soft': 'dialogue-soft-right',
+  'dialogue-comic': 'dialogue-comic-right',
+  'thought-cloud': 'thought-cloud-right',
+  'thought-soft': 'thought-soft-right'
 })
 
 const PALETTE_BY_ID = Object.freeze({
@@ -69,33 +106,70 @@ const finiteNumber = (value, fallback) => {
   return Number.isFinite(number) ? number : fallback
 }
 
+const getStyleBaseId = (styleId) => String(styleId || '').replace(/-(left|right)$/, '')
+
+const getStyleDirection = (styleId) => String(styleId || '').endsWith('-left') ? 'left' : 'right'
+
 export const normalizeBubble = (value = {}) => {
-  const bubbleType = value.bubbleType === 'thought' ? 'thought' : 'dialogue'
+  const bubbleType = value.bubbleType === 'thought'
+    ? 'thought'
+    : value.bubbleType === 'title'
+      ? 'title'
+      : 'dialogue'
   const requestedStyle = String(value.styleId || '').trim()
-  const styleId = BUBBLE_STYLE_IDS.includes(requestedStyle)
-    && (bubbleType === 'thought' ? requestedStyle.startsWith('thought-') : requestedStyle.startsWith('dialogue-'))
-    ? requestedStyle
+  const canonicalStyle = LEGACY_STYLE_ALIASES[requestedStyle] ?? requestedStyle
+  const hasMatchingStyle = bubbleType === 'thought'
+    ? canonicalStyle.startsWith('thought-')
+    : bubbleType === 'title'
+      ? BUBBLE_TITLE_STYLE_IDS.includes(canonicalStyle)
+      : canonicalStyle.startsWith('dialogue-')
+  const styleId = BUBBLE_STYLE_IDS.includes(canonicalStyle)
+    && hasMatchingStyle
+    ? canonicalStyle
     : STYLE_BY_TYPE[bubbleType]
   const paletteId = BUBBLE_PALETTE_IDS.includes(value.paletteId) ? value.paletteId : (bubbleType === 'thought' ? 'ink' : 'ocean')
+  const palette = PALETTE_BY_ID[paletteId] ?? PALETTE_BY_ID.ocean
+  const titleMaskId = BUBBLE_TITLE_MASK_IDS.includes(value.titleMaskId) ? value.titleMaskId : 'rounded'
   const revealMode = value.revealMode === 'typewriter' || value.revealMode === 'character'
     ? 'typewriter'
     : 'all'
+  const rawMaskOpacity = value.maskOpacity === undefined || value.maskOpacity === null || value.maskOpacity === ''
+    ? 0.92
+    : finiteNumber(value.maskOpacity, 0.92)
+  const maskOpacity = clamp(rawMaskOpacity, 0, 1)
+  const legacyTitle = String(value.title ?? '').slice(0, 120)
+  const requestedBodyText = String(value.bodyText ?? value.text ?? '').slice(0, 4000)
+  const defaultWidth = bubbleType === 'thought'
+    ? 940
+    : bubbleType === 'title'
+      ? DEFAULT_TITLE_WIDTH
+      : DEFAULT_BUBBLE_WIDTH
+  const defaultHeight = bubbleType === 'thought'
+    ? 680
+    : bubbleType === 'title'
+      ? DEFAULT_TITLE_HEIGHT
+      : DEFAULT_BUBBLE_HEIGHT
   return {
     schemaVersion: Math.max(1, Math.round(finiteNumber(value.schemaVersion ?? value.version, 1))),
     bubbleType,
     styleId,
-    title: String(value.title ?? '').slice(0, 120),
-    bodyText: String(value.bodyText ?? value.text ?? '').slice(0, 4000),
+    title: bubbleType === 'title' ? '' : legacyTitle,
+    bodyText: bubbleType === 'title' && !requestedBodyText.trim() ? legacyTitle : requestedBodyText,
     revealMode,
     revealIntervalMs: clamp(Math.round(finiteNumber(value.revealIntervalMs, 80)), 20, 1000),
     fontSizePx: clamp(Math.round(finiteNumber(value.fontSizePx, 52)), 18, 120),
     textColor: typeof value.textColor === 'string' && value.textColor.trim()
       ? value.textColor.trim().slice(0, 32)
       : '',
+    titleMaskId,
     paletteId,
-    widthPx: clamp(Math.round(finiteNumber(value.widthPx, bubbleType === 'thought' ? 940 : DEFAULT_BUBBLE_WIDTH)), MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH),
-    heightPx: clamp(Math.round(finiteNumber(value.heightPx, bubbleType === 'thought' ? 680 : DEFAULT_BUBBLE_HEIGHT)), MIN_BUBBLE_HEIGHT, MAX_BUBBLE_HEIGHT),
-    imageAssetId: typeof value.imageAssetId === 'string' && value.imageAssetId.trim()
+    maskColor: typeof value.maskColor === 'string' && value.maskColor.trim()
+      ? value.maskColor.trim().slice(0, 32)
+      : palette.titleSurface,
+    maskOpacity,
+    widthPx: clamp(Math.round(finiteNumber(value.widthPx, defaultWidth)), MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH),
+    heightPx: clamp(Math.round(finiteNumber(value.heightPx, defaultHeight)), MIN_BUBBLE_HEIGHT, MAX_BUBBLE_HEIGHT),
+    imageAssetId: bubbleType !== 'title' && typeof value.imageAssetId === 'string' && value.imageAssetId.trim()
       ? value.imageAssetId.trim()
       : null
   }
@@ -112,7 +186,11 @@ export const getBubblePalette = (bubble) => PALETTE_BY_ID[normalizeBubble(bubble
 
 export const getBubbleSurface = (bubble) => {
   const normalized = normalizeBubble(bubble)
-  return SURFACE_BY_STYLE[normalized.styleId] ?? SURFACE_BY_STYLE[STYLE_BY_TYPE[normalized.bubbleType]]
+  if (normalized.bubbleType === 'title') {
+    return { surface: normalized.maskColor, border: 'transparent' }
+  }
+  return SURFACE_BY_STYLE[getStyleBaseId(normalized.styleId)]
+    ?? SURFACE_BY_STYLE[getStyleBaseId(STYLE_BY_TYPE[normalized.bubbleType])]
 }
 
 export const getGraphemes = (value) => {
@@ -196,21 +274,24 @@ const roundedPath = (context, x, y, width, height, radius) => {
 }
 
 const drawTail = (context, bubble, surface, width, height) => {
-  if (bubble.styleId === 'dialogue-soft') {
+  const baseStyleId = getStyleBaseId(bubble.styleId)
+  const direction = getStyleDirection(bubble.styleId)
+  const directionX = (x) => direction === 'left' ? width - x : x
+  if (baseStyleId === 'dialogue-soft') {
     context.beginPath()
-    context.moveTo(width * 0.74, height - 3)
-    context.quadraticCurveTo(width * 0.77, height + 38, width * 0.62, height + 4)
+    context.moveTo(directionX(width * 0.74), height - 3)
+    context.quadraticCurveTo(directionX(width * 0.77), height + 38, directionX(width * 0.62), height + 4)
     context.closePath()
-  } else if (bubble.styleId === 'dialogue-comic') {
+  } else if (baseStyleId === 'dialogue-comic') {
     context.beginPath()
-    context.moveTo(width * 0.2, height - 2)
-    context.lineTo(width * 0.1, height + 35)
-    context.lineTo(width * 0.34, height - 1)
+    context.moveTo(directionX(width * 0.8), height - 2)
+    context.lineTo(directionX(width * 0.9), height + 35)
+    context.lineTo(directionX(width * 0.66), height - 1)
     context.closePath()
   } else {
     context.beginPath()
-    context.moveTo(width * 0.22, height - 2)
-    context.quadraticCurveTo(width * 0.18, height + 30, width * 0.37, height - 2)
+    context.moveTo(directionX(width * 0.78), height - 2)
+    context.quadraticCurveTo(directionX(width * 0.82), height + 30, directionX(width * 0.63), height - 2)
     context.closePath()
   }
   context.fillStyle = surface.surface
@@ -219,11 +300,13 @@ const drawTail = (context, bubble, surface, width, height) => {
   context.stroke()
 }
 
-const drawThoughtCloud = (context, surface, width, height) => {
+const drawThoughtCloud = (context, bubble, surface, width, height) => {
+  const direction = getStyleDirection(bubble.styleId)
+  const directionX = (x) => direction === 'left' ? width - x : x
   const circles = [
-    [width * 0.22, height * 0.96, height * 0.09],
-    [width * 0.14, height * 1.08, height * 0.055],
-    [width * 0.08, height * 1.16, height * 0.032]
+    [directionX(width * 0.78), height * 0.96, height * 0.09],
+    [directionX(width * 0.86), height * 1.08, height * 0.055],
+    [directionX(width * 0.92), height * 1.16, height * 0.032]
   ]
   circles.forEach(([x, y, radius]) => {
     context.beginPath()
@@ -236,7 +319,8 @@ const drawThoughtCloud = (context, surface, width, height) => {
 }
 
 const drawBubbleSurface = (context, bubble, surface, width, height) => {
-  if (bubble.styleId === 'thought-cloud') {
+  const baseStyleId = getStyleBaseId(bubble.styleId)
+  if (baseStyleId === 'thought-cloud') {
     context.beginPath()
     context.moveTo(width * 0.16, height * 0.86)
     context.bezierCurveTo(width * 0.02, height * 0.83, width * 0.02, height * 0.58, width * 0.13, height * 0.51)
@@ -247,9 +331,9 @@ const drawBubbleSurface = (context, bubble, surface, width, height) => {
     context.bezierCurveTo(width * 0.59, height * 0.99, width * 0.34, height * 0.98, width * 0.25, height * 0.85)
     context.closePath()
   } else {
-    const radius = bubble.styleId === 'dialogue-comic'
+    const radius = baseStyleId === 'dialogue-comic'
       ? 28
-      : bubble.styleId === 'dialogue-soft'
+      : baseStyleId === 'dialogue-soft'
         ? 70
         : 48
     roundedPath(context, 0, 0, width, height, radius)
@@ -259,6 +343,42 @@ const drawBubbleSurface = (context, bubble, surface, width, height) => {
   context.shadowColor = 'transparent'
   context.strokeStyle = surface.border
   context.stroke()
+}
+
+const drawTitleMask = (context, bubble, palette, x, y, width, height, radius) => {
+  if (bubble.titleMaskId === 'none') return
+
+  if (bubble.titleMaskId === 'underline') {
+    context.save()
+    context.beginPath()
+    context.moveTo(x, y + height)
+    context.lineTo(x + width, y + height)
+    context.strokeStyle = palette.titleSurface
+    context.lineWidth = clamp(height * 0.08, 3, 10)
+    context.stroke()
+    context.restore()
+    return
+  }
+
+  if (bubble.titleMaskId === 'ticket') {
+    const notch = Math.min(width * 0.06, height * 0.42)
+    context.beginPath()
+    context.moveTo(x, y)
+    context.lineTo(x + width - notch, y)
+    context.lineTo(x + width, y + height / 2)
+    context.lineTo(x + width - notch, y + height)
+    context.lineTo(x, y + height)
+    context.lineTo(x + notch, y + height / 2)
+    context.closePath()
+  } else {
+    roundedPath(context, x, y, width, height, bubble.titleMaskId === 'pill' ? height / 2 : radius)
+  }
+
+  context.save()
+  context.globalAlpha *= 0.52
+  context.fillStyle = palette.titleSurface
+  context.fill()
+  context.restore()
 }
 
 const drawTitle = (context, bubble, palette, x, y, width, padding) => {
@@ -274,13 +394,12 @@ const drawTitle = (context, bubble, palette, x, y, width, padding) => {
     width * 0.35,
     width * 0.88
   )
-  roundedPath(context, x + padding * 0.45, y + padding * 0.42, titleWidth, titleHeight, titleRadius)
-  context.save()
-  context.globalAlpha *= 0.52
-  context.fillStyle = palette.titleSurface
-  context.fill()
-  context.restore()
-  context.fillStyle = palette.title
+  const titleX = x + padding * 0.45
+  const titleY = y + padding * 0.42
+  drawTitleMask(context, bubble, palette, titleX, titleY, titleWidth, titleHeight, titleRadius)
+  context.fillStyle = bubble.titleMaskId === 'none' || bubble.titleMaskId === 'underline'
+    ? palette.titleSurface
+    : palette.title
   context.textAlign = 'left'
   context.textBaseline = 'middle'
   const availableTitleWidth = Math.max(1, titleWidth - titleHorizontalPadding * 2)
@@ -298,12 +417,12 @@ const drawTitle = (context, bubble, palette, x, y, width, padding) => {
     visibleTitle = `${visibleTitle}…`
     break
   }
-  context.fillText(visibleTitle, x + padding * 0.45 + titleHorizontalPadding, y + padding * 0.42 + titleHeight / 2)
+  context.fillText(visibleTitle, titleX + titleHorizontalPadding, titleY + titleHeight / 2)
   return titleHeight + padding * 0.55
 }
 
 const drawBodyText = (context, text, bubble, palette, x, y, width, height, padding) => {
-  const color = bubble.styleId === 'dialogue-comic' ? '#ffffff' : bubble.textColor || palette.text
+  const color = getStyleBaseId(bubble.styleId) === 'dialogue-comic' ? '#ffffff' : bubble.textColor || palette.text
   context.fillStyle = color
   context.font = `500 ${bubble.fontSizePx}px Microsoft JhengHei, PingFang TC, sans-serif`
   context.textAlign = 'center'
@@ -318,9 +437,90 @@ const drawBodyText = (context, text, bubble, palette, x, y, width, height, paddi
   })
 }
 
+const drawStandaloneTitleMask = (context, bubble, width, height) => {
+  if (bubble.styleId === 'title-none') return
+
+  context.save()
+  context.globalAlpha *= bubble.maskOpacity
+  context.fillStyle = bubble.maskColor
+  context.strokeStyle = bubble.maskColor
+  context.shadowColor = 'rgba(9, 18, 38, 0.22)'
+  context.shadowBlur = 10
+  context.shadowOffsetY = 6
+
+  if (bubble.styleId === 'title-underline') {
+    const inset = clamp(width * 0.08, 18, 72)
+    const lineY = height - clamp(height * 0.16, 16, 42)
+    context.beginPath()
+    context.moveTo(inset, lineY)
+    context.lineTo(width - inset, lineY)
+    context.lineWidth = clamp(height * 0.045, 4, 12)
+    context.lineCap = 'round'
+    context.stroke()
+    context.restore()
+    return
+  }
+
+  if (bubble.styleId === 'title-ticket') {
+    const notch = Math.min(width * 0.055, height * 0.42)
+    context.beginPath()
+    context.moveTo(0, 0)
+    context.lineTo(width - notch, 0)
+    context.lineTo(width, height / 2)
+    context.lineTo(width - notch, height)
+    context.lineTo(0, height)
+    context.lineTo(notch, height / 2)
+    context.closePath()
+  } else {
+    const radius = bubble.styleId === 'title-pill'
+      ? height / 2
+      : clamp(height * 0.2, 18, 52)
+    roundedPath(context, 0, 0, width, height, radius)
+  }
+
+  context.fill()
+  context.restore()
+}
+
+const drawStandaloneTitleText = (context, text, bubble, palette, width, height) => {
+  if (!text) return
+  const padding = clamp(Math.max(bubble.fontSizePx * 0.65, width * 0.045), 16, 80)
+  const lineHeight = bubble.fontSizePx * 1.3
+  context.font = `700 ${bubble.fontSizePx}px Microsoft JhengHei, PingFang TC, sans-serif`
+  context.textAlign = 'center'
+  context.textBaseline = 'top'
+  context.fillStyle = bubble.textColor || (
+    bubble.styleId === 'title-none' || bubble.styleId === 'title-underline'
+      ? bubble.maskColor
+      : palette.title
+  )
+  const lines = wrapBubbleText(context, text, Math.max(1, width - padding * 2))
+  const maxLines = Math.max(1, Math.floor((height - padding * 2) / lineHeight))
+  const visibleLines = lines.slice(0, maxLines)
+  const startY = Math.max(padding, (height - visibleLines.length * lineHeight) / 2)
+  visibleLines.forEach((line, index) => {
+    context.fillText(line, width / 2, startY + index * lineHeight)
+  })
+}
+
+const drawStandaloneTitle = (context, bubble, palette, elapsedMs) => {
+  const width = bubble.widthPx
+  const height = bubble.heightPx
+  const visibleText = getVisibleBubbleText(bubble, elapsedMs)
+  context.save()
+  drawStandaloneTitleMask(context, bubble, width, height)
+  context.shadowColor = 'transparent'
+  drawStandaloneTitleText(context, visibleText, bubble, palette, width, height)
+  context.restore()
+}
+
 export const drawBubble = (context, bubbleValue, imageEntry = null, elapsedMs = Number.POSITIVE_INFINITY) => {
   const bubble = normalizeBubble(bubbleValue)
   const palette = getBubblePalette(bubble)
+  if (bubble.bubbleType === 'title') {
+    drawStandaloneTitle(context, bubble, palette, elapsedMs)
+    return
+  }
   const surface = getBubbleSurface(bubble)
   const width = bubble.widthPx
   const height = bubble.heightPx
@@ -329,17 +529,18 @@ export const drawBubble = (context, bubbleValue, imageEntry = null, elapsedMs = 
     18,
     120
   )
-  const borderWidth = bubble.styleId === 'dialogue-comic' ? 5 : 3
+  const baseStyleId = getStyleBaseId(bubble.styleId)
+  const borderWidth = baseStyleId === 'dialogue-comic' ? 5 : 3
   const bodyTop = 0
   const bodyHeight = height
 
   context.save()
   context.lineWidth = borderWidth
   context.shadowColor = 'rgba(9, 18, 38, 0.25)'
-  context.shadowBlur = bubble.styleId === 'dialogue-comic' ? 16 : 10
+  context.shadowBlur = baseStyleId === 'dialogue-comic' ? 16 : 10
   context.shadowOffsetY = 8
   drawBubbleSurface(context, bubble, surface, width, bodyHeight)
-  if (bubble.bubbleType === 'thought') drawThoughtCloud(context, surface, width, height)
+  if (bubble.bubbleType === 'thought') drawThoughtCloud(context, bubble, surface, width, height)
   else drawTail(context, bubble, surface, width, height)
 
   let contentTop = 0

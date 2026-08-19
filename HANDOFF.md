@@ -3090,3 +3090,150 @@ git diff --check
 desktop-runtime/release-target-loop-final-20260817
 desktop-runtime/release-target-loop-vertical-final-20260817
 ```
+
+## 37. 2026-08-19 气泡物件、左右方向样式与标题遮罩
+
+### Git 回退点与当前工作树
+
+- 本功能开始前已经建立并推送远程回退点：`b903fe10 feat: checkpoint advanced editor and preview refinements`，当前 `origin/main` 仍指向该提交。
+- 本地 `main` 另有未推送节点：`9b2ffc52 chore: checkpoint before bubble item experience`。不要重置、回退或删除该节点；当前气泡实现位于它之后的未提交工作树。
+- 本轮最终实现尚未提交、尚未推送。`dist` 已随最新生产构建更新为新的哈希产物，这是正常构建结果，不是误删文件。
+
+### 气泡作为舞台物件
+
+- `DynamicItem` 现在兼容普通媒体物件与气泡物件；旧作品缺少 `kind` 时仍按普通媒体读取，不影响历史数据。
+- 图层新增按钮保留两个清晰入口：「上传物件」继续调用原有文件输入与 iOS 原生来源选择，不替换相册、拍照或文件入口；「添加气泡」打开气泡编辑器。
+- 气泡支持标题、正文、逐字显示／全部显示、字号、文字颜色、配色与逻辑尺寸。想象气泡额外支持图片，编辑器、Web 舞台与 EXE 播放端均使用 `contain + center`，任何长宽比都完整居中、不裁切、不拉伸。
+- 没有增加独立的「左右翻转」属性或开关。左右方向直接作为同类型气泡的可选样式；方向只改变尾巴或想象圆点的位置，文字、标题和图片不会被镜像。
+
+### 方向样式与旧数据迁移
+
+- 对话气泡共有 3 种基础外观、每种左／右两个方向，共 6 种：
+
+```text
+dialogue-rounded-left
+dialogue-rounded-right
+dialogue-soft-left
+dialogue-soft-right
+dialogue-comic-left
+dialogue-comic-right
+```
+
+- 想象气泡共有 2 种基础外观、每种左／右两个方向，共 4 种：
+
+```text
+thought-cloud-left
+thought-cloud-right
+thought-soft-left
+thought-soft-right
+```
+
+- 旧的无方向样式仍可读取，并统一迁移为相同外观的右向版本：`dialogue-rounded`、`dialogue-soft`、`dialogue-comic`、`thought-cloud`、`thought-soft` 分别对应各自的 `*-right`。
+- Web 编辑端与 EXE Canvas 播放端采用相同的方向语义；数据同步载荷与变更签名均包含新样式及标题遮罩字段。
+
+### 标题遮罩与编辑器体验
+
+- 新增 5 种标题遮罩：`rounded`（圆角）、`pill`（胶囊）、`ticket`（标签）、`underline`（下划线）、`none`（无）。旧气泡缺少该字段时默认使用 `rounded`，编辑已有气泡时不会因调用方省略字段而重置现有选择。
+- 编辑器打开后先聚焦当前气泡类型，首屏直接呈现「气泡类型」与「气泡样式」；方向卡明确标注左／右。标准横屏使用预览与设置双栏，一般窄屏／直向切换为单栏；低高度窄横屏继续使用紧凑双栏，避免 `16:9` 预览把设置区压到不可见。方向样式在小屏为单列，标题遮罩为两列。
+- 对话气泡显示 6 个方向样式，想象气泡显示 4 个方向样式；标题遮罩固定显示 5 个选择。主要操作按钮高度为 `48px`。新建取消会把焦点还给图层「+」，编辑已有气泡取消会恢复物件属性并聚焦缩略图入口，不再发生焦点争抢。
+
+### 验收、构建与预览服务
+
+- 浏览器专项验收已在 `1024 × 768`、`1366 × 1024`、`980 × 600` 与 `844 × 390` 通过：成功创建并重新编辑 `thought-cloud-left + ticket`，左右尾巴位置、五种遮罩计算样式、保存数据、超宽 `2400 × 300` 图片完整居中、文件输入、取消后的焦点恢复与页面溢出均已检查，`window.__flowHarnessErrors=[]`。最低的 `844 × 390` 尺寸仍保持双栏，设置区有 `223px` 可滚动高度。
+- 验收截图：`test-artifacts/dynamic-flow-20260818/bubble-editor-thought-1024x768.png`。
+- 本轮最终验证通过：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+node --no-warnings desktop-runtime/renderer/bubble-render-core.test.mjs
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-bubble-editor.mjs
+npm run build
+```
+
+- `npm run build` 完成 `1766` 个模组，只保留既有主 chunk 大于 `500 kB` 的提示。当前构建产物为 `index-Ckx0mzz9.js`、`index-D4mqfaO5.css`、`web-C6xjBT6d.js`。
+- Vite 测试服务继续由 PID `15740` 监听 `0.0.0.0:5173`；本机地址 `http://localhost:5173/` 与当前局域网地址 `http://192.168.1.39:5173/` 均返回 HTTP `200`。旧地址 `192.168.12.101` 已不属于当前网卡，请勿继续沿用。
+
+## 38. 2026-08-19 标题遮罩改为第三种独立文字物件
+
+### 对第 37 节标题遮罩理解的纠正
+
+- 第 37 节把「标题遮罩」记录成了对话／想象气泡内部的标题配置，这不是使用者最终需要的结构。本节以最终实现为准：标题遮罩现在是「气泡类型」中的第三种独立舞台物件，与「对话气泡」「想象气泡」并列，不再附着在其他气泡内部。
+- 编辑器中的类型结构现在是：
+
+```text
+气泡类型
+├─ 对话气泡
+├─ 想象气泡
+└─ 标题遮罩（独立标题文字）
+```
+
+- 新建对话／想象气泡不再产生内嵌 `title`，界面也不再提供内嵌标题或标题遮罩设置。旧作品中的 `title`、`titleMaskId`、`paletteId` 仍保留读取、重新保存和播放兼容，避免编辑旧作品时静默丢失内容，但它们不再是新建标题的编辑入口；把只有旧 `title`、正文为空的气泡切换为独立标题时，会先把旧文字迁移到 `bodyText`。
+
+### 独立标题的数据与样式约定
+
+- 新增正式类型 `bubbleType: 'title'`，标题文字统一写入 `bodyText`，`title` 固定保存为空字符串。若旧标题类型数据只有 `title`、没有 `bodyText`，读取时会自动把旧文字回填到 `bodyText`。
+- 独立标题默认逻辑尺寸为 `900 × 220`，支持「全部显示／逐字显示」、逐字速度、字号和文字颜色；标题类型会主动剥离图片，不会产生气泡面、对话尾巴、想象圆点或图片节点。
+- 五种正式标题样式为：
+
+```text
+title-rounded    圆角
+title-pill       胶囊
+title-ticket     标签
+title-underline  下划线
+title-none       无（纯文字）
+```
+
+- `title-rounded` 在 Web 端使用仓库根目录的 `圆角矩形.png` 作为真实 CSS mask；EXE Canvas 端按同一视觉语义绘制。胶囊、标签、下划线和纯文字均有独立 Web／Canvas 实现。
+- 新增 `maskColor` 与 `maskOpacity`。数据层和同步协议中的透明度范围为 `0..1`，编辑器显示为 `0..100%`，默认值为 `0.92`。透明度只作用于遮罩本身，不会降低文字透明度。
+- 选择 `title-none` 时只显示文字，并从 DOM 和 Tab 顺序中移除无意义的遮罩颜色／透明度控件；切回其他样式后会恢复先前的遮罩设置。
+- 对话仍有 6 个左右方向样式，想象仍有 4 个左右方向样式；旧无方向样式继续迁移到对应右向版本。同步端只会为想象气泡上传图片资源，标题与对话类型不会误传遗留图片。
+
+### 编辑器、舞台与控制页体验
+
+- 图层「+」菜单继续保留原有「上传物件」入口，文件输入没有强制 `capture`，因此 iOS 原生相册、拍照和文件选择流程不受影响；「添加气泡」入口现在可继续选择对话、想象或标题三种类型。
+- 标题类型第二步直接显示五种标题样式，第三步只保留单行「标题文字」输入；后续显示方式、字号、文字颜色、遮罩颜色及遮罩透明度均在同一线性编辑器内完成。
+- 控制页保存后以 `bodyText` 首行作为物件名称，空标题兜底名为「标题遮罩」；属性缩略图使用 `Type` 图标，并提供「编辑标题遮罩」入口。新建取消时焦点回到图层「+」，编辑取消时焦点回到物件属性缩略图。
+- Web 舞台、图层缩略图和 EXE Canvas 播放端使用相同的独立标题结构。标题逐字播放、颜色、透明度、尺寸与五种外观在两端保持一致。
+- `prefers-reduced-motion: reduce` 下原有规则只改 `transition-duration`，会意外为所有元素制造 `1ms` 的全属性过渡，导致胶囊样式切换首帧仍显示直角。本轮改为完整关闭 `animation` 与 `transition`，既消除错误帧，也符合减少动态效果的可及性语义。
+
+### 专项验收、回归与生产构建
+
+- `test-artifacts/dynamic-flow-20260818/verify-bubble-editor.mjs` 已在 `1024 × 768`、`1366 × 1024`、`980 × 600`、`844 × 390` 四种尺寸通过，覆盖三种类型、全部左右方向样式、五种标题样式、逐字显示、超宽 `2400 × 300` 图片完整居中、自定义遮罩色、`42%` 透明度、保存后重新编辑、焦点恢复、触控尺寸及页面无溢出。
+- 标题专项截图：
+
+```text
+test-artifacts/dynamic-flow-20260818/title-mask-editor-1024x768.png
+```
+
+- 本轮最终验证全部通过：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-bubble-editor.mjs
+node --no-warnings desktop-runtime/renderer/bubble-render-core.test.mjs
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+npm run build
+git diff --check
+```
+
+- `npm run build` 完成 `1766` 个模组，只保留既有主 chunk 大于 `500 kB` 的提示。当前生产构建哈希为：
+
+```text
+dist/assets/index-a5ybb-Vg.js
+dist/assets/index-DwPqOVwu.css
+dist/assets/web-C70OfG2f.js
+```
+
+- 当前本地 `HEAD` 仍为 `9b2ffc52 chore: checkpoint before bubble item experience`，远程回退点仍为 `b903fe10 feat: checkpoint advanced editor and preview refinements`。本节实现位于未提交工作树，尚未新增提交或推送。
+- Vite 测试服务继续由 PID `15740` 监听 `0.0.0.0:5173`；`http://localhost:5173/` 与 `http://192.168.1.39:5173/` 均已重新验证并返回 HTTP `200`。

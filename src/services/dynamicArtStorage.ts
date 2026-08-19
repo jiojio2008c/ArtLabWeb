@@ -41,8 +41,35 @@ const MIN_DYNAMIC_BUBBLE_WIDTH_PX = 220
 const MAX_DYNAMIC_BUBBLE_WIDTH_PX = 1600
 const MIN_DYNAMIC_BUBBLE_HEIGHT_PX = 140
 const MAX_DYNAMIC_BUBBLE_HEIGHT_PX = 1000
-const DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS = ['dialogue-rounded', 'dialogue-soft', 'dialogue-comic'] as const
-const DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS = ['thought-cloud', 'thought-soft'] as const
+const DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS = [
+  'dialogue-rounded-left',
+  'dialogue-rounded-right',
+  'dialogue-soft-left',
+  'dialogue-soft-right',
+  'dialogue-comic-left',
+  'dialogue-comic-right'
+] as const
+const DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS = [
+  'thought-cloud-left',
+  'thought-cloud-right',
+  'thought-soft-left',
+  'thought-soft-right'
+] as const
+const DYNAMIC_TITLE_BUBBLE_STYLE_IDS = [
+  'title-rounded',
+  'title-pill',
+  'title-ticket',
+  'title-underline',
+  'title-none'
+] as const
+const DYNAMIC_LEGACY_BUBBLE_STYLE_IDS = [
+  'dialogue-rounded',
+  'dialogue-soft',
+  'dialogue-comic',
+  'thought-cloud',
+  'thought-soft'
+] as const
+const DYNAMIC_BUBBLE_TITLE_MASK_IDS = ['rounded', 'pill', 'ticket', 'underline', 'none'] as const
 
 type DynamicMediaType = 'image' | 'video'
 type DynamicStoredMediaType = DynamicMediaType | 'audio'
@@ -57,11 +84,21 @@ type DynamicItemAudioTrigger = 'appearance' | 'appearanceDelay' | 'targetArrival
 type DynamicLinkedAppearanceMode = 'none' | 'showAfter' | 'hideAfter'
 type DynamicCopyField = 'motion' | 'animation' | 'size' | 'deform' | 'audio' | 'background' | 'linkage'
 type DynamicItemKind = 'media' | 'bubble'
-type DynamicBubbleType = 'dialogue' | 'thought'
+type DynamicBubbleType = 'dialogue' | 'thought' | 'title'
 type DynamicBubbleRevealMode = 'all' | 'typewriter'
 type DynamicBubbleStyleId = typeof DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS[number]
   | typeof DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS[number]
+  | typeof DYNAMIC_TITLE_BUBBLE_STYLE_IDS[number]
+type DynamicBubbleTitleMaskId = typeof DYNAMIC_BUBBLE_TITLE_MASK_IDS[number]
 type DynamicBubblePaletteId = 'ink' | 'ocean' | 'coral' | 'sun' | 'violet'
+
+const DYNAMIC_BUBBLE_MASK_COLOR_BY_PALETTE: Record<DynamicBubblePaletteId, string> = {
+  ink: '#263a3b',
+  ocean: '#0c8fa4',
+  coral: '#dd6859',
+  sun: '#c88722',
+  violet: '#7567b4'
+}
 
 interface DynamicLinkedAppearance {
   triggerItemId: string
@@ -105,7 +142,10 @@ interface DynamicBubbleContent {
   fontSizePx: number
   textColor: string
   surfaceId: string
+  titleMaskId: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
+  maskColor: string
+  maskOpacity: number
   widthPx: number
   heightPx: number
   image?: DynamicMedia
@@ -122,7 +162,10 @@ interface DynamicBubbleInput {
   fontSizePx: number
   textColor: string
   surfaceId?: string
+  titleMaskId?: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
+  maskColor: string
+  maskOpacity: number
   widthPx: number
   heightPx: number
   imageFile?: File | null
@@ -241,16 +284,43 @@ const clampRoundedNumber = (value: unknown, minimum: number, maximum: number, fa
 }
 
 const normalizeDynamicBubbleType = (value: unknown): DynamicBubbleType => (
-  value === 'thought' ? 'thought' : 'dialogue'
+  value === 'thought' || value === 'title' ? value : 'dialogue'
 )
 
 const normalizeDynamicBubbleStyleId = (bubbleType: DynamicBubbleType, value: unknown): DynamicBubbleStyleId => {
   const styleId = typeof value === 'string' ? value.trim() : ''
+  const legacyStyleMap: Record<typeof DYNAMIC_LEGACY_BUBBLE_STYLE_IDS[number], DynamicBubbleStyleId> = {
+    'dialogue-rounded': 'dialogue-rounded-right',
+    'dialogue-soft': 'dialogue-soft-right',
+    'dialogue-comic': 'dialogue-comic-right',
+    'thought-cloud': 'thought-cloud-right',
+    'thought-soft': 'thought-soft-right'
+  }
+  const canonicalStyleId = DYNAMIC_LEGACY_BUBBLE_STYLE_IDS.includes(
+    styleId as typeof DYNAMIC_LEGACY_BUBBLE_STYLE_IDS[number]
+  )
+    ? legacyStyleMap[styleId as typeof DYNAMIC_LEGACY_BUBBLE_STYLE_IDS[number]]
+    : styleId
   const allowedStyleIds: readonly string[] = bubbleType === 'thought'
     ? DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS
-    : DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS
-  return (allowedStyleIds.includes(styleId) ? styleId : allowedStyleIds[0]) as DynamicBubbleStyleId
+    : bubbleType === 'title'
+      ? DYNAMIC_TITLE_BUBBLE_STYLE_IDS
+      : DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS
+  const fallbackStyleId: DynamicBubbleStyleId = bubbleType === 'thought'
+    ? 'thought-cloud-right'
+    : bubbleType === 'title'
+      ? 'title-rounded'
+      : 'dialogue-rounded-right'
+  return (allowedStyleIds.includes(canonicalStyleId)
+    ? canonicalStyleId
+    : fallbackStyleId) as DynamicBubbleStyleId
 }
+
+const normalizeDynamicBubbleTitleMaskId = (value: unknown): DynamicBubbleTitleMaskId => (
+  DYNAMIC_BUBBLE_TITLE_MASK_IDS.includes(value as DynamicBubbleTitleMaskId)
+    ? value as DynamicBubbleTitleMaskId
+    : 'rounded'
+)
 
 const normalizeDynamicBubblePaletteId = (
   bubbleType: DynamicBubbleType,
@@ -262,17 +332,27 @@ const normalizeDynamicBubblePaletteId = (
   return bubbleType === 'thought' ? 'ink' : 'ocean'
 }
 
+const normalizeDynamicBubbleMaskOpacity = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return 0.92
+  const number = Number(value)
+  if (!Number.isFinite(number)) return 0.92
+  return Math.min(1, Math.max(0, number))
+}
+
 const normalizeDynamicBubbleContent = (
   bubble: Partial<DynamicBubbleContent> | undefined,
   image?: DynamicMedia
 ): DynamicBubbleContent => {
   const bubbleType = normalizeDynamicBubbleType(bubble?.bubbleType)
+  const paletteId = normalizeDynamicBubblePaletteId(bubbleType, bubble?.paletteId)
+  const title = typeof bubble?.title === 'string' ? bubble.title : ''
+  const bodyText = typeof bubble?.bodyText === 'string' ? bubble.bodyText : ''
   return {
     schemaVersion: 1,
     bubbleType,
     styleId: normalizeDynamicBubbleStyleId(bubbleType, bubble?.styleId),
-    title: typeof bubble?.title === 'string' ? bubble.title : '',
-    bodyText: typeof bubble?.bodyText === 'string' ? bubble.bodyText : '',
+    title: bubbleType === 'title' ? '' : title,
+    bodyText: bubbleType === 'title' && !bodyText.trim() ? title : bodyText,
     revealMode: bubble?.revealMode === 'typewriter' ? 'typewriter' : 'all',
     revealIntervalMs: clampRoundedNumber(
       bubble?.revealIntervalMs,
@@ -292,18 +372,23 @@ const normalizeDynamicBubbleContent = (
     surfaceId: typeof bubble?.surfaceId === 'string' && bubble.surfaceId.trim()
       ? bubble.surfaceId.trim()
       : 'light',
-    paletteId: normalizeDynamicBubblePaletteId(bubbleType, bubble?.paletteId),
+    titleMaskId: normalizeDynamicBubbleTitleMaskId(bubble?.titleMaskId),
+    paletteId,
+    maskColor: typeof bubble?.maskColor === 'string' && bubble.maskColor.trim()
+      ? bubble.maskColor.trim()
+      : DYNAMIC_BUBBLE_MASK_COLOR_BY_PALETTE[paletteId] ?? '#0c8fa4',
+    maskOpacity: normalizeDynamicBubbleMaskOpacity(bubble?.maskOpacity),
     widthPx: clampRoundedNumber(
       bubble?.widthPx,
       MIN_DYNAMIC_BUBBLE_WIDTH_PX,
       MAX_DYNAMIC_BUBBLE_WIDTH_PX,
-      bubbleType === 'thought' ? 940 : 1080
+      bubbleType === 'thought' ? 940 : bubbleType === 'title' ? 900 : 1080
     ),
     heightPx: clampRoundedNumber(
       bubble?.heightPx,
       MIN_DYNAMIC_BUBBLE_HEIGHT_PX,
       MAX_DYNAMIC_BUBBLE_HEIGHT_PX,
-      bubbleType === 'thought' ? 680 : 480
+      bubbleType === 'thought' ? 680 : bubbleType === 'title' ? 220 : 480
     ),
     image: bubbleType === 'thought' ? image ?? bubble?.image : undefined
   }
@@ -761,12 +846,13 @@ const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicB
 
 const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
   if (isDynamicBubbleItem(item)) {
+    const bubble = normalizeDynamicBubbleContent(item.bubble)
     return {
       ...item,
       kind: 'bubble',
       bubble: {
-        ...item.bubble,
-        image: serializeMediaForStorage(item.bubble.image)
+        ...bubble,
+        image: serializeMediaForStorage(bubble.image)
       }
     }
   }
@@ -1241,7 +1327,7 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
     appearAnimation: getDynamicAppearAnimationFromGroup(group),
     backgroundTransition: getDynamicBackgroundTransitionFromGroup(group),
     audioLibrary: group.audioLibrary ?? [],
-    items: normalizeDynamicItemLinks(group.items),
+    items: normalizeDynamicItemLinks(group.items.map(normalizeDynamicItemKind)),
     linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
     updatedAt: Date.now()
   }, existingGroup)
@@ -1500,8 +1586,11 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
   }
 
   const now = Date.now()
+  const nameFallback = bubbleType === 'title'
+    ? input.bodyText.trim() || input.title.trim()
+    : input.title.trim()
   const item: DynamicBubbleItem = {
-    ...createDynamicItemBase(group, input.name?.trim() || input.title.trim() || '气泡', now),
+    ...createDynamicItemBase(group, input.name?.trim() || nameFallback || '气泡', now),
     kind: 'bubble',
     bubble: normalizeDynamicBubbleContent({
       schemaVersion: 1,
@@ -1514,7 +1603,10 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
       fontSizePx: input.fontSizePx,
       textColor: input.textColor,
       surfaceId: input.surfaceId,
+      titleMaskId: input.titleMaskId,
       paletteId: input.paletteId,
+      maskColor: input.maskColor,
+      maskOpacity: input.maskOpacity,
       widthPx: input.widthPx,
       heightPx: input.heightPx
     }, image)
@@ -1553,7 +1645,10 @@ const updateDynamicBubble = async (
     image = nextImage
   }
 
-  item.name = input.name?.trim() || input.title.trim() || item.name || '气泡'
+  const nameFallback = bubbleType === 'title'
+    ? input.bodyText.trim() || input.title.trim()
+    : input.title.trim()
+  item.name = input.name?.trim() || nameFallback || item.name || '气泡'
   item.bubble = normalizeDynamicBubbleContent({
     schemaVersion: 1,
     bubbleType,
@@ -1565,7 +1660,10 @@ const updateDynamicBubble = async (
     fontSizePx: input.fontSizePx,
     textColor: input.textColor,
     surfaceId: input.surfaceId,
+    titleMaskId: input.titleMaskId ?? item.bubble.titleMaskId,
     paletteId: input.paletteId,
+    maskColor: input.maskColor ?? item.bubble.maskColor,
+    maskOpacity: input.maskOpacity ?? item.bubble.maskOpacity,
     widthPx: input.widthPx,
     heightPx: input.heightPx
   }, image)
@@ -1924,6 +2022,7 @@ export type {
   DynamicBubblePaletteId,
   DynamicBubbleRevealMode,
   DynamicBubbleStyleId,
+  DynamicBubbleTitleMaskId,
   DynamicBubbleType,
   DynamicCopyField,
   DynamicGroup,
@@ -1944,6 +2043,8 @@ export {
   DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS,
   DYNAMIC_GROUPS_KEY,
   DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS,
+  DYNAMIC_TITLE_BUBBLE_STYLE_IDS,
+  DYNAMIC_BUBBLE_TITLE_MASK_IDS,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
   DEFAULT_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS,
   DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,

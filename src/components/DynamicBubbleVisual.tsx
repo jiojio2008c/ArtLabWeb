@@ -2,16 +2,27 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import titleMaskUrl from '../../圆角矩形.png'
 import './DynamicBubbleEditor.css'
 
-export type DynamicBubbleType = 'dialogue' | 'thought'
+export type DynamicBubbleType = 'dialogue' | 'thought' | 'title'
 export type DynamicBubbleRevealMode = 'all' | 'typewriter'
 export type DynamicBubbleStyleId =
-  | 'dialogue-rounded'
-  | 'dialogue-soft'
-  | 'dialogue-comic'
-  | 'thought-cloud'
-  | 'thought-soft'
+  | 'dialogue-rounded-left'
+  | 'dialogue-rounded-right'
+  | 'dialogue-soft-left'
+  | 'dialogue-soft-right'
+  | 'dialogue-comic-left'
+  | 'dialogue-comic-right'
+  | 'thought-cloud-left'
+  | 'thought-cloud-right'
+  | 'thought-soft-left'
+  | 'thought-soft-right'
+  | 'title-rounded'
+  | 'title-pill'
+  | 'title-ticket'
+  | 'title-underline'
+  | 'title-none'
 
 export type DynamicBubblePaletteId = 'ink' | 'ocean' | 'coral' | 'sun' | 'violet'
+export type DynamicBubbleTitleMaskId = 'rounded' | 'pill' | 'ticket' | 'underline' | 'none'
 
 export interface DynamicBubbleImageDraft {
   url: string
@@ -32,7 +43,10 @@ export interface DynamicBubbleDraft {
   fontSizePx: number
   textColor: string
   surfaceId?: string
+  titleMaskId?: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
+  maskColor: string
+  maskOpacity: number
   widthPx: number
   heightPx: number
   image?: DynamicBubbleImageDraft
@@ -41,7 +55,7 @@ export interface DynamicBubbleDraft {
 export interface DynamicBubbleVisualProps {
   bubble: DynamicBubbleDraft
   animate?: boolean
-  playbackKey?: number
+  playbackKey?: string | number
   revealDelayMs?: number
   className?: string
   ariaLabel?: string
@@ -61,6 +75,16 @@ const splitGraphemes = (value: string) => {
   if (!Segmenter) return Array.from(value)
   return Array.from(new Segmenter('zh-Hans', { granularity: 'grapheme' }).segment(value), ({ segment }) => segment)
 }
+
+const BUBBLE_TITLE_ACCENTS: Record<DynamicBubblePaletteId, string> = {
+  ink: '#263a3b',
+  ocean: '#0c8fa4',
+  coral: '#dd6859',
+  sun: '#c88722',
+  violet: '#7567b4'
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 const useReducedMotion = () => {
   const [reducedMotion, setReducedMotion] = useState(false)
@@ -120,41 +144,43 @@ const DynamicBubbleVisual: React.FC<DynamicBubbleVisualProps> = ({
   }, [bodyGraphemes, bubble.revealIntervalMs, playbackKey, shouldAnimate])
 
   const visibleBodyText = bodyGraphemes.slice(0, visibleCharacterCount).join('')
-  const hasTitle = bubble.title.trim().length > 0
+  const isStandaloneTitle = bubble.bubbleType === 'title'
+  const hasLegacyTitle = !isStandaloneTitle && bubble.title.trim().length > 0
   const hasText = bubble.bodyText.trim().length > 0
   const hasImage = bubble.bubbleType === 'thought' && Boolean(bubble.image?.url)
+  const styleBaseId = bubble.styleId.replace(/-(left|right)$/, '')
+  const direction = bubble.styleId.endsWith('-left')
+    ? 'left'
+    : bubble.styleId.endsWith('-right')
+      ? 'right'
+      : 'right'
+  const titleMaskId = bubble.titleMaskId ?? 'rounded'
+  const maskColor = bubble.maskColor ?? BUBBLE_TITLE_ACCENTS[bubble.paletteId]
+  const maskOpacity = clamp(bubble.maskOpacity ?? 0.92, 0, 1)
   const fontSizeRatio = Math.max(3.2, (bubble.fontSizePx / bubble.widthPx) * 100)
   const visualStyle = {
     '--dynamic-bubble-aspect': `${bubble.widthPx} / ${bubble.heightPx}`,
     '--dynamic-bubble-font-size': `${fontSizeRatio}cqw`,
     '--dynamic-bubble-title-mask': `url("${titleMaskUrl}")`,
+    '--dynamic-bubble-title-accent': BUBBLE_TITLE_ACCENTS[bubble.paletteId],
+    '--dynamic-bubble-mask-color': maskColor,
+    '--dynamic-bubble-mask-opacity': maskOpacity,
     color: bubble.textColor
   } as CSSProperties
 
   return (
     <article
-      className={`dynamic-bubble-visual is-${bubble.bubbleType} style-${bubble.styleId} palette-${bubble.paletteId} ${hasImage ? 'has-image' : ''} ${hasImage && hasText ? 'has-image-and-text' : ''} ${className}`.trim()}
+      className={`dynamic-bubble-visual is-${bubble.bubbleType} style-${styleBaseId} style-${bubble.styleId} direction-${direction} title-mask-${titleMaskId} palette-${bubble.paletteId} ${hasImage ? 'has-image' : ''} ${hasImage && hasText ? 'has-image-and-text' : ''} ${className}`.trim()}
       style={visualStyle}
       aria-label={ariaLabel ?? [bubble.title, bubble.bodyText, bubble.image?.name].filter(Boolean).join('，')}
     >
-      <span className="dynamic-bubble-tail" aria-hidden="true" />
-      <div className="dynamic-bubble-surface" aria-hidden="true">
-        {hasTitle && (
-          <div className="dynamic-bubble-title-row">
-            <span className="dynamic-bubble-title-mask" aria-hidden="true" />
-            <strong>{bubble.title}</strong>
-          </div>
-        )}
-
-        <div className="dynamic-bubble-content">
-          {hasImage && (
-            <div className="dynamic-bubble-image-frame">
-              <img src={bubble.image?.url} alt={bubble.image?.name ?? ''} />
-            </div>
+      {isStandaloneTitle ? (
+        <div className="dynamic-bubble-standalone-title" aria-hidden="true">
+          {bubble.styleId !== 'title-none' && (
+            <span className="dynamic-bubble-standalone-mask" />
           )}
-
           {hasText && (
-            <p className="dynamic-bubble-body">
+            <p className="dynamic-bubble-standalone-text">
               {visibleBodyText}
               {shouldAnimate && visibleCharacterCount < bodyGraphemes.length && (
                 <span className="dynamic-bubble-caret" aria-hidden="true" />
@@ -162,7 +188,36 @@ const DynamicBubbleVisual: React.FC<DynamicBubbleVisualProps> = ({
             </p>
           )}
         </div>
-      </div>
+      ) : (
+        <>
+          <span className="dynamic-bubble-tail" aria-hidden="true" />
+          <div className="dynamic-bubble-surface" aria-hidden="true">
+            {hasLegacyTitle && (
+              <div className="dynamic-bubble-title-row">
+                <span className="dynamic-bubble-title-mask" aria-hidden="true" />
+                <strong>{bubble.title}</strong>
+              </div>
+            )}
+
+            <div className="dynamic-bubble-content">
+              {hasImage && (
+                <div className="dynamic-bubble-image-frame">
+                  <img src={bubble.image?.url} alt={bubble.image?.name ?? ''} />
+                </div>
+              )}
+
+              {hasText && (
+                <p className="dynamic-bubble-body">
+                  {visibleBodyText}
+                  {shouldAnimate && visibleCharacterCount < bodyGraphemes.length && (
+                    <span className="dynamic-bubble-caret" aria-hidden="true" />
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </article>
   )
 }

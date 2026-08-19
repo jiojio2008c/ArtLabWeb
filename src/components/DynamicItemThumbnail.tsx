@@ -1,4 +1,4 @@
-import { MessageCircleMore } from 'lucide-react'
+import { MessageCircleMore, Type } from 'lucide-react'
 import {
   isDynamicBubbleItem,
   type DynamicBubbleContent,
@@ -21,7 +21,10 @@ const toDynamicBubbleDraft = (bubble: DynamicBubbleContent): DynamicBubbleDraft 
   revealIntervalMs: bubble.revealIntervalMs,
   fontSizePx: bubble.fontSizePx,
   textColor: bubble.textColor,
+  titleMaskId: bubble.titleMaskId,
   paletteId: bubble.paletteId,
+  maskColor: bubble.maskColor,
+  maskOpacity: bubble.maskOpacity,
   widthPx: bubble.widthPx,
   heightPx: bubble.heightPx,
   image: bubble.image
@@ -54,12 +57,13 @@ const DynamicItemThumbnail: React.FC<DynamicItemThumbnailProps> = ({
   return (
     <span
       className={`dynamic-item-bubble-thumbnail ${className}`.trim()}
+      role={decorative ? undefined : 'img'}
       aria-label={decorative ? undefined : item.name}
       aria-hidden={decorative || undefined}
     >
       <DynamicBubbleVisual bubble={toDynamicBubbleDraft(item.bubble)} />
       <span className="dynamic-item-bubble-thumbnail-badge" aria-hidden="true">
-        <MessageCircleMore />
+        {item.bubble.bubbleType === 'title' ? <Type /> : <MessageCircleMore />}
       </span>
     </span>
   )
