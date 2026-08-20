@@ -13,6 +13,7 @@
   "files": [
     "main.js",
     "main.vertical-flip.js",
+    "runtime-display-settings-core.cjs",
     "preload.js",
     "renderer/**/*",
     "package.json"

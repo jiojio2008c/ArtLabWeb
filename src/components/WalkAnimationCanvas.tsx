@@ -4,6 +4,7 @@ import {
   drawWalkImage,
   subscribeWalkAnimation
 } from '../../desktop-runtime/renderer/walk-animation-core.js'
+import { resolveCanvasPixelRatio } from '../services/canvasRenderQuality.ts'
 
 interface WalkAnimationCanvasProps {
   src: string
@@ -12,6 +13,7 @@ interface WalkAnimationCanvasProps {
   ariaLabel?: string
   replayKey?: string | number
   startedAtMs?: number
+  renderScale?: number
   onFirstFrame?: () => void
 }
 
@@ -21,8 +23,6 @@ interface CanvasSize {
   pixelRatio: number
 }
 
-const MAX_CANVAS_PIXEL_RATIO = 1.5
-
 const WalkAnimationCanvas = ({
   src,
   className,
@@ -30,6 +30,7 @@ const WalkAnimationCanvas = ({
   ariaLabel,
   replayKey = 0,
   startedAtMs,
+  renderScale = 1,
   onFirstFrame
 }: WalkAnimationCanvasProps) => {
   const { t } = useTranslation()
@@ -82,7 +83,7 @@ const WalkAnimationCanvas = ({
     const updateSize = () => {
       const width = Math.max(1, canvas.clientWidth)
       const height = Math.max(1, canvas.clientHeight)
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_PIXEL_RATIO)
+      const pixelRatio = resolveCanvasPixelRatio(width, height, renderScale)
       const bitmapWidth = Math.max(1, Math.round(width * pixelRatio))
       const bitmapHeight = Math.max(1, Math.round(height * pixelRatio))
 
@@ -97,7 +98,7 @@ const WalkAnimationCanvas = ({
     const observer = new ResizeObserver(updateSize)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [])
+  }, [renderScale])
 
   useEffect(() => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -126,7 +127,7 @@ const WalkAnimationCanvas = ({
   }, [])
 
   if (imageFailed) {
-    return <img src={src} alt={ariaLabel} className={className} style={style} draggable={false} />
+    return <img src={src} alt={resolvedAriaLabel} className={className} style={style} draggable={false} />
   }
 
   return (

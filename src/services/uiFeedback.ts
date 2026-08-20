@@ -4,7 +4,7 @@ import {
   type BackgroundTransitionSoundKind
 } from '../../desktop-runtime/renderer/background-transition-audio.js'
 
-type UiSoundKind = 'tap' | 'success' | 'danger' | 'shutter' | 'artwork-send' | 'artwork-arrived'
+type UiSoundKind = 'tap' | 'success' | 'danger' | 'shutter' | 'artwork-arrived'
 
 let audioContext: AudioContext | null = null
 
@@ -34,52 +34,6 @@ const playUiSound = (kind: UiSoundKind = 'tap') => {
   try {
     const context = getAudioContext()
     if (!context) return
-
-    if (kind === 'artwork-send') {
-      const now = context.currentTime
-      const duration = 0.24
-      const sampleCount = Math.max(1, Math.floor(context.sampleRate * duration))
-      const buffer = context.createBuffer(1, sampleCount, context.sampleRate)
-      const channel = buffer.getChannelData(0)
-
-      for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-        const progress = sampleIndex / sampleCount
-        channel[sampleIndex] = (Math.random() * 2 - 1) * Math.sin(Math.PI * progress)
-      }
-
-      const noise = context.createBufferSource()
-      const noiseFilter = context.createBiquadFilter()
-      const noiseGain = context.createGain()
-      const tone = context.createOscillator()
-      const toneGain = context.createGain()
-
-      noise.buffer = buffer
-      noiseFilter.type = 'bandpass'
-      noiseFilter.frequency.setValueAtTime(620, now)
-      noiseFilter.frequency.exponentialRampToValueAtTime(1900, now + 0.18)
-      noiseFilter.Q.setValueAtTime(0.8, now)
-      noiseGain.gain.setValueAtTime(0.0001, now)
-      noiseGain.gain.exponentialRampToValueAtTime(0.025, now + 0.035)
-      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
-
-      tone.type = 'sine'
-      tone.frequency.setValueAtTime(300, now)
-      tone.frequency.exponentialRampToValueAtTime(540, now + 0.16)
-      toneGain.gain.setValueAtTime(0.0001, now)
-      toneGain.gain.exponentialRampToValueAtTime(0.018, now + 0.025)
-      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2)
-
-      noise.connect(noiseFilter)
-      noiseFilter.connect(noiseGain)
-      noiseGain.connect(context.destination)
-      tone.connect(toneGain)
-      toneGain.connect(context.destination)
-      noise.start(now)
-      noise.stop(now + duration)
-      tone.start(now)
-      tone.stop(now + duration)
-      return
-    }
 
     if (kind === 'artwork-arrived') {
       const now = context.currentTime

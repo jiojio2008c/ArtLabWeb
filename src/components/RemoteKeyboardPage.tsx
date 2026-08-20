@@ -80,8 +80,14 @@ interface RotaryControlProps {
   onTurn: (control: RemoteKeyboardControl, key: RemoteKeyboardKey, steps: number) => void
   onTurnEnd: () => void
   brand?: boolean
+  centerLabel?: string
+  centerWeight?: number
+  onCenterPress?: () => void
   children: React.ReactNode
 }
+
+const PRESET_8_KEYS = ['LeftControl', 'LeftAlt', 'Alpha8'] as const satisfies readonly RemoteKeyboardKey[]
+const PRESET_8_WEIGHT = 0.49
 
 const KEY_DEFINITIONS: readonly RemoteKeyDefinition[] = [
   { id: 'escape', keys: ['Escape'], ariaKey: 'remoteKeyboard.keyEscape', skin: 'black', icon: Undo2, weight: 0.56 },
@@ -99,7 +105,7 @@ const KEY_DEFINITIONS: readonly RemoteKeyDefinition[] = [
   { id: 'preset-5', keys: ['LeftControl', 'LeftAlt', 'Alpha5'], ariaKey: 'remoteKeyboard.keyShortcut', skin: 'magenta', modeNumber: 5, lines: ['Table', 'Slim'], weight: 0.46 },
   { id: 'preset-6', keys: ['LeftControl', 'LeftAlt', 'Alpha6'], ariaKey: 'remoteKeyboard.keyShortcut', skin: 'cyan', modeNumber: 6, lines: ['Wall', 'Full'], weight: 0.47 },
   { id: 'preset-7', keys: ['LeftControl', 'LeftAlt', 'Alpha7'], ariaKey: 'remoteKeyboard.keyShortcut', skin: 'cyan', modeNumber: 7, lines: ['Wall', 'Slim'], weight: 0.48 },
-  { id: 'preset-8', keys: ['LeftControl', 'LeftAlt', 'Alpha8'], ariaKey: 'remoteKeyboard.keyShortcut', skin: 'white', modeNumber: 8, lines: ['Customise'], weight: 0.49 }
+  { id: 'preset-8', keys: PRESET_8_KEYS, ariaKey: 'remoteKeyboard.keyShortcut', skin: 'white', modeNumber: 8, lines: ['Customise'], weight: PRESET_8_WEIGHT }
 ]
 
 const KNOB_DETENT_DEGREES = 15
@@ -228,6 +234,9 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
   onTurn,
   onTurnEnd,
   brand = false,
+  centerLabel,
+  centerWeight = 0.49,
+  onCenterPress,
   children
 }) => {
   const knobRef = useRef<HTMLDivElement>(null)
@@ -237,7 +246,9 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
     lastAngle: number
     carry: number
   } | null>(null)
+  const centerPressedRef = useRef(false)
   const [dragging, setDragging] = useState(false)
+  const [centerPressed, setCenterPressed] = useState(false)
 
   const updateVisualRotation = (delta: number) => {
     rotationRef.current += delta
@@ -301,6 +312,57 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
     }
   }
 
+  const releaseCenterPress = (playSound: boolean) => {
+    if (!centerPressedRef.current) return
+    centerPressedRef.current = false
+    setCenterPressed(false)
+    if (playSound) playRemoteKeyUp(centerWeight)
+  }
+
+  const handleCenterPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.stopPropagation()
+    event.preventDefault()
+    primeRemoteKeyboardAudio()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    centerPressedRef.current = true
+    setCenterPressed(true)
+    playRemoteKeyDown(centerWeight)
+  }
+
+  const handleCenterPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (!centerPressedRef.current) return
+    const target = document.elementFromPoint(event.clientX, event.clientY)
+    const shouldActivate = Boolean(target && event.currentTarget.contains(target))
+    releaseCenterPress(true)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (event.pointerType !== 'mouse') event.currentTarget.blur()
+    if (shouldActivate) onCenterPress?.()
+  }
+
+  const handleCenterPointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    releaseCenterPress(true)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (event.pointerType !== 'mouse') event.currentTarget.blur()
+  }
+
+  const handleCenterClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.detail !== 0) return
+    event.preventDefault()
+    primeRemoteKeyboardAudio()
+    centerPressedRef.current = true
+    setCenterPressed(true)
+    playRemoteKeyDown(centerWeight)
+    onCenterPress?.()
+    window.setTimeout(() => releaseCenterPress(true), 54)
+  }
+
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     const direction: -1 | 1 = event.deltaY < 0 ? -1 : 1
     emitDetents(direction, 1)
@@ -325,7 +387,8 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
     >
       <div
         ref={knobRef}
-        className={`remote-knob remote-knob-${size} ${dragging ? 'is-dragging' : ''}`}
+        data-center-press={onCenterPress ? 'true' : undefined}
+        className={`remote-knob remote-knob-${size} ${dragging ? 'is-dragging' : ''} ${centerPressed ? 'is-pressed' : ''}`}
         style={{ '--remote-knob-angle': '-18deg' } as CSSProperties}
         role="button"
         tabIndex={0}
@@ -345,15 +408,36 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
         onKeyDown={handleKeyDown}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <span className="remote-knob-ridges" aria-hidden="true" />
-        <span className="remote-knob-metal" aria-hidden="true">
-          {brand ? (
-            <span className="remote-knob-brand"><small>Magic</small><strong>FLOOR</strong></span>
-          ) : (
-            <span className="remote-knob-indicator" />
-          )}
+        <span className="remote-knob-body" aria-hidden="true">
+          <span className="remote-knob-ridges" />
+          <span className="remote-knob-metal">
+            {brand ? (
+              <span className="remote-knob-brand"><small>Magic</small><strong>FLOOR</strong></span>
+            ) : (
+              <span className="remote-knob-indicator" />
+            )}
+          </span>
         </span>
       </div>
+      {onCenterPress && (
+        <button
+          type="button"
+          className={`remote-knob-center-button ${centerPressed ? 'is-pressed' : ''}`}
+          aria-label={centerLabel ?? label}
+          aria-pressed={centerPressed}
+          title={centerLabel ?? label}
+          data-ui-feedback="none"
+          onPointerDown={handleCenterPointerDown}
+          onPointerUp={handleCenterPointerUp}
+          onPointerCancel={handleCenterPointerCancel}
+          onLostPointerCapture={(event) => {
+            event.stopPropagation()
+            releaseCenterPress(true)
+          }}
+          onClick={handleCenterClick}
+          onContextMenu={(event) => event.preventDefault()}
+        />
+      )}
       <div className="remote-knob-scale" aria-hidden="true">{children}</div>
     </div>
   )
@@ -498,13 +582,14 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
               onTurn={queueTurn}
               onTurnEnd={flushPendingTurn}
               brand
+              centerLabel={t('remoteKeyboard.keyShortcut', { number: 8 })}
+              centerWeight={PRESET_8_WEIGHT}
+              onCenterPress={() => sendPress(PRESET_8_KEYS)}
             >
               <span className="remote-scale-arrow remote-scale-arrow-left">←</span>
               <span className="remote-scale-arrow remote-scale-arrow-right">→</span>
             </RotaryControl>
           </div>
-
-          <span className="remote-device-engraving" aria-hidden="true">Keyboard Controller</span>
         </div>
       </section>
     </main>

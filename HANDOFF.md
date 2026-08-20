@@ -3237,3 +3237,132 @@ dist/assets/web-C70OfG2f.js
 
 - 当前本地 `HEAD` 仍为 `9b2ffc52 chore: checkpoint before bubble item experience`，远程回退点仍为 `b903fe10 feat: checkpoint advanced editor and preview refinements`。本节实现位于未提交工作树，尚未新增提交或推送。
 - Vite 测试服务继续由 PID `15740` 监听 `0.0.0.0:5173`；`http://localhost:5173/` 与 `http://192.168.1.39:5173/` 均已重新验证并返回 HTTP `200`。
+
+## 39. 2026-08-20 登录、互动上载、舞台水印与高清 EXE 同步
+
+### Git 回退点与本轮范围
+
+- 开始修改前已把第 38 节独立标题物件版本提交并推送到 `origin/main`：
+
+```text
+4f2d024b feat: add standalone bubble and title items
+```
+
+- 本节修改位于该回退点之后的本地工作树，尚未再次提交或推送。修改同时覆盖 iPad/Web 控制端和 Windows 标准／完整翻转播放端。
+
+### 登录与作品档案入口
+
+- 登录邮箱与密码输入框统一使用纯白内容底色；WebKit `:-webkit-autofill` 与标准 `:autofill` 分开覆盖，保留 `autocomplete="email"`、`autocomplete="current-password"` 和系统密码管理能力。焦点只改变边框与焦点环，密码显示按钮触控区为 `44 × 44px`。
+- 新增共享 `BrandLogo` 组件，首页与登录页使用同一张 `Right_Logo.png` 和同一组视觉尺寸：标准横屏 `128px`、紧凑屏幕 `96px`。
+- “进阶功能”开关从设置页迁移到作品档案顶部工具栏。开关即时保存；关闭时强制进入自由编辑、隐藏创作流程并沿用平铺图层行为，但不会删除作品已有的联动、背景或音源数据。`1100px` 以下隐藏长标签，`900px` 以下进一步压缩，仍保留原生 checkbox、键盘焦点和至少 `44px` 触控语义。
+
+### 互动艺术线性上载体验
+
+- 已选主题的正式 `cover` 现在显示在快速上载页标题旁，尺寸会在 `44–52px` 间响应变化，固定圆角、完整参与主题卡进入上载页的共享转场，不会提前闪现。图片属于与标题重复的装饰识别信息，使用空替代文本避免读屏重复。
+- 完成页主按钮统一为“重新上载”；确认后保留当前主题并直接返回图片／遮罩选择流程。“返回选项”同样保留当前主题，但关闭选择器并返回该主题的基础上载入口，不再退回主题列表。相关回调与五语 key 已从 `BackToThemes` 语义改为 `BackToOptions`。
+- 新增原创程序化火箭发射音效服务，默认主音量为 `1`。声音由点火、上升滑音、低频发动机、带通气流和星点音组成，输出经过压缩器；重复触发会停止上一段，失败反向动画和组件卸载会清理全部节点。旧的短促 `artwork-send` 已移除，到达提示音继续保留。AudioContext 在用户点击的同步调用链中创建／恢复，iOS 首次点击可播放；音频异常不会阻断上载。
+
+### 舞台水印与跨端协议
+
+- `NetworkSettings` 新增独立 `watermarkEnabled`，旧设置缺少字段时默认开启。设置页原进阶功能位置改为“舞台水印”，内容固定为 `MagicFloor`；保存后会发送轻量 `DisplaySettings` 事件并标记接收端需要完整重同步。
+- Web 控制页在舞台内部绘制斜向重复 SVG 水印，位于作品和背景转场之上，`pointer-events: none`、`aria-hidden=true`，不会覆盖工具栏或拦截编辑操作。
+- `GroupStateSync`、`GroupSelectAndSync`、`PreviewMode` 均携带 `watermarkEnabled`。EXE 新增独立顶层持久化状态；只有显式 boolean 才会更新，旧消息缺字段或字段非法时保留当前值。
+- EXE 使用缓存 Canvas 生成斜向重复水印，在物件与背景转场完成后绘制并剪裁到 `1920 × 1080` 舞台；作品档案镜像不绘制。标准版与完整翻转版共用同一 `player.js` 和显示核心，水印跟随整套最终翻转变换。
+
+### 动态艺术图片质量
+
+- 复核确认媒体链路没有二次压缩：原始 `File` 进入 Capacitor 文件／IndexedDB Blob，经 FormData 发送后由 EXE 按原始字节落盘并使用自然尺寸解码；控制页和 EXE 都不会拿作品档案缩略图代替正式物件素材。
+- Web 行走和 Unity 动画 Canvas 不再固定封顶 `1.5×`。新像素比会综合设备 DPR 与物件缩放倍率，最高 `4×`，同时限制单 Canvas 为约 `8 Mi` 像素和 `4096px` 单边，兼顾 Retina 清晰度与 iPad 内存。
+- Web 动画画布与 EXE 主舞台、背景源、档案转场 Canvas 均显式启用 `imageSmoothingEnabled=true`、`imageSmoothingQuality='high'`。静态物件继续直接显示原图，不新增 JPEG 转码或低质量中间层。
+
+### 构建、同步、测试与最新 EXE
+
+- Web 与桌面回归全部通过：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:creation-flow
+npm run build
+npm run sync:ios
+npm --prefix desktop-runtime run test:presentation
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:item-copy
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+node --no-warnings desktop-runtime/renderer/bubble-render-core.test.mjs
+node --check desktop-runtime/main.js
+node --check desktop-runtime/renderer/player.js
+git diff --check
+```
+
+- `test:presentation` 新增 9 项测试，覆盖水印默认值、开关、旧消息兼容、事件白名单、舞台剪裁、重复斜向绘制、绘制层级、高质量采样，以及标准／翻转构建清单。
+- `npm run sync:ios` 已将本轮生产资源复制到 `ios/App/App/public`。当前生产文件为：
+
+```text
+dist/assets/index-B7x3wUhd.js
+dist/assets/index-B14wo2Bm.css
+dist/assets/web-Dp1DAus6.js
+```
+
+- 按“每次生成 EXE 自动删除旧版本”的规则，已移除：
+
+```text
+desktop-runtime/release-target-loop-final-20260817
+desktop-runtime/release-target-loop-vertical-final-20260817
+```
+
+- 当前 `desktop-runtime/` 下只保留本轮两套发布目录。标准版：
+
+```text
+desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
+85,310,958 bytes
+SHA-256 348006C7BD5288D70A64927BFECD490D5739A01C3F37AB2B5EBBA5055C5A5D15
+```
+
+- 完整翻转版：
+
+```text
+desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+85,297,850 bytes
+SHA-256 EE47C2CC5303BC3A1EA79F4753F4B627870345AF0B2B4ACEDFB6F9D63A921668
+```
+
+- 两套 `app.asar` 均已确认包含 `runtime-display-settings-core.cjs`、`renderer/stage-presentation-core.js` 和新版 `renderer/player.js`。标准版与完整翻转版分别实际启动；两者 `/status` 均返回 `server.status=listening`、`server.port=8080`、`view.mode=archive`、`watermarkEnabled=true`，退出后 `8080` 均已释放。
+- 测试页服务继续运行：`5173`（PID `15740`）和 `5188`（PID `9868`）均返回 HTTP `200`；本机／局域网主测试地址为 `http://localhost:5173/`、`http://192.168.1.39:5173/`。
+
+### 2026-08-20 水印透明度调整
+
+- 根据实机视觉反馈，Web 控制页、标准 EXE 与完整翻转版 EXE 的 `MagicFloor` 水印主体及描边统一调整为 `44%` 不透明度，即 `56%` 透明度。桌面端使用共享常量 `DEFAULT_STAGE_WATERMARK_OPACITY = 0.44`，相关绘制测试会直接断言该值，避免双端后续再次出现不一致。
+- 调整后重新执行 `npm run sync:ios` 和 `npm --prefix desktop-runtime run pack:all`；两个新 `app.asar` 均已直接读取并确认 `DEFAULT_STAGE_WATERMARK_OPACITY=0.44`。标准版与完整翻转版再次实际启动成功，退出后 `8080` 均正常释放；上方记录的生产文件名、EXE 大小与 SHA-256 已更新为本次 44% 版本。
+
+### 2026-08-20 键盘控制页大旋钮中心按键
+
+- 移除设备面板右下角的 `KEYBOARD CONTROLLED / Keyboard Controller` 雕刻文字。
+- 底部大旋钮的 `MagicFloor` 中心标识由 `9px / 15px` 放大为 `18px / 30px`，维持原有金属盘纹理和旋转功能。
+- 大旋钮中心金属圆盘新增独立按压热区；外圈刻度与齿圈仍只负责左右旋转。中心按下会显示与 4 × 4 键帽一致的整体下沉、变暗及回弹反馈，并复用键帽按下／释放音效。
+- 中心按键发送与 4 × 4 第 16 键完全相同的 `MF|RemoteKeyboard|Press|{"keys":["LeftControl","LeftAlt","Alpha8"]}`，没有新增协议或 Unity 键名。
+- 正式双视口测试覆盖 `1024 × 768` 与 `1366 × 1024`，验证右下角文字消失、中心按压／释放状态、下沉变换、双倍 Logo 字号、中心与第 16 键信号完全相同，以及原旋钮 Turn 行为不受影响。
+- 已重新执行 `npm run sync:ios`，本轮生产资源为：
+
+```text
+dist/assets/index-CHlBZh7O.js
+dist/assets/index-BZROWXVx.css
+dist/assets/web-tNRFfU7g.js
+```
+
+- 已按自动清理旧发布目录的规则重新生成标准版与完整翻转版 EXE。标准版：
+
+```text
+desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
+85,310,959 bytes
+SHA-256 B0EBF4B963EF61F7E9757471CC4B736B0712D140175FE79035E1C4B93AF942BA
+```
+
+- 完整翻转版：
+
+```text
+desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+85,297,851 bytes
+SHA-256 08AC9D0DEFC0888B1FBB9EFED263D5E4ED08E37689A84759B8E4F6A1D8593097
+```

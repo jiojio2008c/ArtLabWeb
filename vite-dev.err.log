@@ -1,0 +1,10 @@
+[2m上午9:29:47[22m [33m[1m[vite][22m[39m [33mwarning: [33mDuplicate "className" attribute in JSX element[33m
+406|          className={`remote-knob remote-knob-${size} ${dragging ? 'is-dragging' : ''}`}
+407|          data-center-press={onCenterPress ? 'true' : undefined}
+408|          className={`remote-knob remote-knob-${size} ${dragging ? 'is-dragging' : ''} ${centerPressed ? 'is-pressed' : ''}`}
+   |          ^
+409|          style={{ '--remote-knob-angle': '-18deg' } as CSSProperties}
+410|          role="button"
+[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mD:/ArtLabWeb/src/components/RemoteKeyboardPage.tsx[39m

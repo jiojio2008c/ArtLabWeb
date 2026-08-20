@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Image as ImageIcon, Plus, Zap, ZapOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
+import { playArtworkLaunchSound, stopArtworkLaunchSound } from '../services/artworkLaunchAudio.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
 import type { UploadMaskOption } from '../services/directUploadThemes.ts'
@@ -56,6 +57,7 @@ interface UploadPageProps {
   shouldCacheArtwork?: boolean
   maskOptions?: UploadMaskOption[]
   directThemeName?: string
+  directThemeCover?: string
   directThemeAccent?: string
   directThemeSecondary?: string
   openMaskSelector?: boolean
@@ -122,6 +124,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   shouldCacheArtwork = true,
   maskOptions,
   directThemeName,
+  directThemeCover,
   directThemeAccent = '#76efff',
   directThemeSecondary = '#3b75ff',
   openMaskSelector = false
@@ -206,7 +209,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }, [defaultMaskId])
 
   const startDirectSendTransition = () => {
-    playUiSound('artwork-send')
+    playArtworkLaunchSound()
     directReturnResolveRef.current?.()
     directReturnResolveRef.current = null
     directReturnPromiseRef.current = null
@@ -221,6 +224,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const reverseDirectSendTransition = async () => {
+    stopArtworkLaunchSound()
     directLaunchResolveRef.current?.()
     directLaunchResolveRef.current = null
     directReturnPromiseRef.current = new Promise<void>((resolve) => {
@@ -329,6 +333,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
       }
       directLaunchResolveRef.current?.()
       directReturnResolveRef.current?.()
+      stopArtworkLaunchSound()
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
       cameraStreamRef.current = null
 
@@ -1206,9 +1211,19 @@ const UploadPage: React.FC<UploadPageProps> = ({
           >
             {t('common.back')}
           </button>
-          <div className="min-w-0">
-            <p className="eyebrow">{eyebrow}</p>
-            <h1 className="screen-title">{title}</h1>
+          <div className={`min-w-0 ${isDirectMode && directThemeCover ? 'direct-upload-theme-heading' : ''}`}>
+            {isDirectMode && directThemeCover && (
+              <img
+                className="direct-upload-theme-thumbnail"
+                src={directThemeCover}
+                alt=""
+                draggable={false}
+              />
+            )}
+            <div className="direct-upload-theme-title-copy">
+              <p className="eyebrow">{eyebrow}</p>
+              <h1 className="screen-title">{title}</h1>
+            </div>
           </div>
         </div>
 

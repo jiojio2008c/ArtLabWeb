@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import LoginPage from './components/LoginPage.tsx'
@@ -48,7 +48,7 @@ import type { DynamicCreationFlowExperience } from './services/dynamicCreationFl
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 import { getCurrentSession, logoutCurrentSession, subscribeToAuthChanges } from './services/authService.ts'
 import { loadCurrentUserAccount, type UserAccount } from './services/userProfileService.ts'
-import { sendAppLaunchCommand, sendQrCodeCommand } from './services/unityBridge.ts'
+import { sendAppLaunchCommand, sendDynamicEvent, sendQrCodeCommand } from './services/unityBridge.ts'
 import { preloadImage } from './services/transitionPerformance.ts'
 
 interface ImageData {
@@ -289,15 +289,30 @@ function App() {
     }
   }, [authStatus])
 
-  const updateNetworkSettings = (nextSettings: NetworkSettings) => {
+  const updateNetworkSettings = useCallback((nextSettings: NetworkSettings) => {
     saveNetworkSettings(nextSettings)
     setNetworkSettings(nextSettings)
-  }
+  }, [])
 
-  const handleSettingsSave = (nextSettings: NetworkSettings) => {
+  const handleSettingsSave = useCallback((nextSettings: NetworkSettings) => {
     updateNetworkSettings(nextSettings)
     markDynamicReceiverNeedsResync(nextSettings.wsIp, nextSettings.dynamicPort)
-  }
+    sendDynamicEvent(nextSettings.wsIp, nextSettings.dynamicPort, 'DisplaySettings', {
+      watermarkEnabled: nextSettings.watermarkEnabled
+    })
+  }, [updateNetworkSettings])
+
+  const handleAdvancedFeaturesChange = useCallback((enabled: boolean) => {
+    if (networkSettings.advancedFeaturesEnabled === enabled) return
+
+    const nextSettings = {
+      ...networkSettings,
+      advancedFeaturesEnabled: enabled
+    }
+    updateNetworkSettings(nextSettings)
+    markDynamicReceiverNeedsResync(nextSettings.wsIp, nextSettings.dynamicPort)
+    if (!enabled) setDynamicEditorExperience('free')
+  }, [networkSettings, updateNetworkSettings])
 
   const updateWsIp = (wsIp: string) => {
     updateNetworkSettings({
@@ -435,7 +450,7 @@ function App() {
     setDirectUploadOpenMaskSelector(false)
     setDirectThemeUploadTransition(null)
     setDirectThemeUploadReturnTransition(false)
-    navigateTo('directSelect')
+    navigateTo('directUpload')
   }
 
   const resolveDynamicEditorExperience = (experience: DynamicCreationFlowExperience) => (
@@ -645,6 +660,8 @@ function App() {
                 groups={renderedDynamicArchiveGroups}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
+                advancedFeaturesEnabled={networkSettings.advancedFeaturesEnabled}
+                onAdvancedFeaturesChange={handleAdvancedFeaturesChange}
                 onBack={handleReturnFromDynamicGroups}
                 onCreateGroup={handleCreateDynamicGroup}
                 onUpdateGroup={updateDynamicGroupState}
@@ -662,6 +679,7 @@ function App() {
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
                 advancedFeaturesEnabled={networkSettings.advancedFeaturesEnabled}
+                watermarkEnabled={networkSettings.watermarkEnabled}
                 onBack={handleReturnFromDynamicControl}
                 onGroupChange={updateDynamicGroupState}
                 initialItemId={selectedDynamicItemId}
@@ -732,6 +750,7 @@ function App() {
             shouldCacheArtwork={false}
             maskOptions={getDirectMasksForTheme(selectedDirectTheme)}
             directThemeName={t(selectedDirectTheme.labelKey)}
+            directThemeCover={selectedDirectTheme.cover}
             directThemeAccent={selectedDirectTheme.accent}
             directThemeSecondary={selectedDirectTheme.secondary}
             openMaskSelector={directUploadOpenMaskSelector}
@@ -739,7 +758,7 @@ function App() {
         ) : currentPage === 'directComplete' ? (
           <DirectUploadCompletePage
             result={directUploadResult}
-            onBackToThemes={handleReturnFromDirectComplete}
+            onBackToOptions={handleReturnFromDirectComplete}
             onReupload={handleResetDirectUpload}
           />
         ) : (

@@ -187,6 +187,12 @@ JSON 数据结构：
 | 右侧中部小旋钮 | `vertical` | `UpArrow` | `DownArrow` |
 | 右侧底部大旋钮 | `horizontal` | `LeftArrow` | `RightArrow` |
 
+右侧底部大旋钮的中心圆盘同时是独立按键。只有按下中心圆盘时才触发，外圈刻度区域继续用于旋转；中心按键发送与 4 × 4 键盘第 16 键完全相同的指令：
+
+```text
+MF|RemoteKeyboard|Press|{"keys":["LeftControl","LeftAlt","Alpha8"]}
+```
+
 完整示例：
 
 ```text
@@ -503,6 +509,7 @@ Unity 端完成开发后，至少验证以下项目：
 - [ ] 音量旋钮逆时针为 `Minus`，顺时针为 `Plus`。
 - [ ] 中部旋钮逆时针为 `UpArrow`，顺时针为 `DownArrow`。
 - [ ] 底部旋钮逆时针为 `LeftArrow`，顺时针为 `RightArrow`。
+- [ ] 底部大旋钮中心按下时执行 `Control + Alt + Alpha8`，外圈旋转不会误触该组合键。
 - [ ] `steps: 1` 与大于 1 的快速旋转都按指定次数执行。
 - [ ] 快速连续旋转时不丢档、不把多档错误执行成一次。
 - [ ] Unity 失去焦点或切换场景后仍能接收指令。

@@ -8,6 +8,7 @@ import {
   type DynamicMedia
 } from '../services/dynamicArtStorage.ts'
 import DynamicItemThumbnail from './DynamicItemThumbnail.tsx'
+import BrandLogo from './BrandLogo.tsx'
 import type { DynamicTransitionOrigin } from './dynamicTransitions/types.ts'
 import { preloadInteractiveTransitionAssets } from './interactiveTransitions/preloadInteractiveAssets.ts'
 import { preloadImages, scheduleIdleTask } from '../services/transitionPerformance.ts'
@@ -30,7 +31,6 @@ interface EntryPageProps {
 const LONG_PRESS_MS = 430
 const MAX_PREVIEW_GROUPS = 4
 const MAX_PREVIEW_ITEMS_PER_GROUP = 5
-const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 const ART_DISPLAY_ICON_URL = new URL('../../ArtDisplay.jpg', import.meta.url).href
 
 const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => (
@@ -149,7 +149,7 @@ const EntryPage: React.FC<EntryPageProps> = ({
       className={`ipad-screen entry-screen apple-container ${transitionType === 'dynamic' ? 'dynamic-home-transitioning' : ''} ${transitionType === 'interactive' ? 'interactive-home-transitioning' : ''}`}
     >
       <header className="ipad-topbar entry-topbar dynamic-home-fade">
-        <img className="entry-brand-logo" src={RIGHT_LOGO_URL} alt="MagicFloor" draggable={false} />
+        <BrandLogo />
 
         <button
           type="button"

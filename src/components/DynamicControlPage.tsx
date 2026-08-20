@@ -262,6 +262,7 @@ interface DynamicControlPageProps {
   wsIp: string
   dynamicPort: number
   advancedFeaturesEnabled: boolean
+  watermarkEnabled: boolean
   onBack: () => void
   onGroupChange: (group: DynamicGroup) => void
   initialItemId?: string
@@ -954,6 +955,7 @@ interface DynamicStageMediaProps {
   replayId: number
   playbackKey?: string
   animationStartedAtMs?: number
+  renderScale?: number
   active: boolean
   copyPulse: boolean
   onImageLoad: (mediaId: string, image: HTMLImageElement) => void
@@ -973,6 +975,7 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
   replayId,
   playbackKey,
   animationStartedAtMs,
+  renderScale = 1,
   active,
   copyPulse,
   onImageLoad,
@@ -1029,6 +1032,7 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
           ariaLabel={t('animation.namedWalk', { name })}
           replayKey={playbackKey ?? replayId}
           startedAtMs={animationStartedAtMs}
+          renderScale={renderScale}
           onFirstFrame={() => setAnimatedCanvasReady(true)}
           className={`dynamic-stage-item-visual dynamic-stage-item-walk ${animatedCanvasReady ? 'is-ready' : ''}`}
         />
@@ -1046,6 +1050,7 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
           overscanX={1.55}
           overscanY={1.72}
           forceLoop
+          renderScale={renderScale}
           onFirstFrame={() => setAnimatedCanvasReady(true)}
           className={`dynamic-stage-item-visual dynamic-stage-item-unity ${animatedCanvasReady ? 'is-ready' : ''}`}
         />
@@ -1277,6 +1282,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   wsIp,
   dynamicPort,
   advancedFeaturesEnabled,
+  watermarkEnabled,
   onBack,
   onGroupChange,
   initialItemId,
@@ -1687,7 +1693,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     return buildGroupSyncPayload({
       ...nextGroup,
       items: synchronizeDynamicLinkedBackgrounds(nextGroup.items)
-    }, advancedFeaturesEnabled)
+    }, advancedFeaturesEnabled, watermarkEnabled)
   }
 
   const sendGroupStateSync = (nextGroup: DynamicGroup) => {
@@ -2527,6 +2533,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       ip: wsIp,
       port: dynamicPort,
       advancedFeaturesEnabled,
+      watermarkEnabled,
       onStatus: (status) => {
         if (!cancelled) setReceiverSyncStatus(status)
       }
@@ -2551,7 +2558,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       cancelled = true
       if (clearTimer !== undefined) window.clearTimeout(clearTimer)
     }
-  }, [advancedFeaturesEnabled, dynamicPort, group, transitionPreparing, wsIp])
+  }, [advancedFeaturesEnabled, dynamicPort, group, transitionPreparing, watermarkEnabled, wsIp])
+
+  useEffect(() => {
+    sendDynamicEvent(wsIp, dynamicPort, 'DisplaySettings', {
+      watermarkEnabled
+    })
+  }, [dynamicPort, watermarkEnabled, wsIp])
 
   useEffect(() => {
     setSelectedBackgroundIds((currentIds) => {
@@ -2732,6 +2745,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       groupId: group.id,
       enabled,
       advancedFeaturesEnabled,
+      watermarkEnabled,
       appearMode: options.appearMode ?? group.appearMode,
       intervalMs: options.intervalMs ?? appearIntervalMs,
       appearAnimation: group.appearAnimation ?? 'none',
@@ -6169,6 +6183,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                                   replayId={previewReplayId}
                                   playbackKey={playbackEpoch?.key}
                                   animationStartedAtMs={animationStartedAtMs}
+                                  renderScale={item.scale}
                                   active={!previewMode && selectedItem?.id === item.id}
                                   copyPulse={copyFeedbackItemId === item.id}
                                   onImageLoad={handleItemImageLoad}
@@ -6266,6 +6281,34 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   </>
                 )}
               </div>
+            )}
+            {watermarkEnabled && (
+              <svg
+                className="dynamic-stage-watermark"
+                viewBox="0 0 1920 1080"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <defs>
+                  <pattern
+                    id="dynamic-stage-watermark-pattern"
+                    width="440"
+                    height="220"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <text
+                      x="34"
+                      y="122"
+                      transform="rotate(-22 220 110)"
+                      className="dynamic-stage-watermark-text"
+                    >
+                      MagicFloor
+                    </text>
+                  </pattern>
+                </defs>
+                <rect width="1920" height="1080" fill="url(#dynamic-stage-watermark-pattern)" />
+              </svg>
             )}
             </div>
           </div>
@@ -8162,6 +8205,7 @@ const areDynamicControlPropsEqual = (
   && previous.wsIp === next.wsIp
   && previous.dynamicPort === next.dynamicPort
   && previous.advancedFeaturesEnabled === next.advancedFeaturesEnabled
+  && previous.watermarkEnabled === next.watermarkEnabled
   && previous.initialItemId === next.initialItemId
   && previous.initialExperience === next.initialExperience
   && previous.transitionPreparing === next.transitionPreparing

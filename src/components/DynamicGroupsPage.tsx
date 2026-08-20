@@ -13,6 +13,7 @@ import {
   List,
   MoreHorizontal,
   Pencil,
+  SlidersHorizontal,
   Trash2,
   X
 } from 'lucide-react'
@@ -48,6 +49,8 @@ interface DynamicGroupsPageProps {
   groups: DynamicGroup[]
   wsIp: string
   dynamicPort: number
+  advancedFeaturesEnabled: boolean
+  onAdvancedFeaturesChange: (enabled: boolean) => void
   onBack: () => void
   onCreateGroup: (group: DynamicGroup) => void
   onUpdateGroup: (group: DynamicGroup) => void
@@ -121,6 +124,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   groups,
   wsIp,
   dynamicPort,
+  advancedFeaturesEnabled,
+  onAdvancedFeaturesChange,
   onBack,
   onCreateGroup,
   onUpdateGroup,
@@ -1039,6 +1044,22 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         </div>
 
         <div className="dynamic-library-toolbar-actions">
+          <label
+            className="dynamic-library-advanced-toggle"
+            title={t('settings.advancedFeatures')}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            <span className="dynamic-library-advanced-toggle-copy">
+              {t('settings.advancedFeatures')}
+            </span>
+            <input
+              type="checkbox"
+              checked={advancedFeaturesEnabled}
+              onChange={(event) => onAdvancedFeaturesChange(event.target.checked)}
+              aria-label={t('settings.advancedFeatures')}
+            />
+            <span className="dynamic-library-advanced-switch" aria-hidden="true" />
+          </label>
           <div className="dynamic-library-view-switch" role="group" aria-label={t('groups.viewMode')}>
             <button
               type="button"
@@ -1284,6 +1305,8 @@ const areDynamicGroupsPropsEqual = (
 ) => previous.groups === next.groups
   && previous.wsIp === next.wsIp
   && previous.dynamicPort === next.dynamicPort
+  && previous.advancedFeaturesEnabled === next.advancedFeaturesEnabled
+  && previous.onAdvancedFeaturesChange === next.onAdvancedFeaturesChange
   && previous.portalArrival === next.portalArrival
   && previous.transitionPrepared === next.transitionPrepared
   && previous.archiveReplayId === next.archiveReplayId

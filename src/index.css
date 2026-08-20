@@ -242,6 +242,28 @@ code {
   white-space: nowrap;
 }
 
+.direct-upload-theme-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: clamp(10px, 1.5vw, 14px);
+}
+
+.direct-upload-theme-thumbnail {
+  width: clamp(44px, 5vw, 52px);
+  height: clamp(44px, 5vw, 52px);
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 5px 14px rgba(20, 32, 42, 0.16);
+  user-select: none;
+}
+
+.direct-upload-theme-title-copy {
+  min-width: 0;
+}
+
 .ipad-button {
   min-height: 46px;
   border: 1px solid transparent;
@@ -860,14 +882,15 @@ code {
   }
 }
 
-/* Homepage-only brand scale; the login logo retains its existing dimensions. */
+/* Shared homepage and login brand scale. */
 .entry-screen .entry-topbar {
   min-height: 146px;
   padding-top: max(8px, env(safe-area-inset-top));
   padding-bottom: 8px;
 }
 
-.entry-screen .entry-brand-logo {
+.entry-screen .entry-brand-logo,
+.login-screen .entry-brand-logo {
   height: 128px;
   max-width: min(420px, 52vw);
 }
@@ -877,7 +900,8 @@ code {
     min-height: 114px;
   }
 
-  .entry-screen .entry-brand-logo {
+  .entry-screen .entry-brand-logo,
+  .login-screen .entry-brand-logo {
     height: 96px;
     max-width: min(315px, 48vw);
   }
@@ -2898,6 +2922,84 @@ code {
   gap: 9px;
 }
 
+.dynamic-library-advanced-toggle {
+  position: relative;
+  min-width: 0;
+  height: 46px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 8px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #56615d;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.dynamic-library-advanced-toggle:hover {
+  border-color: rgba(35, 141, 131, 0.3);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.dynamic-library-advanced-toggle > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  stroke-width: 2;
+}
+
+.dynamic-library-advanced-toggle > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  clip-path: inset(50%);
+  opacity: 0;
+}
+
+.dynamic-library-advanced-switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d5dfdc;
+  box-shadow: inset 0 0 0 1px rgba(23, 48, 43, 0.1);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dynamic-library-advanced-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(26, 48, 43, 0.24);
+  transition: transform 160ms ease;
+}
+
+.dynamic-library-advanced-toggle > input:checked + .dynamic-library-advanced-switch {
+  background: #238d83;
+  box-shadow: inset 0 0 0 1px rgba(11, 91, 84, 0.18);
+}
+
+.dynamic-library-advanced-toggle > input:checked + .dynamic-library-advanced-switch::after {
+  transform: translateX(18px);
+}
+
+.dynamic-library-advanced-toggle > input:focus-visible + .dynamic-library-advanced-switch {
+  outline: 3px solid rgba(20, 126, 132, 0.2);
+  outline-offset: 3px;
+}
+
 .dynamic-library-view-switch {
   height: 46px;
   border: 1px solid rgba(23, 23, 23, 0.1);
@@ -3742,6 +3844,15 @@ code {
     padding: 0 11px;
   }
 
+  .dynamic-library-advanced-toggle-copy {
+    display: none;
+  }
+
+  .dynamic-library-advanced-toggle {
+    padding-inline: 8px;
+    gap: 7px;
+  }
+
   .dynamic-library-icon-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-auto-rows: 190px;
@@ -3758,6 +3869,16 @@ code {
 
   .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
     --control-collapsed-gutter: 58px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dynamic-library-advanced-toggle > svg {
+    display: none;
+  }
+
+  .dynamic-library-advanced-toggle {
+    padding-inline: 6px;
   }
 }
 
@@ -12317,7 +12438,7 @@ button.ui-pressed {
   align-items: center;
   gap: 11px;
   color: #68716e;
-  background: rgba(255, 255, 255, 0.9);
+  background: #fff;
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
@@ -12352,14 +12473,32 @@ button.ui-pressed {
   outline: none;
 }
 
+.login-input-shell input:-webkit-autofill,
+.login-input-shell input:-webkit-autofill:hover,
+.login-input-shell input:-webkit-autofill:focus {
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  box-shadow: 0 0 0 1000px #fff inset;
+}
+
+.login-input-shell input:autofill {
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  box-shadow: 0 0 0 1000px #fff inset;
+}
+
 .login-input-shell input:disabled {
   color: var(--ink-soft);
   opacity: 0.72;
 }
 
 .login-password-toggle {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 7px;
   display: grid;
@@ -12467,10 +12606,6 @@ button.ui-pressed {
     min-height: 70px;
     padding-top: 4px;
     padding-bottom: 4px;
-  }
-
-  .login-topbar .entry-brand-logo {
-    height: 54px;
   }
 
   .login-workspace {
@@ -13400,6 +13535,22 @@ button.ui-pressed {
   transition: filter 120ms ease;
 }
 
+.remote-knob[data-center-press="true"]:not(.is-dragging) {
+  transition: transform 76ms cubic-bezier(0.2, 0.75, 0.3, 1), filter 120ms ease;
+}
+
+.remote-knob-body {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 50%;
+  transform: translateY(0) scale(1) translateZ(0);
+  transform-origin: center;
+  transition:
+    transform 76ms cubic-bezier(0.2, 0.75, 0.3, 1),
+    filter 76ms linear;
+}
+
 .remote-knob-small {
   width: 52%;
   max-width: none;
@@ -13424,6 +13575,18 @@ button.ui-pressed {
   filter:
     brightness(0.96)
     drop-shadow(0 3px 3px rgba(24, 28, 29, 0.54));
+}
+
+.remote-knob.is-pressed {
+  filter:
+    brightness(0.9)
+    drop-shadow(0 1px 1px rgba(24, 28, 29, 0.42));
+  transform: translateY(calc(-50% + 2.2%)) rotate(var(--remote-knob-angle)) translateZ(0);
+}
+
+.remote-knob.is-pressed .remote-knob-body {
+  filter: saturate(0.94) contrast(0.97);
+  transform: translateY(3.8%) scale(0.982) translateZ(0);
 }
 
 .remote-knob-ridges,
@@ -13481,14 +13644,39 @@ button.ui-pressed {
 }
 
 .remote-knob-brand small {
-  font-size: 9px;
+  font-size: 18px;
   font-style: italic;
   font-weight: 800;
 }
 
 .remote-knob-brand strong {
-  font-size: 15px;
+  font-size: 30px;
   font-weight: 950;
+}
+
+.remote-knob-center-button {
+  position: absolute;
+  top: 50%;
+  right: 11.76%;
+  z-index: 5;
+  width: 55.48%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  transform: translateY(-50%);
+}
+
+.remote-knob-center-button:focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(244, 251, 255, 0.72),
+    0 0 0 6px rgba(34, 86, 101, 0.42);
 }
 
 .remote-knob-scale {
@@ -13585,23 +13773,6 @@ button.ui-pressed {
   opacity: 0.66;
 }
 
-.remote-device-engraving {
-  position: absolute;
-  right: 4.1%;
-  bottom: 2.5%;
-  z-index: 2;
-  max-width: 32%;
-  overflow: hidden;
-  color: rgba(44, 48, 50, 0.62);
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.42);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 @media (max-height: 740px) {
   .remote-keyboard-screen {
     padding-top: calc(env(safe-area-inset-top) + 12px);
@@ -13653,7 +13824,8 @@ button.ui-pressed {
   .remote-keyboard-back,
   .remote-key,
   .remote-key-cap,
-  .remote-knob {
+  .remote-knob,
+  .remote-knob-body {
     transition-duration: 1ms;
   }
 
@@ -18982,6 +19154,29 @@ button.ui-pressed {
   .dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-arrow {
     transition: none;
   }
+}
+
+.dynamic-control-screen .dynamic-stage-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.44);
+  pointer-events: none;
+  user-select: none;
+}
+
+.dynamic-control-screen .dynamic-stage-watermark-text {
+  fill: currentColor;
+  stroke: rgba(8, 25, 31, 0.44);
+  stroke-width: 1.25px;
+  paint-order: stroke fill;
+  font-family: Inter, "Microsoft JhengHei", "PingFang TC", sans-serif;
+  font-size: 48px;
+  font-weight: 780;
+  letter-spacing: 1.5px;
 }
 
 .dynamic-control-screen .dynamic-add-item-menu-anchor {

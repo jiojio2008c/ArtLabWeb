@@ -233,14 +233,15 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
       const backButton = topbar.querySelector<HTMLElement>('button')
       const heading = topbar.querySelector<HTMLElement>('.min-w-0')
       const eyebrow = heading?.querySelector<HTMLElement>('.eyebrow')
+      const thumbnail = heading?.querySelector<HTMLElement>('.direct-upload-theme-thumbnail')
       const targetPlusRect = plus.getBoundingClientRect()
       const targetTitleRect = title.getBoundingClientRect()
       const targetTitleStyle = window.getComputedStyle(title)
 
-      destinationElements = [backButton, heading, eyebrow, title, dropzone].filter((element): element is HTMLElement => Boolean(element))
+      destinationElements = [backButton, heading, eyebrow, thumbnail, title, dropzone].filter((element): element is HTMLElement => Boolean(element))
       gsap.set(backButton ?? [], { opacity: 0, y: 10 })
       gsap.set(heading ?? [], { opacity: 1, y: 0 })
-      gsap.set([eyebrow, title].filter(Boolean), { opacity: 0 })
+      gsap.set([eyebrow, thumbnail, title].filter(Boolean), { opacity: 0 })
       gsap.set(dropzone, { opacity: 0, y: 10, scale: 0.985 })
 
       if (reducedMotion) {
@@ -251,7 +252,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
             scale: 1,
             duration: 0.2
           }, 0)
-          .to(title, { opacity: 1, duration: 0.14 }, 0.04)
+          .to([thumbnail, title].filter(Boolean), { opacity: 1, duration: 0.14 }, 0.04)
           .to(eyebrow ?? [], { opacity: 1, duration: 0.14 }, 0.08)
           .to(wash, { opacity: 0, duration: 0.2 }, 0.08)
         timelines.push(reducedEntry)
@@ -291,7 +292,7 @@ const DirectThemeUploadTransition: React.FC<DirectThemeUploadTransitionProps> = 
           .to(cloneScan, { opacity: 0.62, xPercent: 190, duration: 0.32, ease: 'power1.inOut' }, 0.02)
           .to(clonePlus, { opacity: 1, scale: 1, rotation: 0, duration: 0.25, ease: 'back.out(1.35)' }, 0.22)
           .to(backButton ?? [], { opacity: 1, y: 0, duration: 0.28, ease: 'power3.out' }, 0.14)
-          .to(title, { opacity: 1, duration: 0.1, ease: 'power1.inOut' }, 0.46)
+          .to([thumbnail, title].filter(Boolean), { opacity: 1, duration: 0.1, ease: 'power1.inOut' }, 0.46)
           .to(movingTitle, { opacity: 0, duration: 0.1, ease: 'power1.inOut' }, 0.46)
           .to(eyebrow ?? [], { opacity: 1, duration: 0.14, ease: 'power2.out' }, 0.5)
           .to(dropzone, { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: 'power2.out' }, 0.32)

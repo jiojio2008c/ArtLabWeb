@@ -8,6 +8,12 @@ const {
   DEFAULT_ITEM_SETTINGS_COPY_FIELDS,
   applyItemSettingsCopy
 } = require('./renderer/item-settings-copy-core.cjs')
+const {
+  DEFAULT_WATERMARK_ENABLED,
+  isWatermarkSettingsEvent,
+  resolveWatermarkEnabled,
+  resolveWatermarkEnabledForEvent
+} = require('./runtime-display-settings-core.cjs')
 
 const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
@@ -28,6 +34,7 @@ const runtimeState = {
   activeGroupId: null,
   groups: {},
   assets: {},
+  watermarkEnabled: DEFAULT_WATERMARK_ENABLED,
   view: {
     mode: 'archive',
     mirror: {
@@ -253,6 +260,7 @@ const loadState = () => {
     runtimeState.activeGroupId = loaded.activeGroupId ?? null
     runtimeState.groups = loaded.groups ?? {}
     runtimeState.assets = loaded.assets ?? {}
+    runtimeState.watermarkEnabled = resolveWatermarkEnabled(runtimeState.watermarkEnabled, loaded)
     runtimeState.view = {
       mode: 'archive',
       mirror: {
@@ -294,6 +302,7 @@ const saveState = () => {
         activeGroupId: runtimeState.activeGroupId,
         groups: runtimeState.groups,
         assets: runtimeState.assets,
+        watermarkEnabled: runtimeState.watermarkEnabled,
         preview: {
           ...runtimeState.preview,
           enabled: false
@@ -345,6 +354,7 @@ const getPublicState = () => {
     activeGroupId: runtimeState.activeGroupId,
     groups: runtimeState.groups,
     assets,
+    watermarkEnabled: runtimeState.watermarkEnabled,
     view: publicView,
     preview: runtimeState.preview,
     server: runtimeState.server,
@@ -594,6 +604,12 @@ const normalizeArchiveSource = (value) => {
 }
 
 const applyDynamicEvent = (eventName, payload) => {
+  runtimeState.watermarkEnabled = resolveWatermarkEnabledForEvent(
+    runtimeState.watermarkEnabled,
+    eventName,
+    payload
+  )
+
   switch (eventName) {
     case 'ArchiveEnter': {
       const replayId = normalizeArchiveReplayId(payload.replayId)
@@ -682,6 +698,10 @@ const applyDynamicEvent = (eventName, payload) => {
 
     case 'GroupSelect': {
       setActiveGroup(payload.groupId, payload.name)
+      break
+    }
+
+    case 'DisplaySettings': {
       break
     }
 
@@ -989,7 +1009,10 @@ const applyDynamicEvent = (eventName, payload) => {
     groupId: payload.groupId ?? runtimeState.activeGroupId ?? null,
     itemId: payload.itemId ?? null,
     enabled: eventName === 'PreviewMode' ? Boolean(payload.enabled) : undefined,
-    replayId: eventName === 'PreviewMode' ? payload.replayId ?? runtimeState.preview.replayId : undefined
+    replayId: eventName === 'PreviewMode' ? payload.replayId ?? runtimeState.preview.replayId : undefined,
+    watermarkEnabled: isWatermarkSettingsEvent(eventName)
+      ? runtimeState.watermarkEnabled
+      : undefined
   }
 
   if (!['ArchiveEnter', 'ArchiveReturn', 'ArchiveSnapshot'].includes(eventName)) {

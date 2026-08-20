@@ -3,6 +3,7 @@ import { Check, Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLoginErrorKey, loginWithPassword } from '../services/authService.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
+import BrandLogo from './BrandLogo.tsx'
 
 interface LoginPageProps {
   checkingSession: boolean
@@ -14,7 +15,6 @@ interface FieldErrors {
   password?: string
 }
 
-const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 const LOGIN_EXIT_DELAY_MS = 320
 
 const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated }) => {
@@ -81,7 +81,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ checkingSession, onAuthenticated 
       className={`ipad-screen login-screen ${checkingSession ? 'session-checking' : ''} ${loginComplete ? 'login-complete' : ''}`}
     >
       <header className="login-topbar">
-        <img className="entry-brand-logo" src={RIGHT_LOGO_URL} alt="MagicFloor" draggable={false} />
+        <BrandLogo />
       </header>
 
       <section className="login-workspace" aria-busy={checkingSession || isSubmitting}>

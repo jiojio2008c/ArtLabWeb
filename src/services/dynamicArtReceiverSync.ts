@@ -38,6 +38,7 @@ interface SyncDynamicGroupOptions {
   ip: string
   port: number
   advancedFeaturesEnabled?: boolean
+  watermarkEnabled?: boolean
   onStatus?: (status: SyncStatus) => void
 }
 
@@ -140,7 +141,8 @@ const toItemPayload = (item: DynamicItem) => {
 
 const buildGroupSyncPayload = (
   group: DynamicGroup,
-  advancedFeaturesEnabled = loadNetworkSettings().advancedFeaturesEnabled
+  advancedFeaturesEnabled = loadNetworkSettings().advancedFeaturesEnabled,
+  watermarkEnabled = loadNetworkSettings().watermarkEnabled
 ) => {
   const backgrounds = getBackgrounds(group)
   const activeBackground = getActiveBackground(group, backgrounds)
@@ -150,6 +152,7 @@ const buildGroupSyncPayload = (
     name: group.name,
     linkedAppearanceModelVersion: group.linkedAppearanceModelVersion,
     advancedFeaturesEnabled,
+    watermarkEnabled,
     appearMode: group.appearMode,
     appearIntervalMs: group.appearIntervalMs,
     appearAnimation: group.appearAnimation ?? 'none',
@@ -304,6 +307,7 @@ const syncDynamicGroupToReceiver = async ({
   ip,
   port,
   advancedFeaturesEnabled = loadNetworkSettings().advancedFeaturesEnabled,
+  watermarkEnabled = loadNetworkSettings().watermarkEnabled,
   onStatus
 }: SyncDynamicGroupOptions) => {
   const receiverKey = getReceiverKey(ip, port)
@@ -380,7 +384,7 @@ const syncDynamicGroupToReceiver = async ({
       ip,
       port,
       'GroupSelectAndSync',
-      buildGroupSyncPayload(group, advancedFeaturesEnabled)
+      buildGroupSyncPayload(group, advancedFeaturesEnabled, watermarkEnabled)
     )
     markGroupSynced(receiverKey, group.id, assetSignature)
     return true

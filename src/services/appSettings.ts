@@ -9,6 +9,7 @@ interface NetworkSettings {
   dynamicPort: number
   interactivePort: number
   advancedFeaturesEnabled: boolean
+  watermarkEnabled: boolean
 }
 
 const canUseLocalStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage)
@@ -46,7 +47,8 @@ const loadNetworkSettings = (): NetworkSettings => {
     wsIp: loadLastWsIp(),
     dynamicPort: DEFAULT_DYNAMIC_PORT,
     interactivePort: DEFAULT_INTERACTIVE_PORT,
-    advancedFeaturesEnabled: false
+    advancedFeaturesEnabled: false,
+    watermarkEnabled: true
   }
 
   if (!canUseLocalStorage()) return fallback
@@ -60,7 +62,8 @@ const loadNetworkSettings = (): NetworkSettings => {
       wsIp: parsed.wsIp?.trim() || fallback.wsIp,
       dynamicPort: normalizePort(parsed.dynamicPort, fallback.dynamicPort),
       interactivePort: normalizePort(parsed.interactivePort, fallback.interactivePort),
-      advancedFeaturesEnabled: parsed.advancedFeaturesEnabled === true
+      advancedFeaturesEnabled: parsed.advancedFeaturesEnabled === true,
+      watermarkEnabled: parsed.watermarkEnabled !== false
     }
   } catch {
     return fallback
@@ -72,7 +75,8 @@ const saveNetworkSettings = (settings: NetworkSettings) => {
     wsIp: settings.wsIp.trim() || DEFAULT_WS_IP,
     dynamicPort: normalizePort(settings.dynamicPort, DEFAULT_DYNAMIC_PORT),
     interactivePort: normalizePort(settings.interactivePort, DEFAULT_INTERACTIVE_PORT),
-    advancedFeaturesEnabled: settings.advancedFeaturesEnabled === true
+    advancedFeaturesEnabled: settings.advancedFeaturesEnabled === true,
+    watermarkEnabled: settings.watermarkEnabled !== false
   }
 
   saveLastWsIp(nextSettings.wsIp)

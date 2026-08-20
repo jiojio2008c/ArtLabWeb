@@ -4,6 +4,7 @@ import {
   subscribeUnityAnimationFrame,
   UNITY_EXTRA_ANIMATION_DEFINITIONS
 } from '../../desktop-runtime/renderer/unity-animation-core.js'
+import { resolveCanvasPixelRatio } from '../services/canvasRenderQuality.ts'
 
 interface UnityAnimationCanvasProps {
   src: string
@@ -16,6 +17,7 @@ interface UnityAnimationCanvasProps {
   overscanX?: number
   overscanY?: number
   forceLoop?: boolean
+  renderScale?: number
   onFirstFrame?: () => void
 }
 
@@ -24,8 +26,6 @@ interface CanvasSize {
   height: number
   pixelRatio: number
 }
-
-const MAX_CANVAS_PIXEL_RATIO = 1.5
 
 const UnityAnimationCanvas = ({
   src,
@@ -38,6 +38,7 @@ const UnityAnimationCanvas = ({
   overscanX = 1,
   overscanY = 1,
   forceLoop = false,
+  renderScale = 1,
   onFirstFrame
 }: UnityAnimationCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -88,7 +89,7 @@ const UnityAnimationCanvas = ({
     const updateSize = () => {
       const width = Math.max(1, canvas.clientWidth)
       const height = Math.max(1, canvas.clientHeight)
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_PIXEL_RATIO)
+      const pixelRatio = resolveCanvasPixelRatio(width, height, renderScale)
       const bitmapWidth = Math.max(1, Math.round(width * pixelRatio))
       const bitmapHeight = Math.max(1, Math.round(height * pixelRatio))
       if (canvas.width !== bitmapWidth || canvas.height !== bitmapHeight) {
@@ -102,7 +103,7 @@ const UnityAnimationCanvas = ({
     const observer = new ResizeObserver(updateSize)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [])
+  }, [renderScale])
 
   useEffect(() => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches

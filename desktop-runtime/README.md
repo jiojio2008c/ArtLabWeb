@@ -34,6 +34,8 @@
 
 背景播放参数通过 `GroupStateSync` / `GroupSelectAndSync` 的 `backgroundPlayMode`、`backgroundIntervalMs` 字段同步，也可由 `BackgroundPlayback` 事件即时更新。自动切换只在 `PreviewMode.enabled=true` 时运行，编辑状态保持当前背景。
 
+舞台 `MagicFloor` 水印默认开启，主体与描边统一使用 `44%` 不透明度（`56%` 透明度）；可通过 `DisplaySettings` 事件的 `{ watermarkEnabled }` 即时切换。`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 也接受同名字段。旧消息未携带该字段时保留当前设置，水印只绘制在 1920x1080 舞台范围内，不覆盖作品档案镜像或舞台外区域。
+
 进阶参数同样由 `GroupStateSync` / `GroupSelectAndSync` 和 `PreviewMode` 同步。组级字段包括统一的物件 `appearAnimation`、旧数据兼容用的 `backgroundTransition` 和 `audioLibrary`；每张背景包含 `bgmAudioId` 与 `backgroundTransition`；物件包含 `targetMode`、`targetPosition`、`audioId`、`audioTrigger`、`audioDelayMs`、`linkedAppearance` 和 `backgroundIds`。只有 `PreviewMode.advancedFeaturesEnabled=true` 时播放进阶行为，关闭进阶功能不会删除已同步的数据。
 
 物件联动的 UI 使用控制方语义 `A -> B`，同步协议仍由受控物件 B 保存 `linkedAppearance`：`{ triggerItemId: A.id, mode, delayMs }`。`mode` 为 `showAfter` 或 `hideAfter`，延迟上限为 `600000ms`；一个 A 可控制多个 B，一个 B 只能有一个触发方。当前 `linkedAppearanceModelVersion` 为 `3`。
@@ -90,14 +92,14 @@ npm run pack:all
 
 每个打包命令执行前都会自动清理同类型的旧 `release*` 目录。生成标准版时只删除旧标准版，生成完整翻转版时只删除旧翻转版，因此连续执行两个命令不会互相删除刚生成的另一版本。需要手动清空全部发布目录时可运行 `npm run clean:releases`。
 
-2026-08-17 当前最终交付位于：
+2026-08-20 当前最终交付位于：
 
 ```text
-desktop-runtime/release-target-loop-final-20260817/MagicFloor Dynamic Player 0.1.0.exe
-desktop-runtime/release-target-loop-vertical-final-20260817/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
+desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
 ```
 
-两个版本都监听 `8080`，不能同时运行。标准版 SHA-256 为 `196C0E8354B2DDBFF9B12E6F32E1D7CC36C7B6327C708DA989504AACEDD57F5B`；整体显示水平与垂直翻转版 SHA-256 为 `8AFCC25FD43938688BE46EF2AD5E54F003ACE0413C7FEAC8B19EC9758447257F`。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。
+两个版本都监听 `8080`，不能同时运行。标准版 SHA-256 为 `B0EBF4B963EF61F7E9757471CC4B736B0712D140175FE79035E1C4B93AF942BA`；整体显示水平与垂直翻转版 SHA-256 为 `08AC9D0DEFC0888B1FBB9EFED263D5E4ED08E37689A84759B8E4F6A1D8593097`。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。
 
 行为测试可运行：
 

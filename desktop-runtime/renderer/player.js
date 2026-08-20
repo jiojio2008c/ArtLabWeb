@@ -40,6 +40,12 @@ import {
   isBubbleItem,
   normalizeBubble
 } from './bubble-render-core.js'
+import {
+  DEFAULT_STAGE_WATERMARK_ENABLED,
+  configureHighQualityImageSmoothing,
+  drawMagicFloorWatermarkPattern,
+  drawStageWatermarkLayer
+} from './stage-presentation-core.js'
 
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
@@ -70,6 +76,10 @@ const context = canvas.getContext('2d')
 const backgroundCanvas = document.getElementById('backgroundStage')
 const backgroundSourceCanvas = document.createElement('canvas')
 const backgroundSourceContext = backgroundSourceCanvas.getContext('2d')
+const watermarkCanvas = document.createElement('canvas')
+watermarkCanvas.width = STAGE_WIDTH
+watermarkCanvas.height = STAGE_HEIGHT
+const watermarkContext = watermarkCanvas.getContext('2d')
 const statusPanel = document.getElementById('statusPanel')
 const statusText = document.getElementById('statusText')
 const groupText = document.getElementById('groupText')
@@ -86,12 +96,21 @@ displayRoot?.classList.toggle('is-vertical-flipped', isVerticalDisplayFlip)
 
 backgroundSourceCanvas.width = STAGE_WIDTH
 backgroundSourceCanvas.height = STAGE_HEIGHT
+configureHighQualityImageSmoothing(context)
+configureHighQualityImageSmoothing(backgroundSourceContext)
+configureHighQualityImageSmoothing(watermarkContext)
+configureHighQualityImageSmoothing(archivePortalContext)
+drawMagicFloorWatermarkPattern(watermarkContext, {
+  width: STAGE_WIDTH,
+  height: STAGE_HEIGHT
+})
 const waterRippleRenderer = createWaterRippleRenderer(backgroundCanvas)
 
 let runtimeState = {
   activeGroupId: null,
   groups: {},
   assets: {},
+  watermarkEnabled: DEFAULT_STAGE_WATERMARK_ENABLED,
   view: {
     mode: 'archive',
     mirror: {
@@ -217,6 +236,7 @@ const resizeCanvas = () => {
   backgroundCanvas.height = Math.round(height * dpr)
   backgroundCanvas.style.width = `${width}px`
   backgroundCanvas.style.height = `${height}px`
+  configureHighQualityImageSmoothing(context)
 
   const scaleX = width / STAGE_WIDTH
   const scaleY = height / STAGE_HEIGHT
@@ -250,6 +270,7 @@ const resizeArchivePortalCanvas = () => {
   archivePortalFallbackCanvas.height = Math.round(window.innerHeight * dpr)
   archivePortalFallbackCanvas.style.width = `${window.innerWidth}px`
   archivePortalFallbackCanvas.style.height = `${window.innerHeight}px`
+  configureHighQualityImageSmoothing(archivePortalContext)
   archivePortalContext.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
 
@@ -1911,6 +1932,7 @@ const drawFrame = (now) => {
   const visibleItems = getVisibleItemsForPlayback(group, playbackFrame)
   syncItemAppearanceTimeline(visibleItems, playbackFrame, now)
   updateAdvancedAudioPlayback(group, visibleItems, playbackFrame, now)
+  configureHighQualityImageSmoothing(backgroundSourceContext)
   backgroundSourceContext.setTransform(1, 0, 0, 1, 0, 0)
   backgroundSourceContext.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
   const backgroundRender = drawBackground(backgroundSourceContext, playbackFrame.background, now)
@@ -1933,6 +1955,7 @@ const drawFrame = (now) => {
   })
   backgroundCanvas.classList.toggle('is-hidden', !backgroundRendered)
 
+  configureHighQualityImageSmoothing(context)
   context.setTransform(1, 0, 0, 1, 0, 0)
   context.clearRect(0, 0, canvas.width, canvas.height)
   context.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -1955,6 +1978,12 @@ const drawFrame = (now) => {
   }
 
   drawBackgroundTransition(context, playbackFrame)
+  drawStageWatermarkLayer(context, watermarkCanvas, {
+    enabled: runtimeState.watermarkEnabled === true,
+    stageActive: runtimeState.view?.mode === 'stage',
+    width: STAGE_WIDTH,
+    height: STAGE_HEIGHT
+  })
 
   context.restore()
 
@@ -2020,6 +2049,9 @@ const applyStateEventToInteractions = (state) => {
 
 const receiveState = (state) => {
   const previousState = runtimeState
+  const watermarkEnabled = typeof state.watermarkEnabled === 'boolean'
+    ? state.watermarkEnabled
+    : previousState.watermarkEnabled
   const previousPreview = previousState.preview ?? {}
   const nextPreview = state.preview ?? {}
   const stateEventSequence = Number(state.lastEvent?.sequence ?? 0)
@@ -2040,7 +2072,10 @@ const receiveState = (state) => {
     : ''
   const advancedSessionChanged = advancedSessionKey !== advancedPlaybackState.sessionKey
 
-  runtimeState = state
+  runtimeState = {
+    ...state,
+    watermarkEnabled
+  }
   if (activeGroupChanged || archiveModeChanged || stageStateSynced) activeStageStartedAt = performance.now()
   if (advancedSessionChanged) {
     resetAdvancedPlaybackSession(advancedSessionKey)

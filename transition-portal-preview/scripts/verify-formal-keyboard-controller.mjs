@@ -7,6 +7,22 @@ const EDGE_PATH = process.env.MAGICFLOOR_EDGE_PATH
   || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const ARTIFACT_DIR = new URL('../test-artifacts/formal-keyboard-controller/', import.meta.url)
 const artifactPath = (name) => fileURLToPath(new URL(name, ARTIFACT_DIR))
+const REMOTE_PRESS_PREFIX = 'MF|RemoteKeyboard|Press|'
+const REMOTE_TURN_PREFIX = 'MF|RemoteKeyboard|Turn|'
+const PRESET_8_KEYS = ['LeftControl', 'LeftAlt', 'Alpha8']
+
+const parseTransform = (value) => {
+  if (!value || value === 'none') return { scaleY: 1, translateY: 0 }
+  const values = value
+    .slice(value.indexOf('(') + 1, value.lastIndexOf(')'))
+    .split(',')
+    .map((part) => Number.parseFloat(part.trim()))
+  if (value.startsWith('matrix3d')) {
+    return { scaleY: values[5], translateY: values[13] }
+  }
+  return { scaleY: values[3], translateY: values[5] }
+}
+
 const now = Date.now()
 const fakeUser = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -108,6 +124,10 @@ try {
       const topLeftScrew = rect(query('.screw-top-left'))
       const bottomLeftScrew = rect(query('.screw-bottom-left'))
       const header = rect(query('.remote-keyboard-header'))
+      const engraving = document.querySelector('.remote-device-engraving')
+      const deviceText = query('.remote-keyboard-device').textContent || ''
+      const brandSmall = query('[data-control="horizontal"] .remote-knob-brand small')
+      const brandStrong = query('[data-control="horizontal"] .remote-knob-brand strong')
 
       return {
         viewport: viewportSize,
@@ -121,12 +141,18 @@ try {
         topLeftScrew,
         bottomLeftScrew,
         header,
+        engravingCount: document.querySelectorAll('.remote-device-engraving').length,
+        forbiddenEngravingTextPresent: /keyboard\s+(?:controlled|controller)/i.test(deviceText),
+        brandSmallFontSize: Number.parseFloat(getComputedStyle(brandSmall).fontSize),
+        brandStrongFontSize: Number.parseFloat(getComputedStyle(brandStrong).fontSize),
         deviceInsideViewport: device.left >= 0
           && device.top >= 0
           && device.right <= viewportSize.width
           && device.bottom <= viewportSize.height,
         pageOverflow: document.documentElement.scrollWidth > window.innerWidth + 1
-          || document.documentElement.scrollHeight > window.innerHeight + 1
+          || document.documentElement.scrollHeight > window.innerHeight + 1,
+        engravingVisible: engraving instanceof HTMLElement
+          && getComputedStyle(engraving).display !== 'none'
       }
     }, { width: viewport.width, height: viewport.height })
 
@@ -143,6 +169,74 @@ try {
     const pressedDuringPointer = await firstKey.evaluate((element) => element.classList.contains('is-pressed'))
     await page.mouse.up()
     const releasedAfterPointer = await firstKey.evaluate((element) => !element.classList.contains('is-pressed'))
+
+    const lastKeyMessageStart = messages.length
+    await page.locator('.remote-key').nth(15).click()
+    await page.waitForTimeout(90)
+    const lastKeyPressMessage = messages
+      .slice(lastKeyMessageStart)
+      .find((message) => message.startsWith(REMOTE_PRESS_PREFIX))
+
+    const largeKnob = page.locator('[data-control="horizontal"] .remote-knob')
+    const centerButton = page.locator('[data-control="horizontal"] .remote-knob-center-button')
+    const largeKnobBounds = await largeKnob.boundingBox()
+    const centerBounds = await centerButton.boundingBox()
+    if (!largeKnobBounds) throw new Error('Large knob has no bounding box')
+    if (!centerBounds) throw new Error('Large knob center button has no bounding box')
+    const largeKnobDiameter = await largeKnob.evaluate((element) => Number.parseFloat(getComputedStyle(element).width))
+    const centerButtonDiameter = await centerButton.evaluate((element) => Number.parseFloat(getComputedStyle(element).width))
+    const centerButtonDiameterRatio = centerButtonDiameter / largeKnobDiameter
+    const largeKnobBody = largeKnob.locator('.remote-knob-body')
+    const largeKnobBodyTransformBefore = await largeKnobBody.evaluate((element) => getComputedStyle(element).transform)
+    const centerPressMessageStart = messages.length
+    await page.mouse.move(
+      centerBounds.x + centerBounds.width / 2,
+      centerBounds.y + centerBounds.height / 2
+    )
+    await page.mouse.down()
+    const largeKnobPressedDuringPointer = await largeKnob.evaluate((element) => element.classList.contains('is-pressed'))
+    await page.waitForTimeout(40)
+    const largeKnobBodyTransformDuring = await largeKnobBody.evaluate((element) => getComputedStyle(element).transform)
+    await page.mouse.up()
+    await page.waitForTimeout(90)
+    const largeKnobReleasedAfterPointer = await largeKnob.evaluate((element) => !element.classList.contains('is-pressed'))
+    const centerPressMessage = messages
+      .slice(centerPressMessageStart)
+      .find((message) => message.startsWith(REMOTE_PRESS_PREFIX))
+    const parsePressKeys = (message) => {
+      if (!message?.startsWith(REMOTE_PRESS_PREFIX)) return null
+      try {
+        return JSON.parse(message.slice(REMOTE_PRESS_PREFIX.length)).keys
+      } catch {
+        return null
+      }
+    }
+    const lastKeyPressKeys = parsePressKeys(lastKeyPressMessage)
+    const centerPressKeys = parsePressKeys(centerPressMessage)
+    const largeKnobBodyBefore = parseTransform(largeKnobBodyTransformBefore)
+    const largeKnobBodyDuring = parseTransform(largeKnobBodyTransformDuring)
+
+    const outerRingMessageStart = messages.length
+    const outerRingCenterX = largeKnobBounds.x + largeKnobBounds.width / 2
+    const outerRingCenterY = largeKnobBounds.y + largeKnobBounds.height / 2
+    const outerRingRadius = largeKnobDiameter * 0.43
+    const largeKnobAngleBeforeOuterDrag = await largeKnob.evaluate((element) => element.style.getPropertyValue('--remote-knob-angle'))
+    await page.mouse.move(outerRingCenterX + outerRingRadius, outerRingCenterY)
+    await page.mouse.down()
+    await page.mouse.move(outerRingCenterX, outerRingCenterY + outerRingRadius, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(90)
+    const largeKnobAngleAfterOuterDrag = await largeKnob.evaluate((element) => element.style.getPropertyValue('--remote-knob-angle'))
+    const outerRingMessages = messages.slice(outerRingMessageStart)
+    const outerRingPressMessages = outerRingMessages.filter((message) => message.startsWith(REMOTE_PRESS_PREFIX))
+    const outerRingHorizontalTurnMessages = outerRingMessages.filter((message) => {
+      if (!message.startsWith(REMOTE_TURN_PREFIX)) return false
+      try {
+        return JSON.parse(message.slice(REMOTE_TURN_PREFIX.length)).control === 'horizontal'
+      } catch {
+        return false
+      }
+    })
 
     const volumeKnob = page.locator('[data-control="volume"] .remote-knob')
     const knobBounds = await volumeKnob.boundingBox()
@@ -171,14 +265,56 @@ try {
       deviceInsideViewport: metrics.deviceInsideViewport,
       headerInsideViewport: metrics.header.top >= 0,
       noPageOverflow: !metrics.pageOverflow,
+      noDeviceEngraving: metrics.engravingCount === 0
+        && !metrics.engravingVisible
+        && !metrics.forbiddenEngravingTextPresent,
+      largeKnobBrandScale: Math.abs(metrics.brandSmallFontSize - 18) <= 0.1
+        && Math.abs(metrics.brandStrongFontSize - 30) <= 0.1,
+      largeKnobCenterHitArea: centerButtonDiameterRatio >= 0.74
+        && centerButtonDiameterRatio <= 0.78,
       keyPressFeedback: pressedDuringPointer && releasedAfterPointer,
+      largeKnobCenterPressFeedback: largeKnobPressedDuringPointer && largeKnobReleasedAfterPointer,
+      largeKnobCenterPressDepth: largeKnobBodyDuring.translateY > largeKnobBodyBefore.translateY + 0.5
+        && largeKnobBodyDuring.scaleY < largeKnobBodyBefore.scaleY - 0.001,
+      lastKeyPreset8Protocol: JSON.stringify(lastKeyPressKeys) === JSON.stringify(PRESET_8_KEYS),
+      largeKnobCenterPreset8Protocol: JSON.stringify(centerPressKeys) === JSON.stringify(PRESET_8_KEYS),
+      centerSignalMatchesLastKey: centerPressMessage === lastKeyPressMessage,
+      largeKnobOuterRingNoPress: outerRingPressMessages.length === 0,
+      largeKnobOuterRingTurn: largeKnobAngleBeforeOuterDrag !== largeKnobAngleAfterOuterDrag
+        && outerRingHorizontalTurnMessages.length > 0,
       knobDragFeedback: angleBefore !== angleAfter,
       pressProtocol: messages.some((message) => message.includes('MF|RemoteKeyboard|Press|')),
       turnProtocol: messages.some((message) => message.includes('MF|RemoteKeyboard|Turn|')),
       noBrowserErrors: browserErrors.length === 0
     }
     const failures = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name)
-    reports.push({ viewport, metrics, interactions: { angleBefore, angleAfter }, messages, browserErrors, checks, failures })
+    reports.push({
+      viewport,
+      metrics,
+      interactions: {
+        angleBefore,
+        angleAfter,
+        largeKnobPressedDuringPointer,
+        largeKnobReleasedAfterPointer,
+        largeKnobBodyTransformBefore,
+        largeKnobBodyTransformDuring,
+        largeKnobBodyBefore,
+        largeKnobBodyDuring,
+        largeKnobDiameter,
+        centerButtonDiameter,
+        centerButtonDiameterRatio,
+        outerRingRadius,
+        largeKnobAngleBeforeOuterDrag,
+        largeKnobAngleAfterOuterDrag,
+        outerRingMessages,
+        lastKeyPressMessage,
+        centerPressMessage
+      },
+      messages,
+      browserErrors,
+      checks,
+      failures
+    })
     await context.close()
   }
 } finally {
