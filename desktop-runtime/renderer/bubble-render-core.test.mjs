@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 
 import {
+  BUBBLE_SHAPE_STYLE_IDS,
+  bubbleShapeCommandsToSvgPath,
+  deriveBubbleOutlineColor,
+  getBubbleShapeDefinition,
+  getBubbleShapeDirection,
+  normalizeBubbleColor
+} from './bubble-shape-catalog.js'
+import {
   BUBBLE_PALETTE_IDS,
   BUBBLE_STYLE_IDS,
   BUBBLE_TITLE_MASK_IDS,
@@ -42,6 +50,44 @@ assert.deepEqual(BUBBLE_TITLE_STYLE_IDS, [
   'title-underline',
   'title-none'
 ])
+assert.deepEqual(BUBBLE_SHAPE_STYLE_IDS, [
+  'dialogue-rounded-left',
+  'dialogue-rounded-right',
+  'dialogue-soft-left',
+  'dialogue-soft-right',
+  'dialogue-comic-left',
+  'dialogue-comic-right',
+  'thought-cloud-left',
+  'thought-cloud-right'
+])
+
+BUBBLE_SHAPE_STYLE_IDS.forEach((styleId) => {
+  const definition = getBubbleShapeDefinition(styleId)
+  const svgPath = bubbleShapeCommandsToSvgPath(definition.bodyCommands)
+  assert.equal(definition.styleId, styleId)
+  assert.equal(definition.direction, getBubbleShapeDirection(styleId))
+  assert.ok(svgPath.startsWith('M '))
+  assert.ok(svgPath.endsWith('Z'))
+  assert.equal(svgPath.includes('NaN'), false)
+  assert.ok(definition.contentRect.x >= definition.viewBox.x)
+  assert.ok(definition.contentRect.y >= definition.viewBox.y)
+  assert.ok(definition.contentRect.x + definition.contentRect.width <= definition.viewBox.width)
+  assert.ok(definition.contentRect.y + definition.contentRect.height <= definition.viewBox.height)
+})
+
+const roundedRightShape = getBubbleShapeDefinition('dialogue-rounded-right')
+const roundedLeftShape = getBubbleShapeDefinition('dialogue-rounded-left')
+assert.equal(
+  roundedRightShape.bodyCommands[0][1] + roundedLeftShape.bodyCommands[0][1],
+  roundedRightShape.viewBox.width
+)
+assert.equal(getBubbleShapeDefinition('thought-soft-left').styleId, 'thought-cloud-left')
+assert.equal(getBubbleShapeDefinition('thought-soft-right').styleId, 'thought-cloud-right')
+assert.equal(normalizeBubbleColor('#AbC'), '#aabbcc')
+assert.equal(normalizeBubbleColor('#12345678'), '#12345678')
+assert.equal(normalizeBubbleColor('not-a-color', '#102030'), '#102030')
+assert.match(deriveBubbleOutlineColor('#fefefe'), /^#[0-9a-f]{6}$/)
+assert.notEqual(deriveBubbleOutlineColor('#fefefe'), deriveBubbleOutlineColor('#101010'))
 
 const dialogue = normalizeBubble({
   bubbleType: 'dialogue',
@@ -80,7 +126,21 @@ assert.equal(isBubbleItem({ kind: 'media' }), false)
 assert.equal(getGraphemes('A👨‍👩‍👧‍👦B').length, 3)
 assert.notEqual(getBubbleSurface({ bubbleType: 'dialogue', styleId: 'dialogue-rounded' }).surface, getBubbleSurface({ bubbleType: 'dialogue', styleId: 'dialogue-comic' }).surface)
 assert.equal(normalizeBubble({ bubbleType: 'dialogue', styleId: 'dialogue-soft' }).styleId, 'dialogue-soft-right')
-assert.equal(normalizeBubble({ bubbleType: 'thought', styleId: 'thought-soft' }).styleId, 'thought-soft-right')
+assert.equal(normalizeBubble({ bubbleType: 'thought', styleId: 'thought-soft' }).styleId, 'thought-cloud-right')
+assert.equal(normalizeBubble({ bubbleType: 'thought', styleId: 'thought-soft-left' }).styleId, 'thought-cloud-left')
+assert.deepEqual(
+  getBubbleSurface({
+    bubbleType: 'dialogue',
+    styleId: 'dialogue-rounded-right',
+    surfaceColor: '#abcdef',
+    outlineColor: '#123456'
+  }),
+  { surface: '#abcdef', border: '#123456' }
+)
+assert.equal(
+  normalizeBubble({ surfaceColor: '#ffffff' }).outlineColor,
+  deriveBubbleOutlineColor('#ffffff')
+)
 assert.equal(normalizeBubble({ titleMaskId: 'invalid-mask' }).titleMaskId, 'rounded')
 
 const standaloneTitle = normalizeBubble({
@@ -122,6 +182,7 @@ const createRenderContext = () => {
   const quadraticCurveToCalls = []
   const bezierCurveToCalls = []
   const arcCalls = []
+  const ellipseCalls = []
   const roundRectCalls = []
   const fillTextCalls = []
   const fillTextStates = []
@@ -136,6 +197,7 @@ const createRenderContext = () => {
     quadraticCurveToCalls,
     bezierCurveToCalls,
     arcCalls,
+    ellipseCalls,
     roundRectCalls,
     fillTextCalls,
     fillTextStates,
@@ -146,6 +208,7 @@ const createRenderContext = () => {
     strokeStyle: '',
     lineWidth: 1,
     lineCap: 'butt',
+    lineJoin: 'miter',
     shadowColor: 'transparent',
     shadowBlur: 0,
     shadowOffsetY: 0,
@@ -159,6 +222,7 @@ const createRenderContext = () => {
         strokeStyle: this.strokeStyle,
         lineWidth: this.lineWidth,
         lineCap: this.lineCap,
+        lineJoin: this.lineJoin,
         shadowColor: this.shadowColor,
         shadowBlur: this.shadowBlur,
         shadowOffsetY: this.shadowOffsetY,
@@ -179,8 +243,17 @@ const createRenderContext = () => {
     bezierCurveTo(...args) { bezierCurveToCalls.push(args) },
     roundRect(...args) { roundRectCalls.push(args) },
     arc(...args) { arcCalls.push(args) },
+    ellipse(...args) { ellipseCalls.push(args) },
     fill() { fillCalls.push({ fillStyle: this.fillStyle, globalAlpha: this.globalAlpha }) },
-    stroke() { strokeCalls.push({ strokeStyle: this.strokeStyle, globalAlpha: this.globalAlpha, lineWidth: this.lineWidth }) },
+    stroke() {
+      strokeCalls.push({
+        strokeStyle: this.strokeStyle,
+        globalAlpha: this.globalAlpha,
+        lineWidth: this.lineWidth,
+        lineCap: this.lineCap,
+        lineJoin: this.lineJoin
+      })
+    },
     setLineDash() {},
     fillText(...args) {
       fillTextCalls.push(args)
@@ -227,15 +300,24 @@ BUBBLE_TITLE_MASK_IDS.forEach((titleMaskId) => {
   assert.equal(renderContext.fillTextCalls.length, 2)
   titleMaskContexts.set(titleMaskId, renderContext)
 })
-assert.equal(titleMaskContexts.get('rounded').roundRectCalls.length, 2)
-assert.equal(titleMaskContexts.get('pill').roundRectCalls.length, 2)
+assert.equal(titleMaskContexts.get('rounded').roundRectCalls.length, 1)
+assert.equal(titleMaskContexts.get('pill').roundRectCalls.length, 1)
 assert.ok(titleMaskContexts.get('pill').roundRectCalls.at(-1)[4] > titleMaskContexts.get('rounded').roundRectCalls.at(-1)[4])
-assert.equal(titleMaskContexts.get('ticket').roundRectCalls.length, 1)
-assert.equal(titleMaskContexts.get('ticket').lineToCalls.length, 5)
-assert.equal(titleMaskContexts.get('underline').roundRectCalls.length, 1)
-assert.equal(titleMaskContexts.get('underline').lineToCalls.length, 1)
-assert.equal(titleMaskContexts.get('none').roundRectCalls.length, 1)
-assert.equal(titleMaskContexts.get('none').lineToCalls.length, 0)
+assert.equal(titleMaskContexts.get('ticket').roundRectCalls.length, 0)
+assert.equal(
+  titleMaskContexts.get('ticket').lineToCalls.length,
+  titleMaskContexts.get('rounded').lineToCalls.length + 5
+)
+assert.equal(titleMaskContexts.get('underline').roundRectCalls.length, 0)
+assert.equal(
+  titleMaskContexts.get('underline').lineToCalls.length,
+  titleMaskContexts.get('rounded').lineToCalls.length + 1
+)
+assert.equal(titleMaskContexts.get('none').roundRectCalls.length, 0)
+assert.equal(
+  titleMaskContexts.get('none').lineToCalls.length,
+  titleMaskContexts.get('rounded').lineToCalls.length
+)
 
 const standaloneTitleContexts = new Map()
 BUBBLE_TITLE_STYLE_IDS.forEach((styleId) => {
@@ -285,7 +367,9 @@ assert.equal(underlineTitleContext.lineToCalls.length, 1)
 assert.deepEqual(underlineTitleContext.strokeCalls[0], {
   strokeStyle: '#123456',
   globalAlpha: 0.35,
-  lineWidth: 9.9
+  lineWidth: 9.9,
+  lineCap: 'round',
+  lineJoin: 'miter'
 })
 assert.equal(plainTitleContext.roundRectCalls.length, 0)
 assert.equal(plainTitleContext.fillCalls.length, 0)
@@ -333,11 +417,21 @@ drawBubble(leftDialogueContext, {
   widthPx: 1000,
   heightPx: 400
 })
-assert.equal(rightDialogueContext.moveToCalls.at(-1)[0], 780)
-assert.equal(leftDialogueContext.moveToCalls.at(-1)[0], 220)
-assert.equal(rightDialogueContext.quadraticCurveToCalls.at(-1)[0], 820)
-assert.equal(leftDialogueContext.quadraticCurveToCalls.at(-1)[0], 180)
-assert.deepEqual(rightDialogueContext.fillTextCalls, leftDialogueContext.fillTextCalls)
+assert.equal(rightDialogueContext.moveToCalls[0][0], 96 / 1080 * 1000)
+assert.equal(leftDialogueContext.moveToCalls[0][0], (1080 - 96) / 1080 * 1000)
+assert.ok(rightDialogueContext.lineToCalls.some(([x, y]) => (
+  Math.abs(x - 724 / 1080 * 1000) < 1e-9
+  && Math.abs(y - 455 / 480 * 400) < 1e-9
+)))
+assert.ok(leftDialogueContext.lineToCalls.some(([x, y]) => (
+  Math.abs(x - (1080 - 724) / 1080 * 1000) < 1e-9
+  && Math.abs(y - 455 / 480 * 400) < 1e-9
+)))
+assert.equal(rightDialogueContext.fillTextCalls[0][0], leftDialogueContext.fillTextCalls[0][0])
+assert.ok(Math.abs(
+  rightDialogueContext.fillTextCalls[0][1] + leftDialogueContext.fillTextCalls[0][1] - 1000
+) < 1e-9)
+assert.equal(rightDialogueContext.fillTextCalls[0][2], leftDialogueContext.fillTextCalls[0][2])
 assert.deepEqual(rightDialogueContext.transformCalls, [])
 assert.deepEqual(leftDialogueContext.transformCalls, [])
 
@@ -357,8 +451,19 @@ drawBubble(leftThoughtContext, {
   widthPx: 1000,
   heightPx: 600
 })
-assert.deepEqual(rightThoughtContext.arcCalls.map(([x]) => x), [780, 860, 920])
-assert.deepEqual(leftThoughtContext.arcCalls.map(([x]) => x), [220, 140, 80])
+assert.equal(rightThoughtContext.ellipseCalls.length, 3)
+assert.equal(leftThoughtContext.ellipseCalls.length, 3)
+rightThoughtContext.ellipseCalls.forEach(([x, , radiusX, radiusY], index) => {
+  const expectedX = getBubbleShapeDefinition('thought-cloud-right').decorations[index].cx / 940 * 1000
+  assert.ok(Math.abs(x - expectedX) < 1e-9)
+  assert.ok(Math.abs(radiusX - getBubbleShapeDefinition('thought-cloud-right').decorations[index].radius / 940 * 1000) < 1e-9)
+  assert.ok(Math.abs(radiusY - getBubbleShapeDefinition('thought-cloud-right').decorations[index].radius / 680 * 600) < 1e-9)
+  assert.notEqual(radiusX, radiusY)
+})
+leftThoughtContext.ellipseCalls.forEach(([x], index) => {
+  const expectedX = getBubbleShapeDefinition('thought-cloud-left').decorations[index].cx / 940 * 1000
+  assert.ok(Math.abs(x - expectedX) < 1e-9)
+})
 assert.deepEqual(rightThoughtContext.fillTextCalls, leftThoughtContext.fillTextCalls)
 assert.deepEqual(rightThoughtContext.transformCalls, [])
 assert.deepEqual(leftThoughtContext.transformCalls, [])
@@ -397,5 +502,21 @@ drawBubble(leftImageRenderContext, {
 })
 assert.deepEqual(leftImageRenderContext.drawImageCalls, imageRenderContext.drawImageCalls)
 assert.deepEqual(leftImageRenderContext.transformCalls, [])
+
+const customColorContext = createRenderContext()
+drawBubble(customColorContext, {
+  bubbleType: 'dialogue',
+  styleId: 'dialogue-comic-right',
+  bodyText: 'Custom',
+  textColor: '#abcdef',
+  surfaceColor: '#fedcba',
+  outlineColor: '#654321'
+})
+assert.equal(customColorContext.fillCalls[0].fillStyle, '#fedcba')
+assert.equal(customColorContext.strokeCalls[0].strokeStyle, '#654321')
+assert.equal(customColorContext.strokeCalls[0].lineWidth, 5)
+assert.equal(customColorContext.strokeCalls[0].lineCap, 'round')
+assert.equal(customColorContext.strokeCalls[0].lineJoin, 'round')
+assert.equal(customColorContext.fillTextStates[0].fillStyle, '#abcdef')
 
 console.log('Bubble rendering core verification passed.')

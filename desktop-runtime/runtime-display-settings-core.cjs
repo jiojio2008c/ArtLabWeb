@@ -1,6 +1,8 @@
 'use strict'
 
 const DEFAULT_WATERMARK_ENABLED = true
+const DESKTOP_STAGE_WATERMARK_ENABLED = false
+const DESKTOP_ADVANCED_FEATURES_ENABLED = true
 const WATERMARK_SETTINGS_EVENT_NAMES = Object.freeze([
   'DisplaySettings',
   'GroupStateSync',
@@ -31,6 +33,8 @@ const resolveWatermarkEnabledForEvent = (currentValue, eventName, payload) => (
 
 module.exports = {
   DEFAULT_WATERMARK_ENABLED,
+  DESKTOP_STAGE_WATERMARK_ENABLED,
+  DESKTOP_ADVANCED_FEATURES_ENABLED,
   WATERMARK_SETTINGS_EVENT_NAMES,
   isWatermarkSettingsEvent,
   normalizeWatermarkEnabled,

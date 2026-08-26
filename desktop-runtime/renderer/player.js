@@ -17,6 +17,7 @@ import {
 import {
   RIPPLE_DURATION_MS,
   createAnimationOverrideStore,
+  isAnimationOverrideComplete,
   mapClientPointToStage,
   sampleRipple
 } from './interaction-core.js'
@@ -28,11 +29,23 @@ import {
 import { createDynamicPortalWorld } from './archive-portal-world.js'
 import {
   buildDynamicAppearanceTimeline,
-  getDynamicPlaybackItemsForBackground,
+  getContinuableDynamicAppearanceItemIds,
   sampleDynamicAppearanceTimeline
 } from './advanced-appearance-timeline.js'
-import { getDynamicBackgroundPlaybackStartIndex } from './background-playback-core.js'
+import {
+  getDynamicBackgroundPlaybackStartIndex,
+  getDynamicStageItemsForBackground,
+  getDynamicFixedBackgroundEpochKey,
+  resolveDynamicFixedBackgroundEpoch,
+  resolveDynamicBackgroundPlaybackEpoch
+} from './background-playback-core.js'
 import { sampleTargetMotionProgress } from './target-motion-core.js'
+import {
+  sampleDynamicHorizontalMotion,
+  sampleDynamicOrbitMotion,
+  getDynamicVerticalWaveOffsets,
+  sampleDynamicVerticalWave
+} from './dynamic-motion-core.js'
 import {
   drawBubble,
   getBubbleAssetId,
@@ -42,16 +55,12 @@ import {
 } from './bubble-render-core.js'
 import {
   DEFAULT_STAGE_WATERMARK_ENABLED,
-  configureHighQualityImageSmoothing,
-  drawMagicFloorWatermarkPattern,
-  drawStageWatermarkLayer
+  configureHighQualityImageSmoothing
 } from './stage-presentation-core.js'
 
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
-const REFERENCE_PREVIEW_STAGE_HEIGHT = 540
-const VERTICAL_TRACK_EDGE_PADDING_RATIO = 28 / REFERENCE_PREVIEW_STAGE_HEIGHT
-const VERTICAL_OUT_PADDING_RATIO = Math.max(0.22, 120 / REFERENCE_PREVIEW_STAGE_HEIGHT)
+const DESKTOP_ADVANCED_FEATURES_ENABLED = true
 const TARGET_ARRIVAL_SETTLE_MS = 80
 const PREVIEW_BGM_VOLUME = 0.62
 const PREVIEW_BGM_DUCK_VOLUME = 0.2
@@ -76,15 +85,11 @@ const context = canvas.getContext('2d')
 const backgroundCanvas = document.getElementById('backgroundStage')
 const backgroundSourceCanvas = document.createElement('canvas')
 const backgroundSourceContext = backgroundSourceCanvas.getContext('2d')
-const watermarkCanvas = document.createElement('canvas')
-watermarkCanvas.width = STAGE_WIDTH
-watermarkCanvas.height = STAGE_HEIGHT
-const watermarkContext = watermarkCanvas.getContext('2d')
 const statusPanel = document.getElementById('statusPanel')
 const statusText = document.getElementById('statusText')
 const groupText = document.getElementById('groupText')
 const archiveView = document.getElementById('archiveView')
-const archiveMirrorImage = document.getElementById('archiveMirrorImage')
+let archiveMirrorImage = document.getElementById('archiveMirrorImage')
 const archiveMirrorFallback = document.getElementById('archiveMirrorFallback')
 const archiveSourceImage = document.getElementById('archiveSourceImage')
 const archivePortalCanvas = document.getElementById('archivePortalCanvas')
@@ -98,12 +103,7 @@ backgroundSourceCanvas.width = STAGE_WIDTH
 backgroundSourceCanvas.height = STAGE_HEIGHT
 configureHighQualityImageSmoothing(context)
 configureHighQualityImageSmoothing(backgroundSourceContext)
-configureHighQualityImageSmoothing(watermarkContext)
 configureHighQualityImageSmoothing(archivePortalContext)
-drawMagicFloorWatermarkPattern(watermarkContext, {
-  width: STAGE_WIDTH,
-  height: STAGE_HEIGHT
-})
 const waterRippleRenderer = createWaterRippleRenderer(backgroundCanvas)
 
 let runtimeState = {
@@ -133,6 +133,7 @@ let runtimeState = {
   },
   preview: {
     enabled: false,
+    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
     replayId: 0,
     startedAt: Date.now(),
     appearMode: 'all',
@@ -157,16 +158,18 @@ let previewStartTime = performance.now()
 let activeStageStartedAt = previewStartTime
 let lastDrawnBackgroundAssetId = ''
 let randomBackgroundState = { key: '', indices: [] }
-let backgroundPlaybackScheduleState = { key: '', entries: [] }
+let backgroundPlaybackScheduleState = { key: '', entries: [], startedAt: 0 }
+let fixedBackgroundEpochState = { key: '', changedAt: 0 }
 let lastStateEventSequence = 0
 let ripples = []
 let alphaHitWarningShown = false
 let activeArchiveReplayId = ''
 let archiveTransitionFrameId = 0
 let archiveTransitionStartedAt = 0
-let archiveMirrorImageUrl = ''
-let archiveSourceImageUrl = ''
-let archiveSourceImageFailedUrl = ''
+let archiveMirrorImageFrameKey = ''
+let archiveMirrorImageLoadSequence = 0
+let archiveSourceImageFrameKey = ''
+let archiveSourceImageFailedFrameKey = ''
 let archivePortalWorld = null
 
 const imageCache = new Map()
@@ -174,6 +177,11 @@ const videoCache = new Map()
 const RANDOM_PREVIEW_MOTION_MODES = ['verticalWave', 'left', 'right', 'orbit']
 const UNITY_PREVIEW_DURATION_BY_ID = new Map(
   UNITY_EXTRA_ANIMATION_DEFINITIONS.map((definition) => [definition.id, definition.duration])
+)
+const UNITY_CLICK_ONE_SHOT_DURATION_BY_ID = new Map(
+  UNITY_EXTRA_ANIMATION_DEFINITIONS
+    .filter((definition) => !definition.loop)
+    .map((definition) => [definition.id, definition.duration])
 )
 const HIT_SAMPLE_SIZE = 9
 const HIT_ALPHA_THRESHOLD = 18
@@ -287,13 +295,6 @@ const drawArchivePortal = (progress, now) => {
   const centerY = height * (0.5 - travel * 0.02)
   const baseSize = Math.min(width, height) * (0.2 + travel * 1.46)
 
-  const digital = archivePortalContext.createLinearGradient(0, 0, width, height)
-  digital.addColorStop(0, `rgba(4, 24, 58, ${0.9 * activation * exit})`)
-  digital.addColorStop(0.5, `rgba(8, 51, 88, ${0.82 * activation * exit})`)
-  digital.addColorStop(1, `rgba(30, 13, 67, ${0.9 * activation * exit})`)
-  archivePortalContext.fillStyle = digital
-  archivePortalContext.fillRect(0, 0, width, height)
-
   archivePortalContext.save()
   archivePortalContext.globalCompositeOperation = 'lighter'
   const lineCount = width >= 1400 ? 54 : 38
@@ -338,6 +339,54 @@ const stopArchiveTransition = () => {
   archivePortalCanvas.classList.remove('is-active')
   archivePortalFallbackCanvas.classList.remove('is-active')
   archivePortalContext.clearRect(0, 0, window.innerWidth, window.innerHeight)
+}
+
+const resetArchiveMirrorSnapshotLayer = () => {
+  archiveMirrorImageLoadSequence += 1
+  archiveMirrorImageFrameKey = ''
+  archiveMirrorImage.onload = null
+  archiveMirrorImage.onerror = null
+  archiveMirrorImage.removeAttribute('src')
+  archiveView.classList.remove('has-snapshot')
+}
+
+const resetArchiveSourceLayer = () => {
+  archiveSourceImageFrameKey = ''
+  archiveSourceImageFailedFrameKey = ''
+  archiveSourceImage.onload = null
+  archiveSourceImage.onerror = null
+  archiveSourceImage.removeAttribute('src')
+  archiveMirrorFallback.classList.remove('has-source')
+}
+
+const resetArchiveMediaLayers = () => {
+  resetArchiveMirrorSnapshotLayer()
+  resetArchiveSourceLayer()
+}
+
+const loadArchiveMirrorSnapshot = (snapshotDataUrl, frameKey) => {
+  const loadSequence = ++archiveMirrorImageLoadSequence
+  archiveMirrorImageFrameKey = frameKey
+  const nextImage = new Image()
+  nextImage.className = 'archive-mirror-image'
+  nextImage.alt = ''
+  nextImage.draggable = false
+  nextImage.onload = () => {
+    if (loadSequence !== archiveMirrorImageLoadSequence || archiveMirrorImageFrameKey !== frameKey) return
+
+    nextImage.id = 'archiveMirrorImage'
+    archiveMirrorImage.onload = null
+    archiveMirrorImage.onerror = null
+    archiveMirrorImage.replaceWith(nextImage)
+    archiveMirrorImage = nextImage
+    archiveView.classList.add('has-snapshot')
+  }
+  nextImage.onerror = () => {
+    if (loadSequence !== archiveMirrorImageLoadSequence || archiveMirrorImageFrameKey !== frameKey) return
+    archiveMirrorImageFrameKey = ''
+    if (!archiveMirrorImage.getAttribute('src')) archiveView.classList.remove('has-snapshot')
+  }
+  nextImage.src = snapshotDataUrl
 }
 
 const getArchivePortalOrigin = (mirror) => {
@@ -413,7 +462,13 @@ const renderArchiveMirror = () => {
   const mirror = runtimeState.view?.mirror ?? {}
   const replayId = String(mirror.replayId || '')
   const snapshotDataUrl = typeof mirror.snapshotDataUrl === 'string' ? mirror.snapshotDataUrl : ''
-  const sourceDataUrl = typeof mirror.source?.dataUrl === 'string' ? mirror.source.dataUrl : ''
+  const snapshotCapturedAt = Math.max(0, Number(mirror.capturedAt) || 0)
+  const snapshotFrameKey = snapshotDataUrl ? `${replayId}:${snapshotCapturedAt}` : ''
+  const sourceDataUrl = mirror.transition === 'portal' && typeof mirror.source?.dataUrl === 'string'
+    ? mirror.source.dataUrl
+    : ''
+  const sourceCapturedAt = Math.max(0, Number(mirror.source?.capturedAt) || 0)
+  const sourceFrameKey = sourceDataUrl ? `${replayId}:${sourceCapturedAt}` : ''
 
   displayRoot?.classList.toggle('is-archive-view', archiveActive)
   archiveView?.setAttribute('aria-hidden', archiveActive ? 'false' : 'true')
@@ -421,37 +476,35 @@ const renderArchiveMirror = () => {
 
   if (!archiveActive) {
     stopArchiveTransition()
+    resetArchiveMediaLayers()
     return
   }
 
-  if (sourceDataUrl && sourceDataUrl !== archiveSourceImageUrl) {
-    archiveSourceImageUrl = sourceDataUrl
-    archiveSourceImageFailedUrl = ''
+  if (sourceDataUrl && sourceFrameKey !== archiveSourceImageFrameKey) {
+    archiveSourceImageFrameKey = sourceFrameKey
+    archiveSourceImageFailedFrameKey = ''
     archiveMirrorFallback.classList.remove('has-source')
     archiveSourceImage.onload = () => {
-      if (archiveSourceImageUrl !== sourceDataUrl) return
+      if (archiveSourceImageFrameKey !== sourceFrameKey) return
       archiveMirrorFallback.classList.add('has-source')
       renderArchiveMirror()
     }
     archiveSourceImage.onerror = () => {
-      if (archiveSourceImageUrl !== sourceDataUrl) return
-      archiveSourceImageFailedUrl = sourceDataUrl
+      if (archiveSourceImageFrameKey !== sourceFrameKey) return
+      archiveSourceImageFailedFrameKey = sourceFrameKey
       archiveMirrorFallback.classList.remove('has-source')
       renderArchiveMirror()
     }
     archiveSourceImage.src = sourceDataUrl
   } else if (!sourceDataUrl) {
-    archiveSourceImageUrl = ''
-    archiveSourceImageFailedUrl = ''
-    archiveSourceImage.removeAttribute('src')
-    archiveMirrorFallback.classList.remove('has-source')
+    resetArchiveSourceLayer()
   }
 
   if (replayId && replayId !== activeArchiveReplayId) {
     const sourceReady = !sourceDataUrl
-      || archiveSourceImageFailedUrl === sourceDataUrl
+      || archiveSourceImageFailedFrameKey === sourceFrameKey
       || (
-        archiveSourceImageUrl === sourceDataUrl
+        archiveSourceImageFrameKey === sourceFrameKey
         && archiveSourceImage.complete
         && archiveSourceImage.naturalWidth > 0
       )
@@ -465,14 +518,10 @@ const renderArchiveMirror = () => {
     }
   }
 
-  if (snapshotDataUrl && snapshotDataUrl !== archiveMirrorImageUrl) {
-    archiveMirrorImageUrl = snapshotDataUrl
-    archiveMirrorImage.onload = () => archiveView.classList.add('has-snapshot')
-    archiveMirrorImage.src = snapshotDataUrl
+  if (snapshotDataUrl && snapshotFrameKey !== archiveMirrorImageFrameKey) {
+    loadArchiveMirrorSnapshot(snapshotDataUrl, snapshotFrameKey)
   } else if (!snapshotDataUrl) {
-    archiveMirrorImageUrl = ''
-    archiveMirrorImage.removeAttribute('src')
-    archiveView.classList.remove('has-snapshot')
+    resetArchiveMirrorSnapshotLayer()
   }
 
   archiveMirrorFallback.setAttribute('aria-hidden', snapshotDataUrl ? 'true' : 'false')
@@ -613,7 +662,8 @@ const resetAdvancedPlaybackSession = (sessionKey = '') => {
   advancedPlaybackState.appearanceEpochCounter = 0
   advancedPlaybackState.itemEpochs.clear()
   randomBackgroundState = { key: '', indices: [] }
-  backgroundPlaybackScheduleState = { key: '', entries: [] }
+  backgroundPlaybackScheduleState = { key: '', entries: [], startedAt: 0 }
+  fixedBackgroundEpochState = { key: '', changedAt: 0 }
 }
 
 const startBgmPlayback = (audioId, now) => {
@@ -745,7 +795,7 @@ const updateAdvancedAudioPlayback = (group, items, backgroundFrame, now) => {
   }
 
   items.forEach((item, itemIndex) => {
-    if (!item.audioId) return
+    if (item.isVisible === false || !item.audioId) return
     const itemEpoch = advancedPlaybackState.itemEpochs.get(item.itemId)
     if (!itemEpoch) return
     const triggerKey = `${advancedPlaybackState.sessionKey}:${itemEpoch.key}:${item.itemId}:${item.audioTrigger ?? 'appearance'}`
@@ -849,7 +899,7 @@ const getBackgroundAtCycle = (group, backgrounds, activeIndex, mode, cycle) => {
   return backgrounds[activeIndex] ?? backgrounds[0]
 }
 
-const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, intervalMs, preview) => {
+const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, intervalMs, preview, now) => {
   const key = [
     group.groupId,
     preview.replayId,
@@ -864,7 +914,12 @@ const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, in
   ].join('|')
 
   if (backgroundPlaybackScheduleState.key !== key) {
-    backgroundPlaybackScheduleState = { key, entries: [] }
+    backgroundPlaybackScheduleState = resolveDynamicBackgroundPlaybackEpoch(
+      backgroundPlaybackScheduleState,
+      key,
+      now
+    )
+    backgroundPlaybackScheduleState.entries = []
   }
 
   const getEntry = (ordinal) => {
@@ -895,6 +950,7 @@ const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, in
 const getBackgroundPlaybackFrame = (group, now) => {
   const backgrounds = group?.backgrounds ?? []
   if (backgrounds.length === 0) {
+    fixedBackgroundEpochState = { key: '', changedAt: 0 }
     return {
       background: null,
       nextBackground: null,
@@ -912,11 +968,23 @@ const getBackgroundPlaybackFrame = (group, now) => {
     'fixed'
   )
   if (!preview.enabled || mode === 'fixed' || backgrounds.length === 1) {
+    const activeBackground = backgrounds[activeIndex] ?? backgrounds[0]
+    const fixedBackgroundKey = getDynamicFixedBackgroundEpochKey({
+      sessionKey: advancedPlaybackState.sessionKey,
+      groupId: group.groupId,
+      replayId: preview.replayId ?? 0,
+      backgroundId: activeBackground?.assetId ?? 'none'
+    })
+    fixedBackgroundEpochState = resolveDynamicFixedBackgroundEpoch(
+      fixedBackgroundEpochState,
+      fixedBackgroundKey,
+      now
+    )
     return {
-      background: backgrounds[activeIndex] ?? backgrounds[0],
+      background: activeBackground,
       nextBackground: null,
       cycle: 0,
-      changedAt: previewStartTime,
+      changedAt: fixedBackgroundEpochState.changedAt || previewStartTime,
       transition: null
     }
   }
@@ -931,8 +999,17 @@ const getBackgroundPlaybackFrame = (group, now) => {
     group.activeBackgroundId,
     mode
   )
-  const elapsedMs = Math.max(0, now - previewStartTime)
-  const schedule = getBackgroundPlaybackSchedule(group, backgrounds, playbackStartIndex, mode, intervalMs, preview)
+  const schedule = getBackgroundPlaybackSchedule(
+    group,
+    backgrounds,
+    playbackStartIndex,
+    mode,
+    intervalMs,
+    preview,
+    now
+  )
+  const scheduleStartedAt = backgroundPlaybackScheduleState.startedAt || previewStartTime
+  const elapsedMs = Math.max(0, now - scheduleStartedAt)
   let transitionOrdinal = 1
   let entry = schedule.getEntry(transitionOrdinal)
   while (elapsedMs >= entry.nextStartsAtMs) {
@@ -950,8 +1027,8 @@ const getBackgroundPlaybackFrame = (group, now) => {
       nextBackground: toBackground,
       cycle: transitionOrdinal - 1,
       changedAt: previousEntry
-        ? previewStartTime + previousEntry.startsAtMs + previousEntry.timing.closeMs
-        : previewStartTime,
+        ? scheduleStartedAt + previousEntry.startsAtMs + previousEntry.timing.closeMs
+        : scheduleStartedAt,
       transition: null
     }
   }
@@ -961,7 +1038,7 @@ const getBackgroundPlaybackFrame = (group, now) => {
   const switched = phaseElapsedMs >= entry.timing.closeMs
   const cycle = transitionOrdinal - (switched ? 0 : 1)
   const transitionActive = entry.transitionType !== 'none' && phaseElapsedMs < transitionDurationMs
-  const transitionStartedAt = previewStartTime + entry.startsAtMs
+  const transitionStartedAt = scheduleStartedAt + entry.startsAtMs
 
   return {
     background: switched ? toBackground : fromBackground,
@@ -971,7 +1048,7 @@ const getBackgroundPlaybackFrame = (group, now) => {
       ? transitionStartedAt + entry.timing.closeMs
       : transitionOrdinal === 1
         ? previewStartTime
-        : previewStartTime + previousEntry.startsAtMs + previousEntry.timing.closeMs,
+        : scheduleStartedAt + previousEntry.startsAtMs + previousEntry.timing.closeMs,
     transition: transitionActive
       ? {
           type: entry.transitionType,
@@ -1217,10 +1294,7 @@ const getPreviewAppearAlpha = (item, itemIndex, now) => {
 
 const getVisibleItemsForPlayback = (group, backgroundFrame) => {
   const items = getOrderedItems(group)
-  if (!isAdvancedPreviewEnabled()) return items
-
-  const backgroundId = backgroundFrame?.background?.assetId ?? ''
-  return getDynamicPlaybackItemsForBackground(items, backgroundId)
+  return getDynamicStageItemsForBackground(items, backgroundFrame?.background)
 }
 
 const getAppearanceContextSignature = (items, backgroundFrame) => {
@@ -1284,6 +1358,12 @@ const syncItemAppearanceTimeline = (items, backgroundFrame, now) => {
     appearAnimation,
     activeItemIds
   })
+  const continuableItemIds = getContinuableDynamicAppearanceItemIds({
+    items,
+    previousEpochs,
+    timeline,
+    activeItemIds
+  })
   const epochStartedAt = backgroundFrame?.changedAt ?? previewStartTime
   const nextEpochs = new Map()
 
@@ -1291,11 +1371,9 @@ const syncItemAppearanceTimeline = (items, backgroundFrame, now) => {
     const schedule = timeline[item.itemId]
     if (!schedule) return
     const previousEpoch = previousEpochs.get(item.itemId)
-    if (activeItemIds.has(item.itemId) && previousEpoch) {
+    if (continuableItemIds.has(item.itemId) && previousEpoch) {
       nextEpochs.set(item.itemId, {
-        key: previousEpoch.key,
-        startedAt: previousEpoch.startedAt + previousEpoch.schedule.activeStartMs,
-        schedule,
+        ...previousEpoch,
         backgroundEpochKey
       })
       return
@@ -1325,7 +1403,9 @@ const getItemAppearanceSample = (item, itemIndex, now) => {
       alpha,
       active: alpha > 0.001,
       interactive: alpha > 0.04,
-      animationElapsedMs: Math.max(0, now - (preview.enabled ? previewStartTime : activeStageStartedAt) - delayMs),
+      animationElapsedMs: preview.enabled
+        ? Math.max(0, now - previewStartTime - delayMs)
+        : Number.POSITIVE_INFINITY,
       schedule: null,
       epoch: null
     }
@@ -1448,45 +1528,6 @@ const getMoveTrack = (item) => {
   return 'middle'
 }
 
-const getMoveTrackBounds = (track) => {
-  if (track === 'top') return { start: 0, end: 1 / 3 }
-  if (track === 'bottom') return { start: 2 / 3, end: 1 }
-  return { start: 1 / 3, end: 2 / 3 }
-}
-
-const getVerticalWaveOffsets = (item) => {
-  const percent = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
-  const localRatio = Math.min(percent / 0.5, 1)
-  const fullRatio = Math.max((percent - 0.5) / 0.5, 0)
-  const positionYValue = Number(item.position?.y ?? 0.5)
-  const positionY = Number.isFinite(positionYValue) ? positionYValue : 0.5
-  const { start: trackStart, end: trackEnd } = getMoveTrackBounds(getMoveTrack(item))
-  const trackEdgePadding = STAGE_HEIGHT * VERTICAL_TRACK_EDGE_PADDING_RATIO
-  const outPadding = STAGE_HEIGHT * VERTICAL_OUT_PADDING_RATIO
-  const localUpLimit = Math.max((positionY - trackStart) * STAGE_HEIGHT - trackEdgePadding, 0)
-  const localDownLimit = Math.max((trackEnd - positionY) * STAGE_HEIGHT - trackEdgePadding, 0)
-  const localWaveUp = -localUpLimit * localRatio
-  const localWaveDown = localDownLimit * localRatio
-  const fullWaveUp = -(positionY * STAGE_HEIGHT + outPadding)
-  const fullWaveDown = (1 - positionY) * STAGE_HEIGHT + outPadding
-
-  return {
-    waveUp: lerp(localWaveUp, fullWaveUp, fullRatio),
-    waveDown: lerp(localWaveDown, fullWaveDown, fullRatio)
-  }
-}
-
-const sampleVerticalWave = (progress, waveDown, waveUp) => {
-  const cycleProgress = ((progress % 1) + 1) % 1
-  if (cycleProgress < 0.35) {
-    return lerp(0, waveDown, smoothstep(cycleProgress / 0.35))
-  }
-  if (cycleProgress < 0.7) {
-    return lerp(waveDown, waveUp, smoothstep((cycleProgress - 0.35) / 0.35))
-  }
-  return lerp(waveUp, 0, smoothstep((cycleProgress - 0.7) / 0.3))
-}
-
 const resolvePreviewMotionMode = (item, preview) => {
   if (item.moveMode !== 'random') return item.moveMode
   const groupId = preview.groupId || runtimeState.activeGroupId || ''
@@ -1506,7 +1547,6 @@ const getMotionTransform = (item, itemIndex, now, animationElapsedMs) => {
     }
   }
 
-  const percent = clamp(Number(item.movePercent ?? 50), 0, 100) / 100
   const cycleSeconds = speedToCycleSeconds(item.moveSpeed)
   const usesAppearanceTimeline = isAdvancedPreviewEnabled() && Number.isFinite(animationElapsedMs)
   const playbackTimeSeconds = usesAppearanceTimeline
@@ -1518,49 +1558,46 @@ const getMotionTransform = (item, itemIndex, now, animationElapsedMs) => {
     const elapsedMs = usesAppearanceTimeline
       ? Math.max(0, animationElapsedMs)
       : now - previewStartTime - appearDelayMs
-    const { waveUp, waveDown } = getVerticalWaveOffsets(item)
+    const { waveUp, waveDown } = getDynamicVerticalWaveOffsets(item, STAGE_HEIGHT)
     const progress = elapsedMs <= 0 ? 0 : elapsedMs / 1000 / cycleSeconds
 
     return {
       x: 0,
-      y: sampleVerticalWave(progress, waveDown, waveUp),
+      y: sampleDynamicVerticalWave(progress, waveDown, waveUp),
       scale: 1,
       rotation: 0
     }
   }
 
-  const seed = hashString(item.itemId) % 997
-  const phase = (playbackTimeSeconds / cycleSeconds + seed * 0.0007) * Math.PI * 2
   const baseX = clamp(item.position?.x ?? 0.5, -0.2, 1.2) * STAGE_WIDTH
-  const baseY = clamp(item.position?.y ?? 0.5, -0.2, 1.2) * STAGE_HEIGHT
 
   switch (motionMode) {
     case 'left':
     case 'right': {
-      const margin = 260
-      const travel = STAGE_WIDTH + margin * 2
-      const raw = (playbackTimeSeconds / speedToCycleSeconds(item.moveSpeed, 8.5) + seed * 0.013) % 1
-      const progress = motionMode === 'right' ? raw : 1 - raw
-      const targetX = -margin + travel * progress
-      const waveCount = 7
-      const amplitude = percent * STAGE_HEIGHT * 0.5
-      const waveY = Math.sin(progress * Math.PI * 2 * waveCount) * amplitude
+      const progress = (playbackTimeSeconds / speedToCycleSeconds(item.moveSpeed, 8.5)) % 1
+      const point = sampleDynamicHorizontalMotion(
+        motionMode,
+        progress,
+        item.movePercent,
+        { width: STAGE_WIDTH, height: STAGE_HEIGHT }
+      )
       return {
-        x: targetX - baseX,
-        y: waveY,
+        x: point.x - baseX,
+        y: point.y,
         scale: 1,
         rotation: 0
       }
     }
 
     case 'orbit': {
-      const radiusX = percent * STAGE_WIDTH * 0.34
-      const radiusY = percent * STAGE_HEIGHT * 0.18
-      const x = Math.cos(phase) * radiusX
-      const y = Math.sin(phase) * radiusY
+      const point = sampleDynamicOrbitMotion(
+        item,
+        playbackTimeSeconds / cycleSeconds,
+        { width: STAGE_WIDTH, height: STAGE_HEIGHT }
+      )
       return {
-        x,
-        y,
+        x: point.x,
+        y: point.y,
         scale: 1,
         rotation: 0
       }
@@ -1620,39 +1657,42 @@ const drawMissingItem = (item, renderState) => {
 }
 
 const getEffectiveAnimation = (item, now, animationElapsedMs) => {
+  const preview = runtimeState.preview ?? {}
   const override = animationOverrides.get(runtimeState.activeGroupId, item)
   if (override) {
-    return {
-      animationId: override.activeAnimationId,
-      timeSeconds: Math.max(0, now - override.startedAt) / 1000
+    const oneShotDuration = UNITY_CLICK_ONE_SHOT_DURATION_BY_ID.get(override.activeAnimationId)
+    if (isAnimationOverrideComplete(override, now, oneShotDuration)) {
+      animationOverrides.complete(runtimeState.activeGroupId, item.itemId, override.startedAt)
+    } else {
+      return {
+        animationId: override.activeAnimationId,
+        timeSeconds: Math.max(0, now - override.startedAt) / 1000
+      }
     }
   }
 
-  const preview = runtimeState.preview ?? {}
-  const mode = getDynamicAnimationMode(item)
-  let animationId = 0
-  if (preview.enabled) {
-    animationId = Number(
-      preview.resolvedAnimationIds?.[item.itemId]
-      ?? resolveDynamicAnimationId(
-        mode,
-        item.animationId,
-        DYNAMIC_ANIMATION_IDS,
-        `${preview.groupId ?? runtimeState.activeGroupId ?? ''}:${item.itemId}:${preview.replayId ?? 0}`
-      )
-    )
-  } else if (mode === 'fixed') {
-    animationId = Number(item.animationId ?? 0)
+  if (!preview.enabled) {
+    return {
+      animationId: 0,
+      timeSeconds: 0
+    }
   }
 
-  const elapsedSeconds = preview.enabled
-    ? isAdvancedPreviewEnabled() && Number.isFinite(animationElapsedMs)
-      ? Math.max(0, animationElapsedMs) / 1000
-      : Math.max(0, now - previewStartTime) / 1000
-    : now / 1000
-  const previewDuration = preview.enabled
-    ? UNITY_PREVIEW_DURATION_BY_ID.get(animationId) ?? 0
-    : 0
+  const mode = getDynamicAnimationMode(item)
+  const animationId = Number(
+    preview.resolvedAnimationIds?.[item.itemId]
+    ?? resolveDynamicAnimationId(
+      mode,
+      item.animationId,
+      DYNAMIC_ANIMATION_IDS,
+      `${preview.groupId ?? runtimeState.activeGroupId ?? ''}:${item.itemId}:${preview.replayId ?? 0}`
+    )
+  )
+
+  const elapsedSeconds = isAdvancedPreviewEnabled() && Number.isFinite(animationElapsedMs)
+    ? Math.max(0, animationElapsedMs) / 1000
+    : Math.max(0, now - previewStartTime) / 1000
+  const previewDuration = UNITY_PREVIEW_DURATION_BY_ID.get(animationId) ?? 0
 
   return {
     animationId,
@@ -1978,12 +2018,6 @@ const drawFrame = (now) => {
   }
 
   drawBackgroundTransition(context, playbackFrame)
-  drawStageWatermarkLayer(context, watermarkCanvas, {
-    enabled: runtimeState.watermarkEnabled === true,
-    stageActive: runtimeState.view?.mode === 'stage',
-    width: STAGE_WIDTH,
-    height: STAGE_HEIGHT
-  })
 
   context.restore()
 
@@ -2053,10 +2087,23 @@ const receiveState = (state) => {
     ? state.watermarkEnabled
     : previousState.watermarkEnabled
   const previousPreview = previousState.preview ?? {}
-  const nextPreview = state.preview ?? {}
+  const nextPreview = {
+    ...(state.preview ?? {}),
+    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED
+  }
+  const normalizedGroups = Object.fromEntries(
+    Object.entries(state.groups ?? {}).map(([groupId, group]) => [
+      groupId,
+      {
+        ...(group ?? {}),
+        advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED
+      }
+    ])
+  )
   const stateEventSequence = Number(state.lastEvent?.sequence ?? 0)
   const stageStateSynced = stateEventSequence > lastStateEventSequence
     && (state.lastEvent?.eventName === 'GroupSelectAndSync' || state.lastEvent?.eventName === 'GroupStateSync')
+    && state.lastEvent?.groupId === state.activeGroupId
   const activeGroupChanged = previousState.activeGroupId !== state.activeGroupId
   const previewRestarted = Boolean(nextPreview.enabled) && (
     !previousPreview.enabled
@@ -2074,6 +2121,8 @@ const receiveState = (state) => {
 
   runtimeState = {
     ...state,
+    groups: normalizedGroups,
+    preview: nextPreview,
     watermarkEnabled
   }
   if (activeGroupChanged || archiveModeChanged || stageStateSynced) activeStageStartedAt = performance.now()

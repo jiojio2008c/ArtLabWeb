@@ -126,8 +126,24 @@ try {
       const header = rect(query('.remote-keyboard-header'))
       const engraving = document.querySelector('.remote-device-engraving')
       const deviceText = query('.remote-keyboard-device').textContent || ''
-      const brandSmall = query('[data-control="horizontal"] .remote-knob-brand small')
-      const brandStrong = query('[data-control="horizontal"] .remote-knob-brand strong')
+      const brandLogo = query('[data-control="horizontal"] .remote-knob-brand-logo')
+      const brandMetal = query('[data-control="horizontal"] .remote-knob-metal')
+      const presetKey = query('.remote-key-preset')
+      const presetNumber = query('.remote-key-preset .remote-key-mode-number')
+      const presetLines = query('.remote-key-preset .remote-key-mode-lines')
+      const presetTextFits = Array.from(document.querySelectorAll('.remote-key-preset')).every((key) => {
+        const cap = key.querySelector('.remote-key-cap')
+        const copy = key.querySelector('.remote-key-mode-copy')
+        if (!(cap instanceof HTMLElement) || !(copy instanceof HTMLElement)) return false
+        const capBounds = cap.getBoundingClientRect()
+        const copyBounds = copy.getBoundingClientRect()
+        return copyBounds.left >= capBounds.left - 1
+          && copyBounds.right <= capBounds.right + 1
+          && copyBounds.top >= capBounds.top - 1
+          && copyBounds.bottom <= capBounds.bottom + 1
+      })
+      const brandLogoBounds = brandLogo.getBoundingClientRect()
+      const brandMetalBounds = brandMetal.getBoundingClientRect()
 
       return {
         viewport: viewportSize,
@@ -143,8 +159,19 @@ try {
         header,
         engravingCount: document.querySelectorAll('.remote-device-engraving').length,
         forbiddenEngravingTextPresent: /keyboard\s+(?:controlled|controller)/i.test(deviceText),
-        brandSmallFontSize: Number.parseFloat(getComputedStyle(brandSmall).fontSize),
-        brandStrongFontSize: Number.parseFloat(getComputedStyle(brandStrong).fontSize),
+        brandLogoReady: brandLogo instanceof HTMLImageElement
+          && brandLogo.complete
+          && brandLogo.naturalWidth > 0,
+        brandLogoWidth: Math.round(brandLogoBounds.width * 10) / 10,
+        brandLogoHeight: Math.round(brandLogoBounds.height * 10) / 10,
+        brandLogoWithinMetal: brandLogoBounds.left >= brandMetalBounds.left - 1
+          && brandLogoBounds.right <= brandMetalBounds.right + 1
+          && brandLogoBounds.top >= brandMetalBounds.top - 1
+          && brandLogoBounds.bottom <= brandMetalBounds.bottom + 1,
+        presetNumberFontSize: Number.parseFloat(getComputedStyle(presetNumber).fontSize),
+        presetLinesFontSize: Number.parseFloat(getComputedStyle(presetLines).fontSize),
+        presetTextFits,
+        presetKeyWidth: rect(presetKey).width,
         deviceInsideViewport: device.left >= 0
           && device.top >= 0
           && device.right <= viewportSize.width
@@ -268,8 +295,13 @@ try {
       noDeviceEngraving: metrics.engravingCount === 0
         && !metrics.engravingVisible
         && !metrics.forbiddenEngravingTextPresent,
-      largeKnobBrandScale: Math.abs(metrics.brandSmallFontSize - 18) <= 0.1
-        && Math.abs(metrics.brandStrongFontSize - 30) <= 0.1,
+      largeKnobBrandLogo: metrics.brandLogoReady
+        && metrics.brandLogoWidth > 0
+        && metrics.brandLogoHeight > 0
+        && metrics.brandLogoWithinMetal,
+      presetTextScale: metrics.presetNumberFontSize >= 24
+        && metrics.presetLinesFontSize >= 9.5,
+      presetTextFits: metrics.presetTextFits,
       largeKnobCenterHitArea: centerButtonDiameterRatio >= 0.74
         && centerButtonDiameterRatio <= 0.78,
       keyPressFeedback: pressedDuringPointer && releasedAfterPointer,

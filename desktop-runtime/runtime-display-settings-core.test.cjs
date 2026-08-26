@@ -6,6 +6,8 @@ const path = require('node:path')
 const test = require('node:test')
 const {
   DEFAULT_WATERMARK_ENABLED,
+  DESKTOP_ADVANCED_FEATURES_ENABLED,
+  DESKTOP_STAGE_WATERMARK_ENABLED,
   WATERMARK_SETTINGS_EVENT_NAMES,
   normalizeWatermarkEnabled,
   resolveWatermarkEnabled,
@@ -59,6 +61,16 @@ test('standard and flipped builds package the shared presentation cores', () => 
 
   for (const config of [standardConfig, flippedConfig]) {
     assert.ok(config.files.includes('runtime-display-settings-core.cjs'))
+    assert.ok(config.files.includes('group-state-revision-core.cjs'))
     assert.ok(config.files.includes('renderer/**/*'))
   }
+})
+
+test('desktop presentation policy keeps protocol compatibility without optional modes', () => {
+  assert.equal(DESKTOP_ADVANCED_FEATURES_ENABLED, true)
+  assert.equal(DESKTOP_STAGE_WATERMARK_ENABLED, false)
+
+  const mainSource = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
+  assert.match(mainSource, /group\.advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED/)
+  assert.match(mainSource, /advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED/)
 })

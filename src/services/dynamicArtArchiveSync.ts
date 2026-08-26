@@ -1,4 +1,4 @@
-import { toJpeg } from 'html-to-image'
+import { toPng } from 'html-to-image'
 import { sendDynamicEvent } from './unityBridge.ts'
 
 interface DynamicArchiveSnapshot {
@@ -82,13 +82,11 @@ const captureDynamicArchiveSnapshot = async (
 
   let dataUrl: string
   try {
-    dataUrl = await toJpeg(element, {
+    dataUrl = await toPng(element, {
       cacheBust: false,
       pixelRatio,
-      quality: 0.86,
       width,
       height,
-      backgroundColor: '#dbecef',
       skipAutoScale: true
     })
   } finally {

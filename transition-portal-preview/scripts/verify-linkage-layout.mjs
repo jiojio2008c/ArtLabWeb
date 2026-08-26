@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 
-const APP_URL = process.env.MAGICFLOOR_APP_URL || 'http://localhost:5175/'
+const APP_URL = process.env.MAGICFLOOR_APP_URL || 'http://127.0.0.1:5173/'
 const EDGE_PATH = process.env.MAGICFLOOR_EDGE_PATH
   || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const SCREENSHOT_DIR = new URL('../test-artifacts/linkage/', import.meta.url)
@@ -79,7 +79,7 @@ const group = {
   background: backgrounds[0],
   backgrounds,
   activeBackgroundId: backgrounds[0].id,
-  backgroundPlayMode: 'fixed',
+  backgroundPlayMode: 'random',
   backgroundIntervalMs: 5000,
   appearMode: 'all',
   appearIntervalMs: 800,
@@ -92,7 +92,7 @@ const group = {
       id: 'item-a',
       name: 'Trigger A',
       color: '#f7ca72',
-      position: { x: 0.23, y: 0.34 },
+      position: { x: 0.44, y: 0.42 },
       order: 0,
       backgroundIds: ['bg-forest']
     }),
@@ -121,6 +121,30 @@ const group = {
       position: { x: 0.38, y: 0.72 },
       order: 3,
       backgroundIds: ['bg-forest']
+    }),
+    makeItem({
+      id: 'item-hidden-ocean',
+      name: 'Ocean Only E',
+      color: '#5f83cc',
+      position: { x: 0.54, y: 0.42 },
+      order: 4,
+      backgroundIds: ['bg-ocean']
+    }),
+    makeItem({
+      id: 'item-mixed',
+      name: 'Forest Ocean F',
+      color: '#e5a464',
+      position: { x: 0.62, y: 0.76 },
+      order: 5,
+      backgroundIds: ['bg-forest', 'bg-ocean']
+    }),
+    makeItem({
+      id: 'item-all',
+      name: 'All Backgrounds G',
+      color: '#8c78c8',
+      position: { x: 0.84, y: 0.28 },
+      order: 6,
+      backgroundIds: []
     })
   ],
   createdAt: now,
@@ -187,6 +211,10 @@ const getLayoutMetrics = async (page) => page.evaluate(() => {
     relationCards: document.querySelectorAll('.dynamic-linkage-relation-button').length,
     stagePaths: document.querySelectorAll('.dynamic-linkage-stage-overlay path').length,
     stageNodes: document.querySelectorAll('.dynamic-linkage-stage-node').length,
+    stageOverlayPointerEvents: (() => {
+      const overlay = document.querySelector('.dynamic-linkage-stage-overlay')
+      return overlay ? window.getComputedStyle(overlay).pointerEvents : ''
+    })(),
     crossBackgroundNote: Boolean(document.querySelector('.dynamic-link-background-note')),
     replacementWarning: Boolean(document.querySelector('.dynamic-link-replace-warning')),
     actionsWithinModal: Boolean(
@@ -275,7 +303,8 @@ try {
     await page.route('**/rest/v1/**', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
     })
-    await page.route('http://127.0.0.1:*/**', async (route) => route.abort())
+    await page.route('http://127.0.0.1:8080/**', async (route) => route.abort())
+    await page.route('http://127.0.0.1:11701/**', async (route) => route.abort())
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
     await page.locator('.entry-choice-card.dynamic-choice-card').click()
@@ -284,13 +313,44 @@ try {
     await page.locator('.dynamic-control-screen').waitFor({ state: 'visible', timeout: 12000 })
     await page.waitForTimeout(2200)
 
-    const layerBadges = await page.locator('.dynamic-layer-link-badges').count()
+    const linkedStageItemBounds = await page.locator('[data-dynamic-item-id="item-b"]').boundingBox()
+    if (!linkedStageItemBounds) throw new Error('Linked stage object has no layout box.')
+    await page.touchscreen.tap(
+      linkedStageItemBounds.x + linkedStageItemBounds.width / 2,
+      linkedStageItemBounds.y + linkedStageItemBounds.height / 2
+    )
+    await page.waitForTimeout(200)
+    const linkedStageTapSelectedItemId = await page.locator(
+      '.dynamic-stage-item-visual.active'
+    ).evaluate((element) => (
+      element.closest('[data-dynamic-item-id]')?.getAttribute('data-dynamic-item-id') ?? ''
+    ))
+
+    const watermarkStyle = await page.locator('.dynamic-stage-watermark').evaluate((watermark) => {
+      const mark = watermark.querySelector('.dynamic-stage-watermark-mark')
+      const lines = watermark.querySelector('.dynamic-stage-watermark-lines')
+      const lineStyle = lines ? window.getComputedStyle(lines) : null
+      return {
+        opacity: mark ? window.getComputedStyle(mark).opacity : '',
+        strokeDasharray: lineStyle?.strokeDasharray ?? '',
+        filter: lineStyle?.filter ?? '',
+        pointerEvents: window.getComputedStyle(watermark).pointerEvents,
+        lineGeometry: Array.from(lines?.querySelectorAll('line') ?? []).map((line) => ({
+          x1: Number(line.getAttribute('x1')),
+          y1: Number(line.getAttribute('y1')),
+          x2: Number(line.getAttribute('x2')),
+          y2: Number(line.getAttribute('y2'))
+        }))
+      }
+    })
+    const layerBadges = await page.locator('.dynamic-layer-parent-summary, .dynamic-layer-children-toggle').count()
     await page.screenshot({
       path: screenshotPath(`${viewport.name}-layers.png`),
       fullPage: true
     })
     await page.locator('[data-layer-item-id="item-a"] .dynamic-layer-property-button').click()
     await page.locator('.dynamic-property-overlay-panel').waitFor({ state: 'visible' })
+    const parentBackgroundTabCount = await page.locator('.dynamic-property-tab:has(.lucide-image)').count()
     await page.locator('.dynamic-property-tab').nth(1).click()
     await page.locator('.dynamic-object-linkage-card').waitFor({ state: 'visible' })
     await page.screenshot({
@@ -300,17 +360,96 @@ try {
 
     await page.locator('.dynamic-linkage-add-button').click()
     await page.locator('.dynamic-link-trigger-modal').waitFor({ state: 'visible' })
+    const oceanOnlyCandidateCount = await page.locator(
+      '.dynamic-link-trigger-list > button',
+      { hasText: 'Ocean Only E' }
+    ).count()
+    const mixedBackgroundCandidateCount = await page.locator(
+      '.dynamic-link-trigger-list > button',
+      { hasText: 'Forest Ocean F' }
+    ).count()
+    const allBackgroundCandidateCount = await page.locator(
+      '.dynamic-link-trigger-list > button',
+      { hasText: 'All Backgrounds G' }
+    ).count()
     await page.locator('.dynamic-link-trigger-list > button', { hasText: 'Controlled C' }).click()
     await page.locator('.dynamic-link-replace-warning').waitFor({ state: 'visible' })
     await page.locator('.dynamic-link-background-note').waitFor({ state: 'visible' })
+    const linkageModeLabels = await page.locator('.dynamic-linkage-mode-options > button').allTextContents()
+    const linkageRouteAliases = await page.locator('.dynamic-link-route strong').allTextContents()
+    const immediateSummary = (await page.locator('.dynamic-link-summary').textContent())?.trim() ?? ''
+    const immediateDelayFieldCount = await page.locator('.dynamic-linkage-delay-field').count()
+    const realTargetNameVisibleInList = await page.locator(
+      '.dynamic-link-trigger-list > button',
+      { hasText: 'Controlled C' }
+    ).count()
     await page.waitForTimeout(200)
-    const metrics = { ...(await getLayoutMetrics(page)), layerBadges }
+    const metrics = {
+      ...(await getLayoutMetrics(page)),
+      layerBadges,
+      linkedStageTapSelectedItemId,
+      linkageModeLabels,
+      linkageRouteAliases,
+      immediateSummary,
+      immediateDelayFieldCount,
+      realTargetNameVisibleInList,
+      oceanOnlyCandidateCount,
+      mixedBackgroundCandidateCount,
+      allBackgroundCandidateCount
+    }
     await page.screenshot({
       path: screenshotPath(`${viewport.name}-modal.png`),
       fullPage: true
     })
 
     await page.locator('.dynamic-link-trigger-modal .dynamic-panel-close').click()
+    await page.locator('.dynamic-property-overlay-panel .dynamic-panel-close').click()
+    await page.locator('[data-layer-item-id="item-b"] .dynamic-layer-property-button').click()
+    await page.locator('.dynamic-property-overlay-panel').waitFor({ state: 'visible' })
+    const childBackgroundTabCount = await page.locator('.dynamic-property-tab:has(.lucide-image)').count()
+    const childBackgroundBodyCount = await page.locator('.dynamic-property-background-body').count()
+    await page.locator('.dynamic-property-overlay-panel .dynamic-panel-close').click()
+
+    await page.locator('.background-action').click()
+    await page.locator('.dynamic-background-modal').waitFor({ state: 'visible' })
+    const clearAllBgmButton = page.locator('.dynamic-background-bgm-clear-all')
+    await clearAllBgmButton.scrollIntoViewIfNeeded()
+    const clearAllBgmVisible = await clearAllBgmButton.isVisible()
+    const clearAllBgmInitiallyEnabled = await clearAllBgmButton.isEnabled()
+    await page.screenshot({
+      path: screenshotPath(`${viewport.name}-background-bgm.png`),
+      fullPage: true
+    })
+    const intervalMetrics = await page.evaluate(() => {
+      const fields = document.querySelector('.dynamic-interval-fields')?.getBoundingClientRect()
+      const wheel = document.querySelector('.dynamic-interval-wheel')?.getBoundingClientRect()
+      return {
+        fieldsWidth: fields?.width ?? 0,
+        wheelWidth: wheel?.width ?? 0,
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth
+      }
+    })
+    const intervalWheel = page.locator('.dynamic-interval-wheel-value')
+    const intervalBefore = Number(await intervalWheel.getAttribute('aria-valuenow'))
+    await intervalWheel.press('ArrowUp')
+    const intervalAfterKeyboard = Number(await intervalWheel.getAttribute('aria-valuenow'))
+    const intervalWheelBounds = await intervalWheel.boundingBox()
+    if (!intervalWheelBounds) throw new Error('Background interval wheel has no layout box.')
+    await page.mouse.move(
+      intervalWheelBounds.x + intervalWheelBounds.width / 2,
+      intervalWheelBounds.y + intervalWheelBounds.height / 2
+    )
+    await page.mouse.down()
+    await page.mouse.move(
+      intervalWheelBounds.x + intervalWheelBounds.width / 2,
+      intervalWheelBounds.y + intervalWheelBounds.height / 2 - 48,
+      { steps: 5 }
+    )
+    await page.mouse.up()
+    const intervalAfterDrag = Number(await intervalWheel.getAttribute('aria-valuenow'))
+    await page.locator('.dynamic-background-modal .dynamic-panel-close').click()
+
     await page.locator('.preview-action.primary-button').click()
     await page.locator('.dynamic-control-screen.dynamic-previewing').waitFor({ state: 'visible' })
     await page.waitForTimeout(100)
@@ -353,6 +492,51 @@ try {
       .filter((audio) => audio.originalSrc.includes('preview-bgm'))
       .map((audio) => ({ paused: audio.paused, src: audio.src, pauseCalls: audio.pauseCalls })))
 
+    await page.locator('[data-layer-item-id="item-a"] .dynamic-layer-property-button').click()
+    await page.locator('.dynamic-property-tab').nth(1).click()
+    await page.locator('.dynamic-linkage-relation-button', { hasText: 'Controlled B' }).click()
+    await page.locator('.dynamic-link-trigger-modal').waitFor({ state: 'visible' })
+    await page.locator('.dynamic-linkage-mode-options > button', { hasText: '緊隨其後' }).click()
+    const immediateEditDelayFieldCount = await page.locator('.dynamic-linkage-delay-field').count()
+    await page.locator('.dynamic-link-trigger-modal .primary-button').click()
+    await page.locator('.dynamic-link-trigger-modal').waitFor({ state: 'hidden' })
+    const persistedImmediateRelation = await page.evaluate(() => {
+      const groups = JSON.parse(localStorage.getItem('magicfloor_dynamic_groups_v1') || '[]')
+      return groups[0]?.items?.find((item) => item.id === 'item-b')?.linkedAppearance ?? null
+    })
+    await page.locator('.dynamic-linkage-relation-button', { hasText: 'Controlled B' }).click()
+    await page.locator('.dynamic-link-trigger-modal').waitFor({ state: 'visible' })
+    await page.locator('.dynamic-link-remove-button').click()
+    await page.locator('.dynamic-link-trigger-modal').waitFor({ state: 'hidden' })
+    await page.locator('.dynamic-property-overlay-panel .dynamic-panel-close').click()
+    await page.locator('.background-action').click()
+    await page.locator('.dynamic-background-modal').waitFor({ state: 'visible' })
+    const audioLibraryCountBeforeClear = await page.evaluate(() => {
+      const groups = JSON.parse(localStorage.getItem('magicfloor_dynamic_groups_v1') || '[]')
+      return groups[0]?.audioLibrary?.length ?? 0
+    })
+    await page.locator('.dynamic-background-bgm-clear-all').click()
+    await page.locator('.dynamic-background-bgm-status').waitFor({ state: 'visible' })
+    const clearAllBgmDisabledAfterClear = await page.locator('.dynamic-background-bgm-clear-all').isDisabled()
+    const bgmStateAfterClear = await page.evaluate(() => {
+      const groups = JSON.parse(localStorage.getItem('magicfloor_dynamic_groups_v1') || '[]')
+      const currentGroup = groups[0]
+      return {
+        backgroundAudioIds: (currentGroup?.backgrounds ?? []).map((background) => background.bgmAudioId ?? null),
+        audioLibraryCount: currentGroup?.audioLibrary?.length ?? 0
+      }
+    })
+    await page.locator('.background-preview-button').nth(1).click()
+    await page.locator('.dynamic-background-modal .dynamic-panel-close').click()
+    await page.locator('[data-layer-item-id="item-b"] .dynamic-layer-property-button').click()
+    const restoredChildBackgroundTabCount = await page.locator('.dynamic-property-tab:has(.lucide-image)').count()
+    await page.locator('.dynamic-property-tab:has(.lucide-image)').click()
+    const restoredChildBackgroundBodyCount = await page.locator('.dynamic-property-background-body').count()
+    const restoredChildBackgroundIds = await page.evaluate(() => {
+      const groups = JSON.parse(localStorage.getItem('magicfloor_dynamic_groups_v1') || '[]')
+      return groups[0]?.items?.find((item) => item.id === 'item-b')?.backgroundIds ?? []
+    })
+
     const modalWithinViewport = Boolean(
       metrics.modal
       && metrics.modal.left >= 0
@@ -363,6 +547,19 @@ try {
     results.push({
       viewport,
       ...metrics,
+      watermarkStyle,
+      parentBackgroundTabCount,
+      childBackgroundTabCount,
+      childBackgroundBodyCount,
+      intervalMetrics,
+      intervalBefore,
+      intervalAfterKeyboard,
+      intervalAfterDrag,
+      clearAllBgmVisible,
+      clearAllBgmInitiallyEnabled,
+      clearAllBgmDisabledAfterClear,
+      audioLibraryCountBeforeClear,
+      bgmStateAfterClear,
       modalWithinViewport,
       previewItemCount,
       controlledStartOpacity,
@@ -372,7 +569,12 @@ try {
       previewOverlayCount,
       bgmWasPlaying,
       stableStopAudioState,
-      immediateStopAudioState
+      immediateStopAudioState,
+      immediateEditDelayFieldCount,
+      persistedImmediateRelation,
+      restoredChildBackgroundTabCount,
+      restoredChildBackgroundBodyCount,
+      restoredChildBackgroundIds
     })
     await context.close()
   }
@@ -384,11 +586,45 @@ const failures = results.filter((result) => (
   !result.modalWithinViewport
   || result.relationCards < 1
   || result.layerBadges < 2
+  || result.linkedStageTapSelectedItemId !== 'item-b'
+  || result.watermarkStyle.opacity !== '0.44'
+  || !result.watermarkStyle.strokeDasharray.includes('30px')
+  || result.watermarkStyle.filter === 'none'
+  || result.watermarkStyle.pointerEvents !== 'none'
+  || result.watermarkStyle.lineGeometry.length !== 2
+  || result.watermarkStyle.lineGeometry.some((line) => (
+    (line.x1 + line.x2) / 2 !== 960
+    || (line.y1 + line.y2) / 2 !== 540
+  ))
+  || (result.watermarkStyle.lineGeometry[0].y2 - result.watermarkStyle.lineGeometry[0].y1)
+    * (result.watermarkStyle.lineGeometry[1].y2 - result.watermarkStyle.lineGeometry[1].y1) >= 0
+  || result.parentBackgroundTabCount !== 1
+  || result.childBackgroundTabCount !== 0
+  || result.childBackgroundBodyCount !== 0
+  || result.intervalMetrics.fieldsWidth > 200
+  || result.intervalMetrics.wheelWidth < 96
+  || result.intervalMetrics.documentWidth > result.intervalMetrics.viewportWidth
+  || result.intervalAfterKeyboard !== result.intervalBefore + 1
+  || result.intervalAfterDrag !== result.intervalAfterKeyboard + 1
+  || JSON.stringify(result.linkageModeLabels) !== JSON.stringify(['緊隨其後', '指定出場', '指定隱藏'])
+  || JSON.stringify(result.linkageRouteAliases) !== JSON.stringify(['物件A', '物件B'])
+  || result.immediateSummary !== '物件A → 物件B 緊隨其後'
+  || result.immediateDelayFieldCount !== 0
+  || result.realTargetNameVisibleInList !== 1
+  || result.oceanOnlyCandidateCount !== 0
+  || result.mixedBackgroundCandidateCount !== 1
+  || result.allBackgroundCandidateCount !== 1
+  || !result.clearAllBgmVisible
+  || !result.clearAllBgmInitiallyEnabled
+  || !result.clearAllBgmDisabledAfterClear
+  || result.bgmStateAfterClear.backgroundAudioIds.some(Boolean)
+  || result.bgmStateAfterClear.audioLibraryCount !== result.audioLibraryCountBeforeClear
   || result.stageNodes < 2
+  || result.stageOverlayPointerEvents !== 'none'
   || !result.crossBackgroundNote
   || !result.replacementWarning
   || !result.actionsWithinModal
-  || result.previewItemCount !== 4
+  || result.previewItemCount !== 6
   || result.controlledStartOpacity > 0.05
   || result.controlledEndOpacity < 0.95
   || result.chainedEndOpacity > 0.05
@@ -399,6 +635,15 @@ const failures = results.filter((result) => (
   || result.stableStopAudioState.some((audio) => !audio.paused || audio.src !== '' || audio.pauseCalls < 1)
   || result.immediateStopAudioState.length < 2
   || result.immediateStopAudioState.some((audio) => !audio.paused || audio.src !== '' || audio.pauseCalls < 1)
+  || result.immediateEditDelayFieldCount !== 0
+  || JSON.stringify(result.persistedImmediateRelation) !== JSON.stringify({
+    triggerItemId: 'item-a',
+    mode: 'showAfter',
+    delayMs: 0
+  })
+  || result.restoredChildBackgroundTabCount !== 1
+  || result.restoredChildBackgroundBodyCount !== 1
+  || JSON.stringify(result.restoredChildBackgroundIds) !== JSON.stringify(['bg-ocean'])
   || result.overflowing.length > 0
 ))
 

@@ -1,3 +1,10 @@
+import {
+  deriveBubbleOutlineColor,
+  drawBubbleShape,
+  getBubbleShapeDefinition,
+  normalizeBubbleColor
+} from './bubble-shape-catalog.js'
+
 const DEFAULT_BUBBLE_WIDTH = 1080
 const DEFAULT_BUBBLE_HEIGHT = 480
 const MIN_BUBBLE_WIDTH = 220
@@ -60,7 +67,9 @@ const LEGACY_STYLE_ALIASES = Object.freeze({
   'dialogue-soft': 'dialogue-soft-right',
   'dialogue-comic': 'dialogue-comic-right',
   'thought-cloud': 'thought-cloud-right',
-  'thought-soft': 'thought-soft-right'
+  'thought-soft': 'thought-cloud-right',
+  'thought-soft-left': 'thought-cloud-left',
+  'thought-soft-right': 'thought-cloud-right'
 })
 
 const PALETTE_BY_ID = Object.freeze({
@@ -91,24 +100,12 @@ const PALETTE_BY_ID = Object.freeze({
   }
 })
 
-const SURFACE_BY_STYLE = Object.freeze({
-  'dialogue-rounded': { surface: '#fffef6', border: '#3b9089' },
-  'dialogue-soft': { surface: '#e9f8f5', border: '#84b7c0' },
-  'dialogue-comic': { surface: '#1f3635', border: '#d9e3df' },
-  'thought-cloud': { surface: '#fffffd', border: '#6c9fa0' },
-  'thought-soft': { surface: '#f5edfc', border: '#aa91c9' }
-})
-
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 const finiteNumber = (value, fallback) => {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
 }
-
-const getStyleBaseId = (styleId) => String(styleId || '').replace(/-(left|right)$/, '')
-
-const getStyleDirection = (styleId) => String(styleId || '').endsWith('-left') ? 'left' : 'right'
 
 export const normalizeBubble = (value = {}) => {
   const bubbleType = value.bubbleType === 'thought'
@@ -139,6 +136,18 @@ export const normalizeBubble = (value = {}) => {
   const maskOpacity = clamp(rawMaskOpacity, 0, 1)
   const legacyTitle = String(value.title ?? '').slice(0, 120)
   const requestedBodyText = String(value.bodyText ?? value.text ?? '').slice(0, 4000)
+  const shapeDefinition = bubbleType === 'title' ? null : getBubbleShapeDefinition(styleId)
+  const surfaceColor = bubbleType === 'title'
+    ? normalizeBubbleColor(value.surfaceColor, value.maskColor || palette.titleSurface)
+    : normalizeBubbleColor(value.surfaceColor, shapeDefinition.defaultSurfaceColor)
+  const outlineColor = bubbleType === 'title'
+    ? normalizeBubbleColor(value.outlineColor, surfaceColor)
+    : normalizeBubbleColor(
+        value.outlineColor,
+        typeof value.surfaceColor === 'string' && value.surfaceColor.trim()
+          ? deriveBubbleOutlineColor(surfaceColor)
+          : shapeDefinition.defaultOutlineColor || deriveBubbleOutlineColor(surfaceColor)
+      )
   const defaultWidth = bubbleType === 'thought'
     ? 940
     : bubbleType === 'title'
@@ -161,6 +170,8 @@ export const normalizeBubble = (value = {}) => {
     textColor: typeof value.textColor === 'string' && value.textColor.trim()
       ? value.textColor.trim().slice(0, 32)
       : '',
+    surfaceColor,
+    outlineColor,
     titleMaskId,
     paletteId,
     maskColor: typeof value.maskColor === 'string' && value.maskColor.trim()
@@ -189,8 +200,7 @@ export const getBubbleSurface = (bubble) => {
   if (normalized.bubbleType === 'title') {
     return { surface: normalized.maskColor, border: 'transparent' }
   }
-  return SURFACE_BY_STYLE[getStyleBaseId(normalized.styleId)]
-    ?? SURFACE_BY_STYLE[getStyleBaseId(STYLE_BY_TYPE[normalized.bubbleType])]
+  return { surface: normalized.surfaceColor, border: normalized.outlineColor }
 }
 
 export const getGraphemes = (value) => {
@@ -273,78 +283,6 @@ const roundedPath = (context, x, y, width, height, radius) => {
   context.closePath()
 }
 
-const drawTail = (context, bubble, surface, width, height) => {
-  const baseStyleId = getStyleBaseId(bubble.styleId)
-  const direction = getStyleDirection(bubble.styleId)
-  const directionX = (x) => direction === 'left' ? width - x : x
-  if (baseStyleId === 'dialogue-soft') {
-    context.beginPath()
-    context.moveTo(directionX(width * 0.74), height - 3)
-    context.quadraticCurveTo(directionX(width * 0.77), height + 38, directionX(width * 0.62), height + 4)
-    context.closePath()
-  } else if (baseStyleId === 'dialogue-comic') {
-    context.beginPath()
-    context.moveTo(directionX(width * 0.8), height - 2)
-    context.lineTo(directionX(width * 0.9), height + 35)
-    context.lineTo(directionX(width * 0.66), height - 1)
-    context.closePath()
-  } else {
-    context.beginPath()
-    context.moveTo(directionX(width * 0.78), height - 2)
-    context.quadraticCurveTo(directionX(width * 0.82), height + 30, directionX(width * 0.63), height - 2)
-    context.closePath()
-  }
-  context.fillStyle = surface.surface
-  context.fill()
-  context.strokeStyle = surface.border
-  context.stroke()
-}
-
-const drawThoughtCloud = (context, bubble, surface, width, height) => {
-  const direction = getStyleDirection(bubble.styleId)
-  const directionX = (x) => direction === 'left' ? width - x : x
-  const circles = [
-    [directionX(width * 0.78), height * 0.96, height * 0.09],
-    [directionX(width * 0.86), height * 1.08, height * 0.055],
-    [directionX(width * 0.92), height * 1.16, height * 0.032]
-  ]
-  circles.forEach(([x, y, radius]) => {
-    context.beginPath()
-    context.arc(x, y, radius, 0, Math.PI * 2)
-    context.fillStyle = surface.surface
-    context.fill()
-    context.strokeStyle = surface.border
-    context.stroke()
-  })
-}
-
-const drawBubbleSurface = (context, bubble, surface, width, height) => {
-  const baseStyleId = getStyleBaseId(bubble.styleId)
-  if (baseStyleId === 'thought-cloud') {
-    context.beginPath()
-    context.moveTo(width * 0.16, height * 0.86)
-    context.bezierCurveTo(width * 0.02, height * 0.83, width * 0.02, height * 0.58, width * 0.13, height * 0.51)
-    context.bezierCurveTo(width * 0.04, height * 0.33, width * 0.18, height * 0.13, width * 0.34, height * 0.17)
-    context.bezierCurveTo(width * 0.43, height * 0.02, width * 0.66, height * 0.02, width * 0.72, height * 0.18)
-    context.bezierCurveTo(width * 0.91, height * 0.13, width * 1.01, height * 0.34, width * 0.91, height * 0.5)
-    context.bezierCurveTo(width * 1.01, height * 0.67, width * 0.88, height * 0.88, width * 0.73, height * 0.84)
-    context.bezierCurveTo(width * 0.59, height * 0.99, width * 0.34, height * 0.98, width * 0.25, height * 0.85)
-    context.closePath()
-  } else {
-    const radius = baseStyleId === 'dialogue-comic'
-      ? 28
-      : baseStyleId === 'dialogue-soft'
-        ? 70
-        : 48
-    roundedPath(context, 0, 0, width, height, radius)
-  }
-  context.fillStyle = surface.surface
-  context.fill()
-  context.shadowColor = 'transparent'
-  context.strokeStyle = surface.border
-  context.stroke()
-}
-
 const drawTitleMask = (context, bubble, palette, x, y, width, height, radius) => {
   if (bubble.titleMaskId === 'none') return
 
@@ -422,9 +360,9 @@ const drawTitle = (context, bubble, palette, x, y, width, padding) => {
 }
 
 const drawBodyText = (context, text, bubble, palette, x, y, width, height, padding) => {
-  const color = getStyleBaseId(bubble.styleId) === 'dialogue-comic' ? '#ffffff' : bubble.textColor || palette.text
+  const color = bubble.textColor || palette.text
   context.fillStyle = color
-  context.font = `500 ${bubble.fontSizePx}px Microsoft JhengHei, PingFang TC, sans-serif`
+  context.font = `700 ${bubble.fontSizePx}px Microsoft JhengHei, PingFang TC, sans-serif`
   context.textAlign = 'center'
   context.textBaseline = 'top'
   const lineHeight = bubble.fontSizePx * 1.42
@@ -524,32 +462,47 @@ export const drawBubble = (context, bubbleValue, imageEntry = null, elapsedMs = 
   const surface = getBubbleSurface(bubble)
   const width = bubble.widthPx
   const height = bubble.heightPx
-  const padding = clamp(
-    Math.max(bubble.fontSizePx * 0.72, width * (bubble.bubbleType === 'thought' ? 0.1 : 0.075)),
-    18,
-    120
-  )
-  const baseStyleId = getStyleBaseId(bubble.styleId)
-  const borderWidth = baseStyleId === 'dialogue-comic' ? 5 : 3
-  const bodyTop = 0
-  const bodyHeight = height
+  const shapeDefinition = getBubbleShapeDefinition(bubble.styleId)
+  const scaleX = width / shapeDefinition.viewBox.width
+  const scaleY = height / shapeDefinition.viewBox.height
+  const safeRect = {
+    x: shapeDefinition.contentRect.x * scaleX,
+    y: shapeDefinition.contentRect.y * scaleY,
+    width: shapeDefinition.contentRect.width * scaleX,
+    height: shapeDefinition.contentRect.height * scaleY
+  }
+  const padding = clamp(Math.max(bubble.fontSizePx * 0.36, safeRect.width * 0.025), 12, 64)
+  const borderWidth = shapeDefinition.defaultOutlineWidth
 
   context.save()
   context.lineWidth = borderWidth
   context.shadowColor = 'rgba(9, 18, 38, 0.25)'
-  context.shadowBlur = baseStyleId === 'dialogue-comic' ? 16 : 10
+  context.shadowBlur = shapeDefinition.baseStyleId === 'dialogue-comic' ? 16 : 10
   context.shadowOffsetY = 8
-  drawBubbleSurface(context, bubble, surface, width, bodyHeight)
-  if (bubble.bubbleType === 'thought') drawThoughtCloud(context, bubble, surface, width, height)
-  else drawTail(context, bubble, surface, width, height)
+  drawBubbleShape(context, bubble.styleId, width, height, {
+    surfaceColor: surface.surface,
+    outlineColor: surface.border,
+    lineWidth: borderWidth
+  })
+  context.shadowColor = 'transparent'
 
-  let contentTop = 0
-  if (bubble.title.trim()) contentTop = drawTitle(context, bubble, palette, 0, 0, width, padding)
+  let contentTop = safeRect.y
+  if (bubble.title.trim()) {
+    contentTop += drawTitle(
+      context,
+      bubble,
+      palette,
+      safeRect.x,
+      safeRect.y,
+      safeRect.width,
+      padding
+    )
+  }
 
-  const contentX = padding
-  const contentWidth = width - padding * 2
-  const contentY = contentTop + padding * 0.45
-  const contentHeight = Math.max(1, height - contentY - padding)
+  const contentX = safeRect.x
+  const contentWidth = safeRect.width
+  const contentY = contentTop
+  const contentHeight = Math.max(1, safeRect.y + safeRect.height - contentY)
   if (bubble.bubbleType === 'thought' && imageEntry?.loaded) {
     const visibleText = getVisibleBubbleText(bubble, elapsedMs)
     const imageHeight = visibleText
@@ -562,7 +515,19 @@ export const drawBubble = (context, bubbleValue, imageEntry = null, elapsedMs = 
     }
   } else {
     const visibleText = getVisibleBubbleText(bubble, elapsedMs)
-    if (visibleText) drawBodyText(context, visibleText, bubble, palette, 0, contentTop, width, height - contentTop, padding)
+    if (visibleText) {
+      drawBodyText(
+        context,
+        visibleText,
+        bubble,
+        palette,
+        contentX,
+        contentY,
+        contentWidth,
+        contentHeight,
+        padding
+      )
+    }
   }
   context.restore()
 }

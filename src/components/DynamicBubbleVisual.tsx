@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import titleMaskUrl from '../../圆角矩形.png'
+import {
+  bubbleShapeCommandsToSvgPath,
+  getBubbleShapeDefinition,
+  getBubbleShapeDirection,
+  normalizeBubbleColor
+} from '../../desktop-runtime/renderer/bubble-shape-catalog.js'
 import './DynamicBubbleEditor.css'
 
 export type DynamicBubbleType = 'dialogue' | 'thought' | 'title'
@@ -13,8 +19,6 @@ export type DynamicBubbleStyleId =
   | 'dialogue-comic-right'
   | 'thought-cloud-left'
   | 'thought-cloud-right'
-  | 'thought-soft-left'
-  | 'thought-soft-right'
   | 'title-rounded'
   | 'title-pill'
   | 'title-ticket'
@@ -43,6 +47,8 @@ export interface DynamicBubbleDraft {
   fontSizePx: number
   textColor: string
   surfaceId?: string
+  surfaceColor: string
+  outlineColor: string
   titleMaskId?: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
   maskColor: string
@@ -148,16 +154,28 @@ const DynamicBubbleVisual: React.FC<DynamicBubbleVisualProps> = ({
   const hasLegacyTitle = !isStandaloneTitle && bubble.title.trim().length > 0
   const hasText = bubble.bodyText.trim().length > 0
   const hasImage = bubble.bubbleType === 'thought' && Boolean(bubble.image?.url)
+  const shapeDefinition = getBubbleShapeDefinition(bubble.styleId)
+  const shapeDirection = getBubbleShapeDirection(bubble.styleId)
+  const shapePath = useMemo(
+    () => bubbleShapeCommandsToSvgPath(shapeDefinition.bodyCommands),
+    [shapeDefinition]
+  )
+  const shapeViewBox = shapeDefinition.viewBox
+  const shapeContentRect = shapeDefinition.contentRect
+  const surfaceColor = normalizeBubbleColor(bubble.surfaceColor, shapeDefinition.defaultSurfaceColor)
+  const outlineColor = normalizeBubbleColor(bubble.outlineColor, shapeDefinition.defaultOutlineColor)
   const styleBaseId = bubble.styleId.replace(/-(left|right)$/, '')
-  const direction = bubble.styleId.endsWith('-left')
-    ? 'left'
-    : bubble.styleId.endsWith('-right')
-      ? 'right'
-      : 'right'
   const titleMaskId = bubble.titleMaskId ?? 'rounded'
   const maskColor = bubble.maskColor ?? BUBBLE_TITLE_ACCENTS[bubble.paletteId]
   const maskOpacity = clamp(bubble.maskOpacity ?? 0.92, 0, 1)
-  const fontSizeRatio = Math.max(3.2, (bubble.fontSizePx / bubble.widthPx) * 100)
+  const fontSizeRatio = (bubble.fontSizePx / bubble.widthPx) * 100
+  const outlineWidthRatio = (shapeDefinition.defaultOutlineWidth / bubble.widthPx) * 100
+  const safeContentWidthPx = shapeContentRect.width * (bubble.widthPx / shapeViewBox.width)
+  const contentPaddingPx = clamp(
+    Math.max(bubble.fontSizePx * 0.36, safeContentWidthPx * 0.025),
+    12,
+    64
+  )
   const visualStyle = {
     '--dynamic-bubble-aspect': `${bubble.widthPx} / ${bubble.heightPx}`,
     '--dynamic-bubble-font-size': `${fontSizeRatio}cqw`,
@@ -165,12 +183,20 @@ const DynamicBubbleVisual: React.FC<DynamicBubbleVisualProps> = ({
     '--dynamic-bubble-title-accent': BUBBLE_TITLE_ACCENTS[bubble.paletteId],
     '--dynamic-bubble-mask-color': maskColor,
     '--dynamic-bubble-mask-opacity': maskOpacity,
+    '--dynamic-bubble-safe-left': `${((shapeContentRect.x - shapeViewBox.x) / shapeViewBox.width) * 100}%`,
+    '--dynamic-bubble-safe-top': `${((shapeContentRect.y - shapeViewBox.y) / shapeViewBox.height) * 100}%`,
+    '--dynamic-bubble-safe-width': `${(shapeContentRect.width / shapeViewBox.width) * 100}%`,
+    '--dynamic-bubble-safe-height': `${(shapeContentRect.height / shapeViewBox.height) * 100}%`,
+    '--dynamic-bubble-surface-color': surfaceColor,
+    '--dynamic-bubble-outline-color': outlineColor,
+    '--dynamic-bubble-outline-width': `${outlineWidthRatio}cqw`,
+    '--dynamic-bubble-content-padding': `${(contentPaddingPx / bubble.widthPx) * 100}cqw`,
     color: bubble.textColor
   } as CSSProperties
 
   return (
     <article
-      className={`dynamic-bubble-visual is-${bubble.bubbleType} style-${styleBaseId} style-${bubble.styleId} direction-${direction} title-mask-${titleMaskId} palette-${bubble.paletteId} ${hasImage ? 'has-image' : ''} ${hasImage && hasText ? 'has-image-and-text' : ''} ${className}`.trim()}
+      className={`dynamic-bubble-visual is-${bubble.bubbleType} style-${styleBaseId} style-${bubble.styleId} direction-${shapeDirection} title-mask-${titleMaskId} palette-${bubble.paletteId} ${hasImage ? 'has-image' : ''} ${hasImage && hasText ? 'has-image-and-text' : ''} ${className}`.trim()}
       style={visualStyle}
       aria-label={ariaLabel ?? [bubble.title, bubble.bodyText, bubble.image?.name].filter(Boolean).join('，')}
     >
@@ -190,7 +216,26 @@ const DynamicBubbleVisual: React.FC<DynamicBubbleVisualProps> = ({
         </div>
       ) : (
         <>
-          <span className="dynamic-bubble-tail" aria-hidden="true" />
+          <svg
+            className="dynamic-bubble-shape"
+            viewBox={`${shapeViewBox.x} ${shapeViewBox.y} ${shapeViewBox.width} ${shapeViewBox.height}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <g>
+              <path className="dynamic-bubble-shape-body" d={shapePath} />
+              {shapeDefinition.decorations.map((decoration, index) => (
+                <circle
+                  key={`${decoration.cx}-${decoration.cy}-${index}`}
+                  className="dynamic-bubble-shape-decoration"
+                  cx={decoration.cx}
+                  cy={decoration.cy}
+                  r={decoration.radius}
+                />
+              ))}
+            </g>
+          </svg>
           <div className="dynamic-bubble-surface" aria-hidden="true">
             {hasLegacyTitle && (
               <div className="dynamic-bubble-title-row">

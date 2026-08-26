@@ -15,6 +15,7 @@ public class RemoteKeyboardCommandEvent : UnityEvent<string>
 public class ImageFileSaveHttpServer : MonoBehaviour
 {
     private const string LaunchCommandPrefix = "MF|AppLauncher|Launch|";
+    private const string CloseCommandPrefix = "MF|AppLauncher|Close|";
     private const string RemoteKeyboardCommandPrefix = "MF|RemoteKeyboard|";
     private const string RemoteKeyboardPressPrefix = RemoteKeyboardCommandPrefix + "Press|";
     private const string RemoteKeyboardTurnPrefix = RemoteKeyboardCommandPrefix + "Turn|";
@@ -23,6 +24,8 @@ public class ImageFileSaveHttpServer : MonoBehaviour
     private const string Forest2AppId = "interactive-forest-2";
     private const string PaintingRealAppId = "interactive-painting-real";
     private const string OceanAppId = "interactive-ocean";
+    private const string DynamicArtCloseScope = "dynamic-art";
+    private const string InteractiveArtCloseScope = "interactive-art";
 
     [Header("HTTP")]
     public int port = 11701;
@@ -40,12 +43,17 @@ public class ImageFileSaveHttpServer : MonoBehaviour
     public UnityEvent onPaintingRealLaunch = new UnityEvent();
     public UnityEvent onBeautifulOceanLaunch = new UnityEvent();
 
+    [Header("App Close Events")]
+    public UnityEvent onDynamicArtClose = new UnityEvent();
+    public UnityEvent onInteractiveArtClose = new UnityEvent();
+
     [Header("Remote Keyboard Events")]
     [Tooltip("Invoked on the Unity main thread with a validated MF|RemoteKeyboard command.")]
     public RemoteKeyboardCommandEvent onRemoteKeyboardCommand = new RemoteKeyboardCommandEvent();
 
     private readonly object _saveLock = new object();
     private readonly ConcurrentQueue<string> _launchRequests = new ConcurrentQueue<string>();
+    private readonly ConcurrentQueue<string> _closeRequests = new ConcurrentQueue<string>();
     private readonly ConcurrentQueue<string> _remoteKeyboardRequests = new ConcurrentQueue<string>();
     private HttpListener _listener;
     private bool _isListening;
@@ -142,7 +150,7 @@ public class ImageFileSaveHttpServer : MonoBehaviour
             if (IsTextCommandContentType(context.Request.ContentType))
             {
                 string command = Encoding.UTF8.GetString(rawData).Trim();
-                if (TryQueueLaunchCommand(command) || TryQueueRemoteKeyboardCommand(command))
+                if (TryQueueLaunchCommand(command) || TryQueueCloseCommand(command) || TryQueueRemoteKeyboardCommand(command))
                     WriteResponse(context.Response, 202, "Accepted");
                 else
                     WriteResponse(context.Response, 400, "Invalid text command.");
@@ -186,6 +194,10 @@ public class ImageFileSaveHttpServer : MonoBehaviour
         while (_launchRequests.TryDequeue(out appId))
             InvokeLaunchEvent(appId);
 
+        string closeScope;
+        while (_closeRequests.TryDequeue(out closeScope))
+            InvokeCloseEvent(closeScope);
+
         string remoteKeyboardCommand;
         while (_remoteKeyboardRequests.TryDequeue(out remoteKeyboardCommand))
         {
@@ -213,6 +225,22 @@ public class ImageFileSaveHttpServer : MonoBehaviour
             return false;
 
         _launchRequests.Enqueue(appId);
+        return true;
+    }
+
+    private bool TryQueueCloseCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        if (!command.StartsWith(CloseCommandPrefix, StringComparison.Ordinal))
+            return false;
+
+        string scope = command.Substring(CloseCommandPrefix.Length).Trim();
+        if (!IsKnownCloseScope(scope))
+            return false;
+
+        _closeRequests.Enqueue(scope);
         return true;
     }
 
@@ -331,6 +359,12 @@ public class ImageFileSaveHttpServer : MonoBehaviour
                appId == OceanAppId;
     }
 
+    private bool IsKnownCloseScope(string scope)
+    {
+        return scope == DynamicArtCloseScope ||
+               scope == InteractiveArtCloseScope;
+    }
+
     private void InvokeLaunchEvent(string appId)
     {
         Debug.Log($"App launch requested: {appId}");
@@ -351,6 +385,21 @@ public class ImageFileSaveHttpServer : MonoBehaviour
                 break;
             case OceanAppId:
                 onBeautifulOceanLaunch?.Invoke();
+                break;
+        }
+    }
+
+    private void InvokeCloseEvent(string scope)
+    {
+        Debug.Log($"App close requested: {scope}");
+
+        switch (scope)
+        {
+            case DynamicArtCloseScope:
+                onDynamicArtClose?.Invoke();
+                break;
+            case InteractiveArtCloseScope:
+                onInteractiveArtClose?.Invoke();
                 break;
         }
     }

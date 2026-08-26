@@ -1,4 +1,5 @@
 export const DEFAULT_STAGE_WATERMARK_ENABLED = true
+export const DESKTOP_STAGE_WATERMARK_ENABLED = false
 export const DEFAULT_STAGE_WATERMARK_LABEL = 'MagicFloor'
 export const DEFAULT_STAGE_WATERMARK_OPACITY = 0.44
 
@@ -24,7 +25,7 @@ export const configureHighQualityImageSmoothing = (renderContext) => {
 }
 
 export const drawMagicFloorWatermarkPattern = (renderContext, options = {}) => {
-  if (!renderContext) return 0
+  if (!DESKTOP_STAGE_WATERMARK_ENABLED || !renderContext) return 0
 
   const width = finitePositiveNumber(options.width, 1920)
   const height = finitePositiveNumber(options.height, 1080)
@@ -84,6 +85,8 @@ export const drawMagicFloorWatermarkPattern = (renderContext, options = {}) => {
 }
 
 export const drawStageWatermarkLayer = (renderContext, watermarkLayer, options = {}) => {
+  if (!DESKTOP_STAGE_WATERMARK_ENABLED) return false
+
   const enabled = options.enabled ?? DEFAULT_STAGE_WATERMARK_ENABLED
   const stageActive = options.stageActive ?? true
   if (!renderContext || !watermarkLayer || enabled !== true || stageActive !== true) return false

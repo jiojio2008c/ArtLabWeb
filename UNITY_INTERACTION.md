@@ -1,6 +1,6 @@
 # MagicFloor Unity 交互文档
 
-更新时间：2026-08-14
+更新时间：2026-08-24
 
 本文档用于 Unity 端实现 MagicFloor 当前与下一版动态艺术功能的接收协议。前端仍以 HTTP 为主，Unity 端只需要监听对应端口，处理 `multipart/form-data` 文件上传和 `text/plain` 控制指令。
 
@@ -54,7 +54,35 @@ onBeautifulOceanLaunch
 
 Unity 專案可把既有無參數喚醒方法綁定到對應事件。腳本的程式碼預設端口是 `11701`，但已掛載組件的序列化 Inspector 值可能仍是舊端口，部署前必須人工核對。
 
-### 1.2 iPad 作品檔案與資料夾同步
+### 1.2 11701 關閉外部程式指令
+
+作品檔案根目錄和互動藝術選項頁返回首頁時，iPad 會先顯示確認對話框。使用者確認後，iPad 以同一個 `text/plain` HTTP 請求發送一次關閉指令，並立即執行首頁返回轉場，不等待 Unity 回覆。
+
+指令格式：
+
+```text
+MF|AppLauncher|Close|{scope}
+```
+
+有效範圍：
+
+| iPad 操作 | 指令正文 |
+| --- | --- |
+| 作品檔案返回首頁 | `MF|AppLauncher|Close|dynamic-art` |
+| 互動藝術返回首頁 | `MF|AppLauncher|Close|interactive-art` |
+
+`interactive-art` 是四個互動藝術 EXE 共用的單一訊號，不攜帶主題 ID。Unity 收到後應由自己的程式管理器判斷目前正在執行的互動藝術程式，再關閉對應 EXE；找不到正在執行的程式時應視為無操作成功。關閉事件也應保持冪等，重複收到相同指令不得啟動或關閉錯誤的程式。
+
+`ImageFileSaveHttpServer` 會把合法指令排入執行緒安全佇列，並在 Unity 主執行緒觸發：
+
+```text
+onDynamicArtClose
+onInteractiveArtClose
+```
+
+這兩個 `UnityEvent` 不直接執行 EXE。Unity Inspector 應將 `onDynamicArtClose` 綁定到動態藝術關閉方法，將 `onInteractiveArtClose` 綁定到能依目前執行狀態關閉四個互動藝術 EXE 之一的通用方法。
+
+### 1.3 iPad 作品檔案與資料夾同步
 
 作品檔案頁的 `資料夾 / 子資料夾` 仍是 iPad 的素材整理結構，不是動態舞台中的場景層級。為了讓 Windows 動態藝術程式與 iPad 顯示相同的作品檔案頁，iPad 會用 `ArchiveView` 傳送一份輕量索引：
 
@@ -65,7 +93,7 @@ Unity 專案可把既有無參數喚醒方法綁定到對應事件。腳本的�
 - 把作品移入、移出或跨資料夾整理時，只會更新作品檔案索引，不會觸發媒體重傳或場景重建。
 - 沒有 `folderId` 的舊作品會顯示在素材庫根目錄，舞台仍只以既有 `groupId` 區分作品。
 
-### 1.3 11701 遠端鍵盤控制指令
+### 1.4 11701 遠端鍵盤控制指令
 
 Unity 團隊可直接使用獨立交付文件 [`UNITY_REMOTE_KEYBOARD.md`](./UNITY_REMOTE_KEYBOARD.md)，其中包含完整按鍵表、旋鈕方向、JSON 結構、主執行緒接入方式、C# 解析骨架、Windows 部署要求及聯調驗收清單。本節保留協議摘要。
 

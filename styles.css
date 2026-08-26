@@ -115,7 +115,6 @@ body {
 .archive-portal-canvas {
   z-index: 3;
   opacity: 0;
-  background: transparent;
   pointer-events: none;
 }
 

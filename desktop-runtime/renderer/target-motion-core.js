@@ -1,5 +1,7 @@
 const clampUnit = (value) => Math.min(1, Math.max(0, value))
 
+const TARGET_MOTION_KEYFRAME_SEGMENTS = 32
+
 const easeInOutCubic = (value) => {
   const progress = clampUnit(value)
   return progress < 0.5
@@ -24,11 +26,30 @@ const sampleTargetOneWayProgress = (elapsedMs, oneWayDurationMs) => {
   return easeInOutCubic(elapsed / duration)
 }
 
-const sampleTargetMotionProgress = (elapsedMs, oneWayDurationMs, loop) => loop
-  ? sampleTargetPingPongProgress(elapsedMs, oneWayDurationMs)
-  : sampleTargetOneWayProgress(elapsedMs, oneWayDurationMs)
+const sampleTargetMotionProgress = (elapsedMs, oneWayDurationMs, loop) => {
+  const duration = Math.max(1, Number(oneWayDurationMs) || 1)
+  const animationDuration = loop ? duration * 2 : duration
+  const elapsed = Math.max(0, Number(elapsedMs) || 0)
+  const normalizedTime = loop
+    ? (elapsed % animationDuration) / animationDuration
+    : clampUnit(elapsed / animationDuration)
+  const scaled = normalizedTime * TARGET_MOTION_KEYFRAME_SEGMENTS
+  const lowerIndex = Math.min(TARGET_MOTION_KEYFRAME_SEGMENTS - 1, Math.floor(scaled))
+  const upperIndex = lowerIndex + 1
+  const ratio = scaled - lowerIndex
+  const sampleAtIndex = (index) => {
+    const keyframeElapsed = animationDuration * index / TARGET_MOTION_KEYFRAME_SEGMENTS
+    return loop
+      ? sampleTargetPingPongProgress(keyframeElapsed, duration)
+      : sampleTargetOneWayProgress(keyframeElapsed, duration)
+  }
+  const lower = sampleAtIndex(lowerIndex)
+  const upper = sampleAtIndex(upperIndex)
+  return lower + (upper - lower) * ratio
+}
 
 export {
+  TARGET_MOTION_KEYFRAME_SEGMENTS,
   sampleTargetMotionProgress,
   sampleTargetOneWayProgress,
   sampleTargetPingPongProgress

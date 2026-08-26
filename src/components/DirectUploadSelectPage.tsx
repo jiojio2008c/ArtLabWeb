@@ -35,7 +35,12 @@ const DirectUploadSelectPage: React.FC<DirectUploadSelectPageProps> = ({
       </div>
 
       <header className="ipad-topbar direct-magic-header direct-magic-reveal">
-        <button type="button" onClick={onBackToEntry} className="direct-magic-back-button">
+        <button
+          type="button"
+          onClick={onBackToEntry}
+          className="direct-magic-back-button"
+          disabled={transitioning}
+        >
           <ArrowLeft aria-hidden="true" />
           <span>{t('directSelect.back')}</span>
         </button>

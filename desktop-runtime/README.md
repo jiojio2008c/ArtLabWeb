@@ -34,9 +34,9 @@
 
 背景播放参数通过 `GroupStateSync` / `GroupSelectAndSync` 的 `backgroundPlayMode`、`backgroundIntervalMs` 字段同步，也可由 `BackgroundPlayback` 事件即时更新。自动切换只在 `PreviewMode.enabled=true` 时运行，编辑状态保持当前背景。
 
-舞台 `MagicFloor` 水印默认开启，主体与描边统一使用 `44%` 不透明度（`56%` 透明度）；可通过 `DisplaySettings` 事件的 `{ watermarkEnabled }` 即时切换。`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 也接受同名字段。旧消息未携带该字段时保留当前设置，水印只绘制在 1920x1080 舞台范围内，不覆盖作品档案镜像或舞台外区域。
+EXE 保留 `DisplaySettings`、`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 的 `{ watermarkEnabled }` 字段以兼容既有协议，但桌面播放器永不绘制水印；`/status` 与运行状态会额外报告 `watermarkVisible=false`。`44%` 不透明度（`56%` 透明度）的水印仅属于 Web/iPad 控制预览。旧消息缺少该字段时仍按既有状态解析，不影响桌面纯舞台输出。
 
-进阶参数同样由 `GroupStateSync` / `GroupSelectAndSync` 和 `PreviewMode` 同步。组级字段包括统一的物件 `appearAnimation`、旧数据兼容用的 `backgroundTransition` 和 `audioLibrary`；每张背景包含 `bgmAudioId` 与 `backgroundTransition`；物件包含 `targetMode`、`targetPosition`、`audioId`、`audioTrigger`、`audioDelayMs`、`linkedAppearance` 和 `backgroundIds`。只有 `PreviewMode.advancedFeaturesEnabled=true` 时播放进阶行为，关闭进阶功能不会删除已同步的数据。
+进阶参数同样由 `GroupStateSync` / `GroupSelectAndSync` 和 `PreviewMode` 同步。组级字段包括统一的物件 `appearAnimation`、旧数据兼容用的 `backgroundTransition` 和 `audioLibrary`；每张背景包含 `bgmAudioId` 与 `backgroundTransition`；物件包含 `targetMode`、`targetPosition`、`audioId`、`audioTrigger`、`audioDelayMs`、`linkedAppearance` 和 `backgroundIds`。桌面端固定按 `PreviewMode.advancedFeaturesEnabled=true` 播放进阶行为，即使接收 payload 显式传入 `false` 也会归一化为 `true`；关闭进阶功能不会删除已同步的数据。
 
 物件联动的 UI 使用控制方语义 `A -> B`，同步协议仍由受控物件 B 保存 `linkedAppearance`：`{ triggerItemId: A.id, mode, delayMs }`。`mode` 为 `showAfter` 或 `hideAfter`，延迟上限为 `600000ms`；一个 A 可控制多个 B，一个 B 只能有一个触发方。当前 `linkedAppearanceModelVersion` 为 `3`。
 
@@ -56,7 +56,7 @@ MF|DynamicArt|ArchiveEnter|{"version":3,"replayId":"archive_xxx","startedAt":0,"
 MF|DynamicArt|ArchiveSnapshot|{"version":2,"replayId":"archive_xxx","dataUrl":"data:image/jpeg;base64,..."}
 ```
 
-`ArchiveEnter.source` 是 iPad 首页画面，`source.origin` 是首页「动态艺术」卡片在该画面中的位置。EXE 以这张 iPad 首页镜像为转场底图，并从相同的卡片位置启动门户。`ArchiveSnapshot` 是 iPad 当前作品档案页的完整镜像。
+`ArchiveEnter.source` 是 iPad 首页画面，`source.origin` 是首页「动态艺术」卡片在该画面中的位置。EXE 以这张 iPad 首页镜像为转场底图，并从相同的卡片位置启动门户。`ArchiveSnapshot` 是 iPad 当前作品档案页的完整镜像。镜像始终以 `contain` 完整居中显示；当 4:3 iPad 镜像放到 1920 × 1080 屏幕而产生左右空位时，空位显示与 iPad 首页完全相同的 `magic-floor-background.webp`，不会再用纯色填充。
 
 EXE 只同步播放 iPad 的入场节奏并显示 iPad 镜像，不读取 PC 缓存来生成任何资料夹或作品卡片，也不提供档案交互。使用者在 iPad 选择作品进入控制页后，原有 `GroupStateSync` / `GroupSelectAndSync` 才会让 EXE 进入并加载真实舞台。从控制页返回档案时使用 `ArchiveReturn`，先保留最近一次 iPad 镜像，再由新快照无闪烁接管。
 

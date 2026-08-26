@@ -3,6 +3,7 @@ const DEFAULT_WS_IP = '192.168.8.101'
 const NETWORK_SETTINGS_KEY = 'magicfloor_network_settings_v1'
 const DEFAULT_DYNAMIC_PORT = 8080
 const DEFAULT_INTERACTIVE_PORT = 11701
+const DEFAULT_ADVANCED_FEATURES_ENABLED = true
 
 interface NetworkSettings {
   wsIp: string
@@ -47,7 +48,7 @@ const loadNetworkSettings = (): NetworkSettings => {
     wsIp: loadLastWsIp(),
     dynamicPort: DEFAULT_DYNAMIC_PORT,
     interactivePort: DEFAULT_INTERACTIVE_PORT,
-    advancedFeaturesEnabled: false,
+    advancedFeaturesEnabled: DEFAULT_ADVANCED_FEATURES_ENABLED,
     watermarkEnabled: true
   }
 
@@ -62,7 +63,7 @@ const loadNetworkSettings = (): NetworkSettings => {
       wsIp: parsed.wsIp?.trim() || fallback.wsIp,
       dynamicPort: normalizePort(parsed.dynamicPort, fallback.dynamicPort),
       interactivePort: normalizePort(parsed.interactivePort, fallback.interactivePort),
-      advancedFeaturesEnabled: parsed.advancedFeaturesEnabled === true,
+      advancedFeaturesEnabled: DEFAULT_ADVANCED_FEATURES_ENABLED,
       watermarkEnabled: parsed.watermarkEnabled !== false
     }
   } catch {
@@ -75,7 +76,7 @@ const saveNetworkSettings = (settings: NetworkSettings) => {
     wsIp: settings.wsIp.trim() || DEFAULT_WS_IP,
     dynamicPort: normalizePort(settings.dynamicPort, DEFAULT_DYNAMIC_PORT),
     interactivePort: normalizePort(settings.interactivePort, DEFAULT_INTERACTIVE_PORT),
-    advancedFeaturesEnabled: settings.advancedFeaturesEnabled === true,
+    advancedFeaturesEnabled: DEFAULT_ADVANCED_FEATURES_ENABLED,
     watermarkEnabled: settings.watermarkEnabled !== false
   }
 

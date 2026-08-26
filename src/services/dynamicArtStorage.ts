@@ -12,7 +12,6 @@ import {
 import {
   normalizeDynamicAppearAnimation,
   normalizeDynamicLinkedAppearance,
-  synchronizeDynamicLinkedBackgrounds,
   wouldCreateDynamicLinkedAppearanceCycle
 } from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
 
@@ -51,9 +50,7 @@ const DYNAMIC_DIALOGUE_BUBBLE_STYLE_IDS = [
 ] as const
 const DYNAMIC_THOUGHT_BUBBLE_STYLE_IDS = [
   'thought-cloud-left',
-  'thought-cloud-right',
-  'thought-soft-left',
-  'thought-soft-right'
+  'thought-cloud-right'
 ] as const
 const DYNAMIC_TITLE_BUBBLE_STYLE_IDS = [
   'title-rounded',
@@ -67,7 +64,9 @@ const DYNAMIC_LEGACY_BUBBLE_STYLE_IDS = [
   'dialogue-soft',
   'dialogue-comic',
   'thought-cloud',
-  'thought-soft'
+  'thought-soft',
+  'thought-soft-left',
+  'thought-soft-right'
 ] as const
 const DYNAMIC_BUBBLE_TITLE_MASK_IDS = ['rounded', 'pill', 'ticket', 'underline', 'none'] as const
 
@@ -99,6 +98,14 @@ const DYNAMIC_BUBBLE_MASK_COLOR_BY_PALETTE: Record<DynamicBubblePaletteId, strin
   sun: '#c88722',
   violet: '#7567b4'
 }
+
+const DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS = {
+  'dialogue-rounded': { surfaceColor: '#fffef6', outlineColor: '#3b9089' },
+  'dialogue-soft': { surfaceColor: '#e9f8f5', outlineColor: '#84b7c0' },
+  'dialogue-comic': { surfaceColor: '#1f3635', outlineColor: '#d9e3df' },
+  'thought-cloud': { surfaceColor: '#fffffd', outlineColor: '#6c9fa0' },
+  title: { surfaceColor: '#ffffff', outlineColor: '#263a3b' }
+} as const
 
 interface DynamicLinkedAppearance {
   triggerItemId: string
@@ -132,7 +139,7 @@ interface DynamicBackground extends DynamicMedia {
 }
 
 interface DynamicBubbleContent {
-  schemaVersion: 1
+  schemaVersion: 2
   bubbleType: DynamicBubbleType
   styleId: DynamicBubbleStyleId
   title: string
@@ -141,6 +148,8 @@ interface DynamicBubbleContent {
   revealIntervalMs: number
   fontSizePx: number
   textColor: string
+  surfaceColor: string
+  outlineColor: string
   surfaceId: string
   titleMaskId: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
@@ -161,6 +170,8 @@ interface DynamicBubbleInput {
   revealIntervalMs: number
   fontSizePx: number
   textColor: string
+  surfaceColor?: string
+  outlineColor?: string
   surfaceId?: string
   titleMaskId?: DynamicBubbleTitleMaskId
   paletteId: DynamicBubblePaletteId
@@ -294,7 +305,9 @@ const normalizeDynamicBubbleStyleId = (bubbleType: DynamicBubbleType, value: unk
     'dialogue-soft': 'dialogue-soft-right',
     'dialogue-comic': 'dialogue-comic-right',
     'thought-cloud': 'thought-cloud-right',
-    'thought-soft': 'thought-soft-right'
+    'thought-soft': 'thought-cloud-right',
+    'thought-soft-left': 'thought-cloud-left',
+    'thought-soft-right': 'thought-cloud-right'
   }
   const canonicalStyleId = DYNAMIC_LEGACY_BUBBLE_STYLE_IDS.includes(
     styleId as typeof DYNAMIC_LEGACY_BUBBLE_STYLE_IDS[number]
@@ -315,6 +328,18 @@ const normalizeDynamicBubbleStyleId = (bubbleType: DynamicBubbleType, value: unk
     ? canonicalStyleId
     : fallbackStyleId) as DynamicBubbleStyleId
 }
+
+const getDynamicBubbleDefaultSurfaceColors = (styleId: DynamicBubbleStyleId) => {
+  if (styleId.startsWith('dialogue-rounded-')) return DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS['dialogue-rounded']
+  if (styleId.startsWith('dialogue-soft-')) return DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS['dialogue-soft']
+  if (styleId.startsWith('dialogue-comic-')) return DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS['dialogue-comic']
+  if (styleId.startsWith('thought-cloud-')) return DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS['thought-cloud']
+  return DYNAMIC_BUBBLE_DEFAULT_SURFACE_COLORS.title
+}
+
+const normalizeDynamicBubbleColor = (value: unknown, fallback: string) => (
+  typeof value === 'string' && value.trim() ? value.trim() : fallback
+)
 
 const normalizeDynamicBubbleTitleMaskId = (value: unknown): DynamicBubbleTitleMaskId => (
   DYNAMIC_BUBBLE_TITLE_MASK_IDS.includes(value as DynamicBubbleTitleMaskId)
@@ -345,12 +370,14 @@ const normalizeDynamicBubbleContent = (
 ): DynamicBubbleContent => {
   const bubbleType = normalizeDynamicBubbleType(bubble?.bubbleType)
   const paletteId = normalizeDynamicBubblePaletteId(bubbleType, bubble?.paletteId)
+  const styleId = normalizeDynamicBubbleStyleId(bubbleType, bubble?.styleId)
+  const defaultSurfaceColors = getDynamicBubbleDefaultSurfaceColors(styleId)
   const title = typeof bubble?.title === 'string' ? bubble.title : ''
   const bodyText = typeof bubble?.bodyText === 'string' ? bubble.bodyText : ''
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     bubbleType,
-    styleId: normalizeDynamicBubbleStyleId(bubbleType, bubble?.styleId),
+    styleId,
     title: bubbleType === 'title' ? '' : title,
     bodyText: bubbleType === 'title' && !bodyText.trim() ? title : bodyText,
     revealMode: bubble?.revealMode === 'typewriter' ? 'typewriter' : 'all',
@@ -369,6 +396,8 @@ const normalizeDynamicBubbleContent = (
     textColor: typeof bubble?.textColor === 'string' && bubble.textColor.trim()
       ? bubble.textColor.trim()
       : '#172033',
+    surfaceColor: normalizeDynamicBubbleColor(bubble?.surfaceColor, defaultSurfaceColors.surfaceColor),
+    outlineColor: normalizeDynamicBubbleColor(bubble?.outlineColor, defaultSurfaceColors.outlineColor),
     surfaceId: typeof bubble?.surfaceId === 'string' && bubble.surfaceId.trim()
       ? bubble.surfaceId.trim()
       : 'light',
@@ -519,20 +548,6 @@ const getDynamicBackgroundTransitionFromGroup = (group: DynamicGroup): DynamicBa
   return 'none'
 }
 
-const getDynamicBackgroundTransitionFromBackground = (
-  background: DynamicBackground,
-  fallback: DynamicBackgroundTransition = 'none'
-): DynamicBackgroundTransition => {
-  if (
-    background.backgroundTransition === 'curtain'
-    || background.backgroundTransition === 'cameraFlash'
-    || background.backgroundTransition === 'shadowPlay'
-  ) {
-    return background.backgroundTransition
-  }
-  return background.backgroundTransition === 'none' ? 'none' : fallback
-}
-
 const getDynamicTargetModeFromItem = (item: DynamicItem): DynamicTargetMode => (
   item.targetMode === 'target' && item.targetPosition ? 'target' : 'loop'
 )
@@ -577,15 +592,20 @@ const normalizeDynamicItemLinks = (items: DynamicItem[]) => {
       : undefined
   }))
 
-  return synchronizeDynamicLinkedBackgrounds(validatedItems)
+  return validatedItems
 }
 
 const migrateDynamicLinkedAppearanceModel = (group: DynamicGroup): DynamicGroup => {
   const sourceItems = Array.isArray(group.items) ? group.items : []
-  if (group.linkedAppearanceModelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
+  const modelVersion = Number(group.linkedAppearanceModelVersion)
+
+  if (Number.isFinite(modelVersion) && modelVersion >= DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
     return {
       ...group,
-      items: normalizeDynamicItemLinks(sourceItems)
+      linkedAppearanceModelVersion: modelVersion,
+      items: modelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
+        ? normalizeDynamicItemLinks(sourceItems)
+        : sourceItems
     }
   }
 
@@ -958,7 +978,7 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
     group.thumbnail ? resolveMediaUrl(group.thumbnail) : Promise.resolve(undefined),
     Promise.all(sourceBackgrounds.map(async (background) => ({
       ...await resolveMediaUrl(background),
-      backgroundTransition: getDynamicBackgroundTransitionFromBackground(background, groupBackgroundTransition),
+      backgroundTransition: groupBackgroundTransition,
       appearAnimation: undefined
     }))),
     Promise.all((group.audioLibrary ?? []).map(async (audio) => (
@@ -1275,27 +1295,33 @@ const updateDynamicGroupOrganization = async (
 }
 
 const updateDynamicGroupMeta = async (groupId: string, values: { name: string; thumbnailFile?: File }) => {
+  const initialGroups = loadRawGroups()
+  if (!initialGroups.some((item) => item.id === groupId)) return undefined
+
+  const nextThumbnail = values.thumbnailFile
+    ? await persistDynamicMedia(values.thumbnailFile, `${groupId}/thumbnail`)
+    : undefined
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
+  if (!group) {
+    if (nextThumbnail) await deleteDynamicMedia(nextThumbnail)
+    return undefined
+  }
 
   const previousThumbnail = group.thumbnail
   group.name = values.name.trim() || group.name || '未命名作品檔案'
-
-  if (values.thumbnailFile) {
-    group.thumbnail = await persistDynamicMedia(values.thumbnailFile, `${groupId}/thumbnail`)
-
-    if (
-      previousThumbnail
-      && previousThumbnail.id !== group.thumbnail.id
-      && !isMediaUsedByOtherGroups(groups, groupId, previousThumbnail.id)
-    ) {
-      await deleteDynamicMedia(previousThumbnail)
-    }
-  }
-
+  if (nextThumbnail) group.thumbnail = nextThumbnail
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
+
+  if (
+    previousThumbnail
+    && nextThumbnail
+    && previousThumbnail.id !== nextThumbnail.id
+    && !isMediaUsedByOtherGroups(groups, groupId, previousThumbnail.id)
+  ) {
+    await deleteDynamicMedia(previousThumbnail)
+  }
   return hydrateGroup(group)
 }
 
@@ -1304,14 +1330,11 @@ const deleteDynamicGroup = async (groupId: string) => {
   const group = groups.find((item) => item.id === groupId)
   if (!group) return loadDynamicGroups()
 
-  await Promise.all(
-    collectDynamicGroupMedia(group)
-      .filter((media) => !isMediaUsedByOtherGroups(groups, groupId, media.id))
-      .map(deleteDynamicMedia)
-  )
-
   const nextGroups = groups.filter((item) => item.id !== groupId)
   saveDynamicGroups(nextGroups)
+  const mediaToDelete = collectDynamicGroupMedia(group)
+    .filter((media) => !isMediaUsedByOtherGroups(groups, groupId, media.id))
+  await Promise.all(mediaToDelete.map(deleteDynamicMedia))
   return Promise.all(nextGroups.map(hydrateGroup))
 }
 
@@ -1332,6 +1355,14 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
     updatedAt: Date.now()
   }, existingGroup)
 
+  nextGroup.backgrounds = getGroupBackgrounds(nextGroup).map((background) => ({
+    ...background,
+    backgroundTransition: nextGroup.backgroundTransition ?? 'none',
+    appearAnimation: undefined
+  }))
+  nextGroup.background = nextGroup.backgrounds.find((background) => background.id === nextGroup.activeBackgroundId)
+    ?? nextGroup.backgrounds[0]
+
   if (index >= 0) {
     groups[index] = nextGroup
   } else {
@@ -1343,11 +1374,14 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
 }
 
 const setDynamicBackground = async (groupId: string, file: File) => {
+  const persistedBackground = await persistDynamicMedia(file, `${groupId}/background`) as DynamicBackground
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
+  if (!group) {
+    await deleteDynamicMedia(persistedBackground)
+    return undefined
+  }
 
-  const persistedBackground = await persistDynamicMedia(file, `${groupId}/background`) as DynamicBackground
   const background: DynamicBackground = {
     ...persistedBackground,
     backgroundTransition: getDynamicBackgroundTransitionFromGroup(group)
@@ -1391,16 +1425,6 @@ const deleteDynamicBackgrounds = async (groupId: string, backgroundIds: string[]
     return hydrateGroup(group)
   }
 
-  await Promise.all(
-    currentBackgrounds
-      .filter((background) => deleteSet.has(background.id))
-      .map(async (background) => {
-        if (!isMediaUsedByOtherGroups(groups, groupId, background.id)) {
-          await deleteDynamicMedia(background)
-        }
-      })
-  )
-
   const activeBackground = remainingBackgrounds.find((background) => background.id === group.activeBackgroundId)
     ?? remainingBackgrounds[0]
 
@@ -1419,6 +1443,10 @@ const deleteDynamicBackgrounds = async (groupId: string, backgroundIds: string[]
   })
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
+  const mediaToDelete = currentBackgrounds
+    .filter((background) => deleteSet.has(background.id))
+    .filter((background) => !isMediaUsedByOtherGroups(groups, groupId, background.id))
+  await Promise.all(mediaToDelete.map(deleteDynamicMedia))
   return hydrateGroup(group)
 }
 
@@ -1466,11 +1494,14 @@ const reorderDynamicBackgrounds = (
 }
 
 const addDynamicItem = async (groupId: string, file: File, itemName?: string) => {
+  const media = await persistDynamicMedia(file, `${groupId}/items`)
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) return undefined
+  if (!group || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
+    await deleteDynamicMedia(media)
+    return undefined
+  }
 
-  const media = await persistDynamicMedia(file, `${groupId}/items`)
   const now = Date.now()
   const item: DynamicItem = {
     id: generateId('item'),
@@ -1512,30 +1543,37 @@ const updateDynamicItemMeta = async (
   itemId: string,
   values: { name: string; file?: File }
 ) => {
+  const nextMedia = values.file
+    ? await persistDynamicMedia(values.file, `${groupId}/items`)
+    : undefined
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
+  if (!group) {
+    if (nextMedia) await deleteDynamicMedia(nextMedia)
+    return undefined
+  }
 
   const item = group.items.find((nextItem) => nextItem.id === itemId)
-  if (!item || !isDynamicMediaItem(item)) return undefined
+  if (!item || !isDynamicMediaItem(item)) {
+    if (nextMedia) await deleteDynamicMedia(nextMedia)
+    return undefined
+  }
 
   const previousMedia = item.media
   item.name = values.name.trim() || item.name || values.file?.name || '未命名物件'
-
-  if (values.file) {
-    item.media = await persistDynamicMedia(values.file, `${groupId}/items`)
-
-    if (
-      previousMedia.id !== item.media.id
-      && !isMediaUsedByOtherEntity(groups, groupId, itemId, previousMedia.id)
-    ) {
-      await deleteDynamicMedia(previousMedia)
-    }
-  }
+  if (nextMedia) item.media = nextMedia
 
   item.updatedAt = Date.now()
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
+  if (
+    previousMedia
+    && nextMedia
+    && previousMedia.id !== nextMedia.id
+    && !isMediaUsedByOtherEntity(groups, groupId, itemId, previousMedia.id)
+  ) {
+    await deleteDynamicMedia(previousMedia)
+  }
   return hydrateGroup(group)
 }
 
@@ -1571,10 +1609,6 @@ const createDynamicItemBase = (
 })
 
 const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
-  const groups = loadRawGroups()
-  const group = groups.find((item) => item.id === groupId)
-  if (!group || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) return undefined
-
   const bubbleType = normalizeDynamicBubbleType(input.bubbleType)
   let image: DynamicMedia | undefined
   if (bubbleType === 'thought' && input.imageFile) {
@@ -1585,6 +1619,13 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
     }
   }
 
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group || group.items.length >= MAX_DYNAMIC_ITEMS_PER_GROUP) {
+    if (image) await deleteDynamicMedia(image)
+    return undefined
+  }
+
   const now = Date.now()
   const nameFallback = bubbleType === 'title'
     ? input.bodyText.trim() || input.title.trim()
@@ -1593,7 +1634,7 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
     ...createDynamicItemBase(group, input.name?.trim() || nameFallback || '气泡', now),
     kind: 'bubble',
     bubble: normalizeDynamicBubbleContent({
-      schemaVersion: 1,
+      schemaVersion: 2,
       bubbleType,
       styleId: input.styleId,
       title: input.title,
@@ -1602,6 +1643,8 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
       revealIntervalMs: input.revealIntervalMs,
       fontSizePx: input.fontSizePx,
       textColor: input.textColor,
+      surfaceColor: input.surfaceColor,
+      outlineColor: input.outlineColor,
       surfaceId: input.surfaceId,
       titleMaskId: input.titleMaskId,
       paletteId: input.paletteId,
@@ -1623,34 +1666,41 @@ const updateDynamicBubble = async (
   itemId: string,
   input: DynamicBubbleInput
 ) => {
-  const groups = loadRawGroups()
-  const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
-
-  const item = group.items.find((nextItem) => nextItem.id === itemId)
-  if (!item || !isDynamicBubbleItem(item)) return undefined
-
-  const previousImage = item.bubble.image
   const bubbleType = normalizeDynamicBubbleType(input.bubbleType)
-  let image = bubbleType === 'thought' && !input.removeImage && input.imageFile !== null
-    ? previousImage
-    : undefined
-
+  let nextImage: DynamicMedia | undefined
   if (bubbleType === 'thought' && input.imageFile) {
-    const nextImage = await persistDynamicMedia(input.imageFile, `${groupId}/bubble-images`)
+    nextImage = await persistDynamicMedia(input.imageFile, `${groupId}/bubble-images`)
     if (nextImage.type !== 'image') {
       await deleteDynamicMedia(nextImage)
       throw new Error('Thought bubble media must be an image')
     }
-    image = nextImage
   }
+
+  const groups = loadRawGroups()
+  const group = groups.find((item) => item.id === groupId)
+  if (!group) {
+    if (nextImage) await deleteDynamicMedia(nextImage)
+    return undefined
+  }
+
+  const item = group.items.find((nextItem) => nextItem.id === itemId)
+  if (!item || !isDynamicBubbleItem(item)) {
+    if (nextImage) await deleteDynamicMedia(nextImage)
+    return undefined
+  }
+
+  const previousImage = item.bubble.image
+  let image = bubbleType === 'thought' && !input.removeImage && input.imageFile !== null
+    ? previousImage
+    : undefined
+  if (nextImage) image = nextImage
 
   const nameFallback = bubbleType === 'title'
     ? input.bodyText.trim() || input.title.trim()
     : input.title.trim()
   item.name = input.name?.trim() || nameFallback || item.name || '气泡'
   item.bubble = normalizeDynamicBubbleContent({
-    schemaVersion: 1,
+    schemaVersion: 2,
     bubbleType,
     styleId: input.styleId,
     title: input.title,
@@ -1659,6 +1709,8 @@ const updateDynamicBubble = async (
     revealIntervalMs: input.revealIntervalMs,
     fontSizePx: input.fontSizePx,
     textColor: input.textColor,
+    surfaceColor: input.surfaceColor ?? item.bubble.surfaceColor,
+    outlineColor: input.outlineColor ?? item.bubble.outlineColor,
     surfaceId: input.surfaceId,
     titleMaskId: input.titleMaskId ?? item.bubble.titleMaskId,
     paletteId: input.paletteId,
@@ -1726,14 +1778,13 @@ const deleteDynamicItems = async (groupId: string, itemIds: string[]) => {
       .filter((media): media is DynamicMedia => Boolean(media))
       .map((media) => [media.id, media])
   ).values())
+  group.updatedAt = Date.now()
+  saveDynamicGroups(groups)
   await Promise.all(
     deletedMedia
       .filter((media) => !remainingMediaIds.has(media.id))
       .map(deleteDynamicMedia)
   )
-
-  group.updatedAt = Date.now()
-  saveDynamicGroups(groups)
   return hydrateGroup(group)
 }
 
@@ -1927,11 +1978,14 @@ const updateDynamicAdvancedPlayback = (
 }
 
 const addDynamicAudio = async (groupId: string, file: File) => {
+  const nextAudio = await persistDynamicAudio(file, `${groupId}/audio`)
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
-  if (!group) return undefined
+  if (!group) {
+    await deleteDynamicMedia(nextAudio)
+    return undefined
+  }
 
-  const nextAudio = await persistDynamicAudio(file, `${groupId}/audio`)
   group.audioLibrary = [nextAudio, ...(group.audioLibrary ?? []).filter((item) => item.id !== nextAudio.id)]
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
@@ -1961,22 +2015,19 @@ const setDynamicBackgroundBgm = async (groupId: string, backgroundIds: string[],
 
 const setDynamicBackgroundTransition = async (
   groupId: string,
-  backgroundIds: string[],
   backgroundTransition: DynamicBackgroundTransition
 ) => {
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
   if (!group) return undefined
 
-  const backgroundIdSet = new Set(backgroundIds)
   const normalizedTransition = getDynamicBackgroundTransitionFromGroup({
     ...group,
     backgroundTransition
   })
+  group.backgroundTransition = normalizedTransition
   group.backgrounds = getGroupBackgrounds(group).map((background) => (
-    backgroundIdSet.has(background.id)
-      ? { ...background, backgroundTransition: normalizedTransition, appearAnimation: undefined }
-      : background
+    { ...background, backgroundTransition: normalizedTransition, appearAnimation: undefined }
   ))
   group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
     ?? group.backgrounds[0]

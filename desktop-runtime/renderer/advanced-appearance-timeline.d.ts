@@ -35,6 +35,7 @@ export const APPEARANCE_FADE_DURATION_MS: number
 export const APPEARANCE_DROP_DURATION_MS: number
 export const APPEARANCE_TRACK_SLIDE_DURATION_MS: number
 export const MAX_LINKED_APPEARANCE_DELAY_MS: number
+export const DYNAMIC_APPEARANCE_EASING: string
 
 export function normalizeDynamicAppearAnimation(value: unknown): DynamicAppearAnimation
 export function getDynamicAppearanceDurationMs(value: unknown): number
@@ -79,3 +80,24 @@ export function sampleDynamicAppearanceTimeline(
   interactive: boolean
   animationElapsedMs: number
 }
+export function getDynamicAppearanceAnimationSeekMs(
+  schedule: DynamicAppearanceSchedule | undefined,
+  elapsedMs: number
+): number
+export function canContinueDynamicAppearanceEpoch(
+  item: DynamicAppearanceItem,
+  previousEpoch: { schedule?: DynamicAppearanceSchedule } | undefined,
+  options?: {
+    sameSession?: boolean
+    rootActive?: boolean
+    triggerContinues?: boolean
+    schedule?: DynamicAppearanceSchedule
+  }
+): boolean
+export function getContinuableDynamicAppearanceItemIds(options?: {
+  items?: DynamicAppearanceItem[]
+  previousEpochs?: Map<string, { schedule?: DynamicAppearanceSchedule }> | Record<string, { schedule?: DynamicAppearanceSchedule }>
+  timeline?: Record<string, DynamicAppearanceSchedule>
+  activeItemIds?: Set<string> | string[]
+  sameSession?: boolean
+}): Set<string>

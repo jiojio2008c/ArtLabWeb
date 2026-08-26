@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 import {
   APPEARANCE_FADE_DURATION_MS,
   APPEARANCE_DROP_DURATION_MS,
   APPEARANCE_TRACK_SLIDE_DURATION_MS,
+  DYNAMIC_APPEARANCE_EASING,
   MAX_LINKED_APPEARANCE_DELAY_MS,
   buildDynamicAppearanceTimeline,
+  canContinueDynamicAppearanceEpoch,
+  getContinuableDynamicAppearanceItemIds,
   getDynamicEffectiveBackgroundIds,
+  getDynamicAppearanceAnimationSeekMs,
   getDynamicPlaybackItemsForBackground,
   normalizeDynamicLinkedAppearance,
   sampleDynamicAppearanceTimeline,
@@ -57,6 +62,27 @@ assert.equal(
   linkedTimeline['linked-hide'].hideStartMs,
   linkedTimeline['linked-show'].appearanceCompleteMs + 500
 )
+
+const immediateTimeline = buildDynamicAppearanceTimeline({
+  items: [
+    { itemId: 'immediate-source' },
+    {
+      itemId: 'immediate-target',
+      linkedAppearance: {
+        triggerItemId: 'immediate-source',
+        mode: 'showAfter',
+        delayMs: 0
+      }
+    }
+  ],
+  appearAnimation: 'trackSlide'
+})
+
+assert.equal(
+  immediateTimeline['immediate-target'].entranceStartMs,
+  immediateTimeline['immediate-source'].appearanceCompleteMs,
+  'A zero-delay showAfter relation must start immediately after its source finishes appearing.'
+)
 assert.equal(
   sampleDynamicAppearanceTimeline(
     linkedTimeline['linked-show'],
@@ -97,6 +123,35 @@ assert.equal(trackSlideTimeline['track-slide'].appearAnimation, 'trackSlide')
 assert.equal(
   trackSlideTimeline['track-slide'].entranceDurationMs,
   APPEARANCE_TRACK_SLIDE_DURATION_MS
+)
+assert.equal(
+  DYNAMIC_APPEARANCE_EASING,
+  'cubic-bezier(0.333333, 0, 0.666667, 1)'
+)
+assert.equal(
+  getDynamicAppearanceAnimationSeekMs(trackSlideTimeline['track-slide'], 250),
+  250,
+  'An entrance animation seeks to the elapsed time within its active window.'
+)
+assert.equal(
+  getDynamicAppearanceAnimationSeekMs(trackSlideTimeline['track-slide'], -1),
+  0,
+  'An entrance animation does not seek before its start.'
+)
+assert.equal(
+  getDynamicAppearanceAnimationSeekMs(trackSlideTimeline['track-slide'], 10000),
+  APPEARANCE_TRACK_SLIDE_DURATION_MS,
+  'An entrance animation seek is clamped after completion.'
+)
+assert.equal(
+  getDynamicAppearanceAnimationSeekMs(linkedTimeline['linked-hide'], linkedTimeline['linked-hide'].hideStartMs + 180),
+  180,
+  'A hide-after animation seeks from its hide start.'
+)
+assert.equal(
+  getDynamicAppearanceAnimationSeekMs(linkedTimeline['linked-hide'], linkedTimeline['linked-hide'].hideCompleteMs + 1),
+  APPEARANCE_FADE_DURATION_MS,
+  'A hide-after animation seek is clamped after completion.'
 )
 
 const missingTriggerTimeline = buildDynamicAppearanceTimeline({
@@ -289,6 +344,159 @@ assert.deepEqual(
     mode: 'showAfter',
     delayMs: MAX_LINKED_APPEARANCE_DELAY_MS
   }
+)
+
+const continuationParent = { itemId: 'parent' }
+const continuationChild = {
+  itemId: 'child',
+  linkedAppearance: { triggerItemId: 'parent', mode: 'showAfter', delayMs: 500 }
+}
+const continuationTimeline = buildDynamicAppearanceTimeline({
+  items: [continuationParent, continuationChild],
+  appearAnimation: 'drop'
+})
+const continuationEpoch = {
+  key: 'preview:child:1',
+  startedAt: 1000,
+  schedule: continuationTimeline.child
+}
+assert.equal(
+  canContinueDynamicAppearanceEpoch(continuationChild, continuationEpoch, {
+    triggerContinues: true,
+    schedule: continuationTimeline.child
+  }),
+  true,
+  'A linked child keeps its epoch when the background changes.'
+)
+assert.equal(
+  canContinueDynamicAppearanceEpoch({
+    ...continuationChild,
+    linkedAppearance: { ...continuationChild.linkedAppearance, delayMs: 600 }
+  }, continuationEpoch, { triggerContinues: true }),
+  false,
+  'Changing a link creates a new appearance epoch.'
+)
+assert.equal(
+  canContinueDynamicAppearanceEpoch(continuationParent, {
+    schedule: continuationTimeline.parent
+  }, { rootActive: true, schedule: continuationTimeline.parent }),
+  true,
+  'An active root keeps its epoch when the background changes.'
+)
+
+const pendingParentItems = [
+  { itemId: 'active-root' },
+  { itemId: 'pending-parent' },
+  {
+    itemId: 'show-child',
+    linkedAppearance: { triggerItemId: 'pending-parent', mode: 'showAfter', delayMs: 500 }
+  },
+  {
+    itemId: 'hide-child',
+    linkedAppearance: { triggerItemId: 'pending-parent', mode: 'hideAfter', delayMs: 500 }
+  }
+]
+const pendingParentPreviousTimeline = buildDynamicAppearanceTimeline({
+  items: pendingParentItems,
+  appearMode: 'sequence',
+  intervalMs: 2000,
+  appearAnimation: 'drop'
+})
+const pendingParentEpochs = Object.fromEntries(pendingParentItems.map((item) => [
+  item.itemId,
+  { schedule: pendingParentPreviousTimeline[item.itemId] }
+]))
+const pendingParentNextTimeline = buildDynamicAppearanceTimeline({
+  items: pendingParentItems,
+  appearMode: 'sequence',
+  intervalMs: 2000,
+  appearAnimation: 'drop',
+  activeItemIds: ['active-root']
+})
+const pendingParentContinuations = getContinuableDynamicAppearanceItemIds({
+  items: pendingParentItems,
+  previousEpochs: pendingParentEpochs,
+  timeline: pendingParentNextTimeline,
+  activeItemIds: ['active-root']
+})
+assert.deepEqual(
+  [...pendingParentContinuations],
+  ['active-root'],
+  'Children must restart when their pending trigger parent starts a new background epoch.'
+)
+
+const threeLevelItems = [
+  { itemId: 'chain-root' },
+  {
+    itemId: 'chain-middle',
+    linkedAppearance: { triggerItemId: 'chain-root', mode: 'showAfter', delayMs: 250 }
+  },
+  {
+    itemId: 'chain-leaf',
+    linkedAppearance: { triggerItemId: 'chain-middle', mode: 'showAfter', delayMs: 350 }
+  }
+]
+const threeLevelTimeline = buildDynamicAppearanceTimeline({
+  items: threeLevelItems,
+  appearAnimation: 'trackSlide'
+})
+const threeLevelEpochs = new Map(threeLevelItems.map((item) => [
+  item.itemId,
+  { schedule: threeLevelTimeline[item.itemId] }
+]))
+assert.deepEqual(
+  [...getContinuableDynamicAppearanceItemIds({
+    items: threeLevelItems,
+    previousEpochs: threeLevelEpochs,
+    timeline: buildDynamicAppearanceTimeline({
+      items: threeLevelItems,
+      appearAnimation: 'trackSlide',
+      activeItemIds: ['chain-root']
+    }),
+    activeItemIds: ['chain-root']
+  })],
+  ['chain-root', 'chain-middle', 'chain-leaf'],
+  'A three-level chain continues only through an unbroken trigger continuation path.'
+)
+
+const changedMiddleItems = threeLevelItems.map((item) => (
+  item.itemId === 'chain-middle'
+    ? { ...item, linkedAppearance: { ...item.linkedAppearance, delayMs: 450 } }
+    : item
+))
+assert.deepEqual(
+  [...getContinuableDynamicAppearanceItemIds({
+    items: changedMiddleItems,
+    previousEpochs: threeLevelEpochs,
+    timeline: buildDynamicAppearanceTimeline({
+      items: changedMiddleItems,
+      appearAnimation: 'trackSlide',
+      activeItemIds: ['chain-root']
+    }),
+    activeItemIds: ['chain-root']
+  })],
+  ['chain-root'],
+  'Changing a middle link restarts that item and every linked descendant.'
+)
+
+const dynamicControlSource = await readFile(
+  new URL('../../src/components/DynamicControlPage.tsx', import.meta.url),
+  'utf8'
+)
+assert.match(
+  dynamicControlSource,
+  /getDynamicAppearanceAnimationSeekMs/,
+  'The Web appearance component must seek rebuilt animations.'
+)
+assert.match(
+  dynamicControlSource,
+  /animation\.currentTime\s*=/,
+  'The Web appearance component must restore animation progress after a resize or ready update.'
+)
+assert.match(
+  dynamicControlSource,
+  /DYNAMIC_APPEARANCE_EASING/,
+  'The Web appearance component must use the shared desktop easing.'
 )
 
 console.log('Advanced appearance timeline verification passed.')

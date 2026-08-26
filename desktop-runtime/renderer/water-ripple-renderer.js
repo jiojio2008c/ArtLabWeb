@@ -2,6 +2,15 @@ import { RIPPLE_DURATION_MS } from './interaction-core.js'
 
 export const MAX_WATER_RIPPLES = 4
 
+export const WATER_RIPPLE_LIGHTING_PROFILE = Object.freeze({
+  displacementStrengthPixels: 9,
+  maxDisplacementPixels: 14.5,
+  crestHighlightStrength: 0.115,
+  waveHighlightStrength: 0.026,
+  shadowStrength: 0.065,
+  impactHighlightStrength: 0.15
+})
+
 const VERTEX_SHADER_SOURCE = `
 attribute vec2 a_position;
 attribute vec2 a_texCoord;
@@ -51,18 +60,19 @@ void main() {
     float wave = sin(phase) * envelope;
     float slope = cos(phase) * envelope;
 
-    displacementPixels += radialDirection * slope * 7.4;
-    highlight += max(slope, 0.0) * 0.082 + max(wave, 0.0) * 0.018;
-    shadow += max(-slope, 0.0) * 0.052;
+    displacementPixels += radialDirection * slope * ${WATER_RIPPLE_LIGHTING_PROFILE.displacementStrengthPixels.toFixed(1)};
+    highlight += max(slope, 0.0) * ${WATER_RIPPLE_LIGHTING_PROFILE.crestHighlightStrength.toFixed(3)}
+      + max(wave, 0.0) * ${WATER_RIPPLE_LIGHTING_PROFILE.waveHighlightStrength.toFixed(3)};
+    shadow += max(-slope, 0.0) * ${WATER_RIPPLE_LIGHTING_PROFILE.shadowStrength.toFixed(3)};
     impactHighlight += exp(-distanceToCenter * 0.034)
       * exp(-progress * 11.0)
       * ripple.w
-      * 0.12;
+      * ${WATER_RIPPLE_LIGHTING_PROFILE.impactHighlightStrength.toFixed(3)};
   }
 
   float displacementLength = length(displacementPixels);
-  if (displacementLength > 12.0) {
-    displacementPixels *= 12.0 / displacementLength;
+  if (displacementLength > ${WATER_RIPPLE_LIGHTING_PROFILE.maxDisplacementPixels.toFixed(1)}) {
+    displacementPixels *= ${WATER_RIPPLE_LIGHTING_PROFILE.maxDisplacementPixels.toFixed(1)} / displacementLength;
   }
 
   vec2 refractedUv = clamp(

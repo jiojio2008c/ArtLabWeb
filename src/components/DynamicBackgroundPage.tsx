@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { setDynamicBackground, type DynamicBackground, type DynamicGroup } from '../services/dynamicArtStorage.ts'
-import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+import {
+  reserveDynamicGroupStateRevision,
+  sendDynamicEvent,
+  uploadUnityAsset
+} from '../services/unityBridge.ts'
 import { buildGroupSyncPayload } from '../services/dynamicArtReceiverSync.ts'
 
 interface DynamicBackgroundPageProps {
@@ -52,6 +56,8 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
       const background = nextGroup ? getActiveBackground(nextGroup) : undefined
       if (!nextGroup || !background) return
 
+      const stateRevision = reserveDynamicGroupStateRevision(nextGroup.id, nextGroup.updatedAt)
+
       uploadUnityAsset({
         ip: wsIp,
         port: dynamicPort,
@@ -61,7 +67,8 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
           groupId: group.id,
           assetId: background.id,
           mediaType: background.type,
-          mimeType: background.mimeType
+          mimeType: background.mimeType,
+          stateRevision
         }
       })
 
@@ -71,7 +78,8 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
         activeBackgroundId: background.id,
         name: background.name,
         mediaType: background.type,
-        mimeType: background.mimeType
+        mimeType: background.mimeType,
+        stateRevision
       })
 
       setUploadedGroup(nextGroup)

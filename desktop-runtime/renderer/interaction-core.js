@@ -1,6 +1,10 @@
 export const INTERACTIVE_ANIMATION_MIN_ID = 1
 export const INTERACTIVE_ANIMATION_MAX_ID = 17
 export const RIPPLE_DURATION_MS = 1100
+export const WATER_RIPPLE_FALLBACK_PROFILE = Object.freeze({
+  ringAlpha: 0.48,
+  centerAlpha: 0.24
+})
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
@@ -51,6 +55,16 @@ export const mapClientPointToStage = ({
 
 export const createAnimationOverrideStore = () => {
   const overrides = new Map()
+  const cursors = new Map()
+
+  const matchesItem = (override, item) => {
+    const authoritativeAnimationId = normalizeAnimationId(item.animationId)
+    const legacyRange = !Array.isArray(item.clickAnimationIds)
+    const authoritativeAnimationIds = normalizeAnimationIds(item.clickAnimationIds, legacyRange)
+    return override.authoritativeAnimationId === authoritativeAnimationId
+      && override.authoritativeAnimationMode === (item.animationMode ?? 'fixed')
+      && JSON.stringify(override.authoritativeAnimationIds) === JSON.stringify(authoritativeAnimationIds)
+  }
 
   const get = (groupId, item) => {
     if (!groupId || !item?.itemId) return null
@@ -59,15 +73,9 @@ export const createAnimationOverrideStore = () => {
     const override = overrides.get(key)
     if (!override) return null
 
-    const authoritativeAnimationId = normalizeAnimationId(item.animationId)
-    const legacyRange = !Array.isArray(item.clickAnimationIds)
-    const authoritativeAnimationIds = normalizeAnimationIds(item.clickAnimationIds, legacyRange)
-    if (
-      override.authoritativeAnimationId !== authoritativeAnimationId
-      || override.authoritativeAnimationMode !== (item.animationMode ?? 'fixed')
-      || JSON.stringify(override.authoritativeAnimationIds) !== JSON.stringify(authoritativeAnimationIds)
-    ) {
+    if (!matchesItem(override, item)) {
       overrides.delete(key)
+      cursors.delete(key)
       return null
     }
 
@@ -77,7 +85,11 @@ export const createAnimationOverrideStore = () => {
   const cycle = (groupId, item, startedAt) => {
     if (!groupId || !item?.itemId) return null
 
+    const key = makeOverrideKey(groupId, item.itemId)
     const existing = get(groupId, item)
+    const cursor = cursors.get(key)
+    const previous = existing ?? (cursor && matchesItem(cursor, item) ? cursor : null)
+    if (cursor && !previous) cursors.delete(key)
     const authoritativeAnimationId = normalizeAnimationId(item.animationId)
     const authoritativeAnimationMode = item.animationMode ?? (
       authoritativeAnimationId === 0 ? 'none' : 'fixed'
@@ -87,7 +99,7 @@ export const createAnimationOverrideStore = () => {
       !Array.isArray(item.clickAnimationIds)
     )
     const currentIndex = authoritativeAnimationIds.indexOf(
-      existing?.activeAnimationId ?? authoritativeAnimationId
+      previous?.activeAnimationId ?? authoritativeAnimationId
     )
     const activeAnimationId = authoritativeAnimationIds[
       currentIndex >= 0 ? (currentIndex + 1) % authoritativeAnimationIds.length : 0
@@ -102,44 +114,54 @@ export const createAnimationOverrideStore = () => {
       startedAt
     }
 
-    overrides.set(makeOverrideKey(groupId, item.itemId), override)
+    overrides.set(key, override)
+    cursors.set(key, override)
     return override
+  }
+
+  const complete = (groupId, itemId, startedAt) => {
+    if (!groupId || !itemId) return false
+    const key = makeOverrideKey(groupId, itemId)
+    const override = overrides.get(key)
+    if (!override || (startedAt !== undefined && override.startedAt !== startedAt)) return false
+    overrides.delete(key)
+    return true
   }
 
   const clearAll = () => {
     overrides.clear()
+    cursors.clear()
   }
 
   const clearGroup = (groupId) => {
-    overrides.forEach((override, key) => {
-      if (override.groupId === groupId) overrides.delete(key)
-    })
+    for (const entries of [overrides, cursors]) {
+      entries.forEach((override, key) => {
+        if (override.groupId === groupId) entries.delete(key)
+      })
+    }
   }
 
   const clearItem = (groupId, itemId) => {
     if (!groupId || !itemId) return
-    overrides.delete(makeOverrideKey(groupId, itemId))
+    const key = makeOverrideKey(groupId, itemId)
+    overrides.delete(key)
+    cursors.delete(key)
   }
 
   const reconcile = (state) => {
-    overrides.forEach((override, key) => {
-      const group = state?.groups?.[override.groupId]
-      const item = group?.items?.find((candidate) => candidate.itemId === override.itemId)
-      if (
-        !item
-        || normalizeAnimationId(item.animationId) !== override.authoritativeAnimationId
-        || (item.animationMode ?? 'fixed') !== override.authoritativeAnimationMode
-        || JSON.stringify(normalizeAnimationIds(item.clickAnimationIds, !Array.isArray(item.clickAnimationIds)))
-          !== JSON.stringify(override.authoritativeAnimationIds)
-      ) {
-        overrides.delete(key)
-      }
-    })
+    for (const entries of [overrides, cursors]) {
+      entries.forEach((override, key) => {
+        const group = state?.groups?.[override.groupId]
+        const item = group?.items?.find((candidate) => candidate.itemId === override.itemId)
+        if (!item || !matchesItem(override, item)) entries.delete(key)
+      })
+    }
   }
 
   return {
     get,
     cycle,
+    complete,
     clearAll,
     clearGroup,
     clearItem,
@@ -148,6 +170,16 @@ export const createAnimationOverrideStore = () => {
       return overrides.size
     }
   }
+}
+
+export const isAnimationOverrideComplete = (override, now, durationSeconds) => {
+  const startedAt = Number(override?.startedAt)
+  const currentTime = Number(now)
+  const duration = Number(durationSeconds)
+  if (!Number.isFinite(startedAt) || !Number.isFinite(currentTime) || !Number.isFinite(duration) || duration < 0) {
+    return false
+  }
+  return currentTime - startedAt >= duration * 1000
 }
 
 export const sampleRipple = (ripple, now) => {
@@ -163,7 +195,7 @@ export const sampleRipple = (ripple, now) => {
       const eased = 1 - Math.pow(1 - progress, 3)
       return {
         radius: 18 + eased * (132 + index * 18),
-        alpha: Math.pow(1 - progress, 1.75) * (0.42 - index * 0.07),
+        alpha: Math.pow(1 - progress, 1.75) * (WATER_RIPPLE_FALLBACK_PROFILE.ringAlpha - index * 0.07),
         lineWidth: 4.2 - index * 0.7
       }
     })
@@ -173,7 +205,7 @@ export const sampleRipple = (ripple, now) => {
     x: ripple.x,
     y: ripple.y,
     centerRadius: 8 + clamp(elapsed / 180, 0, 1) * 24,
-    centerAlpha: Math.pow(1 - elapsed / RIPPLE_DURATION_MS, 2) * 0.2,
+    centerAlpha: Math.pow(1 - elapsed / RIPPLE_DURATION_MS, 2) * WATER_RIPPLE_FALLBACK_PROFILE.centerAlpha,
     rings
   }
 }

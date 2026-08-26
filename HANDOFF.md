@@ -10,7 +10,7 @@ MagicFloor 当前由三个协作部分组成：
 
 1. **iPad 控制端**：本仓库根目录的 React/Vite/TypeScript 应用，经 Capacitor 封装为 iOS App。负责登录、首页导航、动态艺术资料管理、舞台编辑、预览控制、互动艺术拍照/遮罩/上载、设置与遥控键盘。
 2. **动态艺术 Windows 播放端**：`desktop-runtime/` 下的 Electron 应用。负责接收 iPad 发来的动态艺术资料、播放背景和物件动画、显示 iPad 作品档案页镜像，并提供鼠标互动。
-3. **互动艺术/其他 Unity 程序**：不在本仓库实现。iPad 只向 `11701` 发送启动、快速上载、二维码和遥控键盘指令；不等待 Unity 回执，也不负责判断外部程序是否成功启动。
+3. **互动艺术/其他 Unity 程序**：不在本仓库实现。iPad 只向 `11701` 发送启动、关闭、快速上载、二维码和遥控键盘指令；不等待 Unity 回执，也不负责判断外部程序是否成功启动或关闭。
 
 当前主流程可交付到以下程度：
 
@@ -360,6 +360,7 @@ iPad 点击动态艺术
 `src/services/unityBridge.ts` 是 iPad 侧统一发送入口。现有类别：
 
 - 外部程序启动：`MF|AppLauncher|...`，动态艺术一项、互动艺术四项。
+- 外部程序关闭：`MF|AppLauncher|Close|dynamic-art` 与 `MF|AppLauncher|Close|interactive-art`；后者是四个互动艺术 EXE 共用的范围，由 Unity 判断实际运行中的程序。
 - 动态艺术结构化事件：`MF|DynamicArt|<EventName>|<JSON>`；默认主要发往 8080，但启动命令仍发往 11701。
 - 远程键盘：`MF|RemoteKeyboard|...`。
 - 显示二维码：纯文本 `QrCode`。
@@ -3366,3 +3367,390 @@ desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.
 85,297,851 bytes
 SHA-256 08AC9D0DEFC0888B1FBB9EFED263D5E4ED08E37689A84759B8E4F6A1D8593097
 ```
+
+### 2026-08-20 固定自由编辑与跨端同步重构
+
+- 回退节点已建立：`32c51fa7 chore: checkpoint before editor mode redesign`。本节之后的变更尚未提交，完成验收后再创建正式功能提交。
+- 创作流程入口、流程导航、自由／流程切换和作品档案页进阶开关全部隐藏；`advancedFeaturesEnabled` 新旧设置统一迁移为 `true`，作品进入后固定使用进阶自由编辑。旧流程 session、字段和协议仍保留以兼容历史作品。
+- 自由编辑图层、物件属性和舞台套用创作流程的玻璃卡片、圆角、间距与响应式宽度；父子图层树继续保留，可展开／收起，原有动画、目标点、音频、背景、气泡与标题遮罩数据不变。
+- Web/iPad 控制页水印改为舞台中央两行 `MagicFloor`／`preview`，两条对角装饰线，SVG 使用 `xMidYMid meet`，整体不透明度 `0.44`（透明度 `0.56`），不拦截触控。EXE 永不创建或合成水印；协议字段仍保留，桌面状态额外报告 `watermarkVisible=false`。
+- 背景转场改为作品级唯一设置，编辑器的“套用转场”始终写入全部背景；旧背景的单独转场值在读取、保存和桌面接收时统一归一化。
+- 接收端同步签名纳入物件名称、位置、缩放、旋转、翻转、动画、移动、目标点、联动、音频、背景范围、气泡内容、背景转场／音乐与时间线。素材签名与状态签名分离，属性调整不会重复上载未变素材；同一作品的同步请求串行排队，预览启动前等待最新状态完成。
+- EXE 的组状态与预览状态固定 `advancedFeaturesEnabled=true`，即使旧 iPad 发送 `false` 也按唯一自由模式播放。标准版与完整翻转版共用该行为。
+- 键盘控制页 4×4 后两行预设文字使用专用响应式字号（数字约 `25–32px`、说明约 `10–13px`），最大旋钮中心复用首页 `BrandLogo`／`Right_Logo.png`，保留中心按压与 `Alpha8` 协议。
+- 新增回归：`npm run test:receiver-sync`、更新 `test:creation-flow` 与双视口键盘／图层布局检查；旧图层测试改为验证父子卡片和子物件继承父背景。
+
+### 2026-08-20 本轮最终验收补充
+
+- 图层布局回归已在 `1024 × 768` 与 `1366 × 1024` 通过：右侧面板、舞台、背景编辑弹窗均在视口内，父子图层树可展开／收起，背景转场全量套用、预览淡入淡出和音频停止状态均符合预期。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:receiver-sync`、`npm run test:creation-flow`、`npm --prefix desktop-runtime run test:presentation`、`test:appearance`、`test:background-order`、`test:transition-audio`、`test:target-motion`、`test:item-copy` 与 `git diff --check`。
+- 标准版与完整翻转版 EXE 均在清除当前终端的 `ELECTRON_RUN_AS_NODE=1` 后实际启动；`/status` 返回 `server.status=listening`、`server.port=8080`、`preview.advancedFeaturesEnabled=true`、`watermarkVisible=false`，测试结束后端口已释放。若在本机直接双击 EXE，不应把 `ELECTRON_RUN_AS_NODE` 设为 `1`。
+- 本轮最终发布文件：标准版 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`（85,310,945 bytes，SHA-256 `09671A87EF11126B4BF0B0689F8AE85A1F5378ACC7A74C8834AAB83261ECAB83`）；完整翻转版 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（85,297,792 bytes，SHA-256 `CCE3F65423F77A24E7F6DA77A4AD332CAD35156042031D64704CBF441DBDCA34`）。
+- 旧记录中关于“EXE 绘制水印／桌面端 44% 水印”的描述属于此前版本；自本节起以“EXE 永不绘制水印、仅 Web/iPad 控制页显示 44% 水印”为准。`watermarkEnabled` 协议字段仍保留，只用于兼容旧消息。
+
+## 40. 2026-08-24 出场文案、气泡矢量重构、颜色编辑与双端同步
+
+### 出场排序文案
+
+- 控制页右上角入口由“出场设定”改为“出场排序”；出场面板自身标题与无障碍名称继续使用“出场设定”，没有改变页面结构或播放逻辑。
+- 出场间隔文案由“间隔 {{value}} 秒”改为“指定 {{value}} 秒出场”；繁中、英文、葡萄牙文与波兰文同步使用自然对应文案。`appearMode`、`appearIntervalMs`、出场动画和 EXE 时间线逻辑均未改动。
+
+### 气泡样式与编辑体验
+
+- 根目录 `气泡.png` 只作为造型参考，不直接进入运行时资源；其白色噪点、锯齿和双重描边没有复制进 Web、iOS 或 EXE。
+- 新增共享 `desktop-runtime/renderer/bubble-shape-catalog.js` 与类型声明，Web SVG 和 EXE Canvas 共同读取同一套路径、方向、安全内容区、默认尺寸、默认填色、默认外框色和外框宽度。
+- 对话气泡保留三组、每组左右各一：圆角、长尾、硬朗漫画；想象气泡只保留经典想象云朵左右一对。尾巴与对话框使用同一闭合路径，缩放时不会出现接缝；想象圆点在非等比宽高下也会按同样的椭圆比例同步到 Web 与 EXE。
+- 样式选择卡直接显示真实矢量缩略图，不再使用旧 CSS 方块模拟；简中、繁中、英文、葡萄牙文和波兰文已补齐样式、方向、颜色、恢复默认及对比度提示。
+- 对话／想象气泡新增“气泡颜色”：样式默认、白色、暖白、柔黄、珊瑚、天蓝、薄荷绿、淡紫、自定义，以及“恢复样式默认”。用户只选择气泡填色，外框色自动推导；文字颜色继续独立编辑，低对比度时提示改用深色或浅色文字。
+- 标题遮罩仍保留圆角、胶囊、标签、下划线、无五种，以及原有遮罩颜色和透明度设置，没有混入气泡填色逻辑。
+- 气泡正文使用共享安全内容区；Web 与 EXE 的正文字号比例、字重、行高、水平留白、图文想象气泡 `48% / 52%` 分区、描边宽度、圆角连接和圆角端点已进一步统一。想象气泡图片继续使用 `contain + center`，任何横竖比例均完整显示且居中。
+- 舞台上的气泡现在单指轻点即可直接打开气泡编辑器；普通图片仍打开物件属性。超过 `8px` 的拖动、双指缩放／旋转、`pointercancel`、丢失捕获、目标点编辑和预览模式均不会误开编辑器。
+
+### 存储迁移与 EXE 协议
+
+- 气泡内容升级为 `schemaVersion: 2`，新增必有字段 `surfaceColor`、`outlineColor`。旧档缺少颜色时按原样式补齐默认色，不会把历史作品全部改成同一种颜色。
+- 旧 `thought-soft-left`、`thought-soft-right` 分别迁移为同方向的 `thought-cloud-left`、`thought-cloud-right`；旧无方向 `thought-soft` 回退为右向云朵。Web 存储、共享 catalog 和 EXE normalization 三层使用相同迁移规则。
+- `GroupStateSync` 与单物件 payload 显式携带两种颜色；颜色进入状态签名但不进入素材签名，因此改色会立即同步 EXE，却不会重复上载未变化的图片。
+- 标准版与完整翻转版继续共用 `player.js`、`bubble-render-core.js` 和共享 shape catalog；两份 `app.asar` 均已确认包含新目录。EXE 不显示水印，固定使用进阶自由编辑播放策略。
+
+### 自动化、构建与正式发布
+
+- 最终回归全部通过：
+
+```text
+npx tsc --noEmit --pretty false
+npm run test:receiver-sync
+npm run test:creation-flow
+node --no-warnings desktop-runtime/renderer/bubble-render-core.test.mjs
+node --no-warnings test-artifacts/dynamic-flow-20260818/verify-bubble-editor.mjs
+npm --prefix desktop-runtime run test:presentation
+npm --prefix desktop-runtime run test:appearance
+npm --prefix desktop-runtime run test:background-order
+npm --prefix desktop-runtime run test:transition-audio
+npm --prefix desktop-runtime run test:target-motion
+npm --prefix desktop-runtime run test:item-copy
+node --check desktop-runtime/main.js
+node --check desktop-runtime/renderer/player.js
+node --check desktop-runtime/renderer/bubble-shape-catalog.js
+git diff --check
+```
+
+- 气泡 CDP 端到端检查在 `1024 × 768`、`1366 × 1024`、`980 × 600`、`844 × 390` 全部通过，覆盖：对话六款、想象两款、左右方向、真实 SVG、预设／自定义／恢复默认、颜色与外框持久化、schema 2、图片完整居中、标题五款、舞台轻点编辑、拖动防误触、双指防误触、弹窗不裁切与页面无横向溢出。当前视觉截图为：
+
+```text
+test-artifacts/dynamic-flow-20260818/bubble-editor-thought-1024x768.png
+test-artifacts/dynamic-flow-20260818/title-mask-editor-1024x768.png
+```
+
+- 已执行 `npm run sync:ios`；`dist` 与 `ios/App/App/public` 的对应 SHA-256 完全一致。本轮生产资源为：
+
+```text
+dist/assets/index-Dnb76Bpa.js
+dist/assets/index-3TekHKR6.css
+dist/assets/web-BO1NvTWE.js
+```
+
+- 已执行 `npm --prefix desktop-runtime run pack:all`；打包前自动删除旧 `release` 和 `release-vertical-flip`，当前只保留两套本轮发布目录。标准版：
+
+```text
+desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
+85,312,916 bytes
+SHA-256 08867849024DCA218C63B09B086C38A6DF79DDF51014A43B6260F4D0E4285D7F
+```
+
+- 完整翻转版：
+
+```text
+desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
+85,300,159 bytes
+SHA-256 AA895CA0BC75412E044198CDA367ED6C6A8328B4FF03D425EDB01FA421D1A63A
+```
+
+- 两套 EXE 均在清除 `ELECTRON_RUN_AS_NODE` 并设置隐藏测试窗口后实际启动成功；`/status` 返回 `server.status=listening`、`server.port=8080`、`view.mode=archive`、`preview.advancedFeaturesEnabled=true`、`watermarkVisible=false`。逐套退出后 `8080` 均已释放。
+- 测试页服务已切换为局域网监听，PID `58260` 绑定 `0.0.0.0:5173`；`http://127.0.0.1:5173/` 与 `http://192.168.12.101:5173/` 均返回 HTTP `200`。
+- 当前 `HEAD` 仍为回退节点 `32c51fa7 chore: checkpoint before editor mode redesign`；`main` 相对 `origin/main` 为 ahead 1。本节修改仍位于未提交工作树，没有擅自创建新的功能提交或推送。
+
+## 41. 2026-08-24 水印、背景间隔与关联子物件属性收敛
+
+### 舞台水印
+
+- Web/iPad 舞台中央的 `MagicFloor`／`preview` 水印继续保持整体 `44%` 不透明度，EXE 继续永不绘制水印。
+- 两条对角线此前只有半透明纯白实线，在浅色背景上会融入画面，而且实际上没有设置虚线。现在改为 `10px` 圆端点虚线，节奏为 `30px / 20px`，并加入深色双层阴影；白色、黑色、彩色图片及视频背景上都能辨识。
+- SVG 继续使用 `vector-effect: non-scaling-stroke`、`pointer-events: none` 与 `aria-hidden=true`，缩放舞台时线宽稳定，也不会拦截物件编辑手势。
+
+### 背景切换间隔
+
+- 编辑背景页的“切换间隔”仍是全宽设置行，但数值与单位控制组收紧为约 `198px`：数值轮 `108px`、单位列 `82px`、间距 `8px`，右侧对齐；不再让数值输入区域横跨整个属性栏。
+- `IntervalWheel` 的上下拖动、鼠标滚轮、键盘方向键、数值范围、单位换算、`onChange` 与 `onCommit` 均未改动；触控高度和展开邻值所需空间保持原样。
+
+### 关联子物件背景
+
+- 判断规则为 `Boolean(selectedItem.linkedAppearance?.triggerItemId)`。存在父物件的子物件会从物件属性导航中完全移除“背景”标签，对应背景内容也不渲染；不是置灰或禁用。
+- 普通物件和父物件仍显示背景属性。若用户原本停留在背景页后切换到关联子物件，界面立即安全回到“移动”标签，不会出现空白面板；解除关联后背景标签自动恢复。
+- 子物件自己的 `backgroundIds` 不再在作品加载、普通属性保存或建立联动时被父物件覆盖。存储保留其历史背景范围，舞台与 EXE 则通过运行时有效背景计算继续跟随父物件；解除关联后可恢复并继续编辑原有背景范围。
+- `GroupStateSync` 的既有兼容载荷和 EXE 的背景继承播放逻辑保持可用，没有删除字段或更改协议版本。
+
+### 验收、构建与同步
+
+- `1024 × 768` 与 `1366 × 1024` 的真实 Edge/Playwright 回归均通过：父物件背景标签 `1` 个、关联子物件背景标签与内容均为 `0`；数值轮实际宽约 `105.84px`，键盘与向上拖动分别从 `5 → 6 → 7`；页面无横向溢出；子物件历史背景保持为 `bg-ocean`，真实解除关联并切换回该背景后，背景标签和内容均恢复为 `1`。
+- 水印实际计算样式为 `opacity: 0.44`、`stroke-dasharray: 30px, 20px`，滤镜生效且 `pointer-events: none`。测试截图位于 `transition-portal-preview/test-artifacts/linkage/ipad-air-layers.png` 与 `ipad-pro-12-9-layers.png`。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm --prefix desktop-runtime run test:appearance`、`test:background-order`、`test:presentation`、气泡渲染核心测试、双视口 `verify-linkage-layout.mjs` 与 `git diff --check`。
+- 已重新执行 `npm run sync:ios`；`dist/index.html` 与 `ios/App/App/public/index.html` 的 SHA-256 均为 `F2234F549E819FE527D873C1957BCD23EDA7C0C4ABBA440DC002C091A1A3DA28`。当前正式资源为：
+
+```text
+dist/assets/index-D_b5WkUV.js
+dist/assets/index-P2irPcYf.css
+dist/assets/web-DnmLRCw3.js
+```
+
+- 本轮没有修改桌面渲染核心或 EXE 协议；现有标准版与完整翻转版已经具备运行时父背景继承能力，因此无需重复打包，继续使用第 40 节记录的两套 EXE。
+
+## 42. 2026-08-24 返回首页确认与 Unity 关闭信号
+
+### 返回流程
+
+- 作品档案根目录的返回按钮现在先打开共享确认弹窗；位于子资料夹时仍只返回上一层，不弹窗也不发送关闭信号。
+- 互动艺术选项页的返回首页按钮使用同一个确认弹窗。取消、关闭、遮罩点击和 `Escape` 都只关闭弹窗，不离开页面。
+- 确认后按钮立即锁定，iPad 只发送一次关闭命令，再执行原有首页 backward／档案返场动画；同步 ref 防止快速双击重复发送。
+- 弹窗使用 `alertdialog`、焦点陷阱、默认聚焦取消按钮、可访问名称与说明、至少 `48px` 触控目标、窄屏上下排列和减少动态模式。
+
+### 五语翻译
+
+- 新增 `homeReturn.*` 六组文案，已同步简体中文、繁体中文、英文、葡萄牙文和波兰文：标题、动态艺术说明、互动艺术说明、留在当前页、返回首页和返回中状态。
+- 普通用户只看到“返回首页后会关闭当前体验”，不会看到 EXE、端口或网络协议等技术细节。
+
+### Unity 关闭协议
+
+- 新增两条 `text/plain` 指令：
+
+```text
+MF|AppLauncher|Close|dynamic-art
+MF|AppLauncher|Close|interactive-art
+```
+
+- `interactive-art` 是四个互动艺术 EXE 共用的单一范围，由 Unity 根据当前运行状态自行判断关闭哪个程序；没有对应程序时按幂等无操作处理。
+- `src/services/unityBridge.ts` 新增关闭范围类型、消息构造器和发送函数，仍使用设置中的 `wsIp` 与 `interactivePort`（默认 `11701`），沿用现有 fire-and-forget 行为。
+- 根目录 `ImageFileSaveHttpServer.cs` 新增关闭命令解析队列及 `onDynamicArtClose`、`onInteractiveArtClose` 两个主线程 `UnityEvent`。脚本本身不直接杀进程，Unity Inspector 需将两个事件分别绑定到实际关闭方法。
+- 现场 Unity 工程必须同步替换该 C# 脚本并重新检查 Inspector 事件绑定；只更新 iPad 构建不会让旧接收端识别 `Close` 指令。
+
+### 本轮验证
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run build`、`npm run test:receiver-sync`、`npm run test:creation-flow` 与 `git diff --check`。
+- 已在 `1024 × 768` 触控视口的真实 Edge 中逐一验证简体中文、繁体中文、英文、葡萄牙文和波兰文：标题、动态／互动说明、取消、确认与返回中状态均读取对应语言；`alertdialog`、默认取消焦点、`Escape` 取消、遮罩关闭及确认锁定行为正常。
+- 真实交互已确认：作品档案子文件夹只返回上一层，不弹窗也不发送关闭命令；档案根目录与互动艺术选项页确认后分别只发送一次 `dynamic-art`／`interactive-art`，同步双击不会重复发送。
+- 已执行 `npm run sync:ios`；焦点竞态修复后的当前生产资源为 `dist/assets/index-C1yA9Y3Q.js`、`dist/assets/index-2l8Wt32n.css`、`dist/assets/web-A1gN5mVB.js`，并已复制到 `ios/App/App/public`。
+- 尚未生成新的 Windows EXE；关闭协议由 Unity 接收端处理，动态艺术渲染核心没有改变。
+
+## 43. 2026-08-24 EXE 作品档案镜像底层背景
+
+### 显示规则
+
+- EXE 的作品档案页继续将 iPad 首页和作品档案截图以 `object-fit: contain` 完整居中显示，不放大裁切截图内容。
+- 4:3 iPad 截图放入 1920 × 1080 的 16:9 画面时，中央截图宽度约为 `1440px`，左右各保留约 `240px`。这些区域现在显示当前 MagicFloor 首页背景 `magic-floor-background.webp`，不再显示纯色留白。
+- 根因是两张全屏镜像 `<img>` 原有的不透明背景色覆盖了底层首页背景；现已将 `archive-source-image` 与 `archive-mirror-image` 的背景改为透明。既有层级保持为：首页背景 → 首页源截图 → 作品档案截图 → 门户转场，协议与动画逻辑未改动。
+- Web 首页和 EXE 使用的两份背景文件均为 `136580` bytes，SHA-256 均为 `D32CB28BB6EBAE4721739D1A5DAAB4ED14EDBDC81E8ED94A2144C93E6C2F0C10`。
+- 标准版与完整翻转版共用同一份 `renderer/styles.css` 和背景素材，因此两版同步生效；翻转版继续对底图和镜像整体应用既有翻转。
+
+### 回归与发布
+
+- `test:presentation` 新增档案镜像层级检查，验证底层引用首页背景、两张镜像保持 `contain`、镜像背景透明，并直接比较 Web／EXE 背景文件内容完全一致。
+- 已在真实 Chromium `1920 × 1080` 视口放入 `1024 × 768` 的 4:3 镜像验证：中央画面完整、左右各约 `240px` 显示首页背景、前景最终不透明度为 `1`。
+- 已通过桌面端 `test:appearance`、`test:item-copy`、`test:target-motion`、`test:transition-audio`、`test:background-order`、`test:presentation`，以及 `node --check desktop-runtime/main.js`、`node --check desktop-runtime/renderer/player.js`。
+- 已执行 `npm --prefix desktop-runtime run pack:all`；打包前自动删除旧 `release` 和 `release-vertical-flip`。两份 `app.asar` 内的 `renderer/styles.css` 与源码 SHA-256 均为 `3E5083A3F21022C6EC840B9AF675C4AEC84765E927123A49E742ED87B1F94297`，背景素材哈希也与源码一致。
+- 标准版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,312,715` bytes，SHA-256 `1643F7E838D54AFED195734FED45BA3D16A26269D6EE311FB018797DAE593422`。
+- 完整翻转版：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,299,980` bytes，SHA-256 `D7E5D58CBCB69F237AD231E7C1156C85CED4EF56232C670E6196109D7B168E6C`。
+- 两套 unpacked 应用均已实际启动；`/status` 返回 `server.status=listening`、`server.port=8080`、`view.mode=archive`、`preview.advancedFeaturesEnabled=true`、`watermarkVisible=false`。测试结束后两套进程均已关闭，`8080` 端口已释放。
+
+## 44. 2026-08-24 组合回归自检：动画、移动、目标点与绑定出场
+
+### 本轮发现并修复
+
+- 修复背景切换重建出场 epoch 的问题：`showAfter`、`hideAfter`、多级父子绑定不会因切换背景而重复出场、复活或重新计时；只有真正的新 epoch 或绑定参数改变才重置。EXE 固定背景模式现在通过 `fixedBackgroundEpochState` 在背景、作品、会话或重播变化时从当前时刻建立新时间轴。
+- 修复 EXE 自动背景播放配置变化后的旧计时问题：背景播放模式、间隔、背景列表或当前背景改变时，`backgroundPlaybackScheduleState.startedAt` 会随新的 schedule key 重置，切换时间与 Web/iPad 保持一致。
+- Web/iPad 与 EXE 共用出场时间轴采样、目标点 32 段采样，以及横向、垂直波形、轨道与环绕移动核心；图片解码、尺寸变化、Resize 后按当前 epoch seek，不会从透明起点重播。
+- 修复快速连续编辑使用旧闭包的问题：移动模式、幅度、速度、轨道、出场模式/间隔均使用最新对象；变换滑杆在 `pointerup`、`pointercancel`、`blur` 强制发送最终状态。
+- 完整同步改为深快照并按 group 串行；事件、上传和 `GroupStateSync` 共用 state revision，EXE 拒绝迟到旧状态/旧上传，删除背景时同步清理物件背景作用域。
+- 完整同步明确发送 `isVisible`、气泡颜色/边框等字段；隐藏物件不渲染、不命中、不触发音效；`hideAfter` 开始后 Web/EXE 均不再播放目标到达音效。
+- 音频时长变化会触发参数同步但不会重复上传相同音频文件；绑定关系版本 `3`、字符串 `"3"` 与未来版本均不再被错误反转。
+
+### 回归与构建
+
+- 已通过：`npm run test:receiver-sync`、`npm run test:creation-flow`、`npm run build`、`npm run sync:ios`、`npx tsc --noEmit --pretty false`、`git diff --check`；本次重建后的 Web/iOS 资源再次完成同样校验。
+- 已通过桌面专项：`test:motion`、`test:appearance`、`test:target-motion`、`test:background-order`、`test:transition-audio`、`test:item-copy`、`test:presentation`（21 项全通过），以及 `node --check desktop-runtime/main.js`、`node --check desktop-runtime/renderer/player.js`。
+- 当前 Web/iOS 生产资源为 `dist/assets/index-BhmbcIc2.js`、`dist/assets/index-DmEZP04Q.css`、`dist/assets/web-MA1DbJcN.js`，`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `AD18D7F32349A5C34F7160123F0767A44F9FCE306EAB7199FCFEB2E06BF25D9B`。
+- 标准版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,316,255` bytes，SHA-256 `E611C6FE2FDEC1FFAD05FCD229A450767A17AA05875EFB3902DAAC286009EF49`。
+- 翻转版：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,303,313` bytes，SHA-256 `8F7A5F5022BE1B122B54A37C83F984978650C4369EB219C34BC980094073A276`。
+- 两套 unpacked `app.asar` 均已用 `asar list` 核对，包含 `group-state-revision-core.cjs`、`advanced-appearance-timeline.js`、`dynamic-motion-core.js`、`target-motion-core.js`、`background-playback-core.js` 与更新后的 `player.js`。源码 Electron 标准/翻转环境均成功监听 `8080`，`/status` 返回 `archive`、进阶自由编辑与水印关闭；测试后端口已释放。便携 EXE 在当前无桌面会话环境中启动即退出，未将该环境现象判定为运行时逻辑失败。
+
+### 待产品确认的语义边界
+
+- 当前隐藏父物件是否应阻止其绑定子物件出场仍未擅自改变：现行为是 `isVisible` 只控制该物件显示/交互，绑定关系仍按配置触发；如需“隐藏父级即隐藏整棵子树”，应另行确认后统一 Web/EXE 语义。
+- `dynamicArtStorage.ts` 已将媒体上传改为“完成媒体处理后重新读取最新 group”，删除操作改为“先落盘结构变更再清理文件”，因此动画/移动/目标/绑定编辑不会再被常见上传窗口覆盖；尚未引入全局按 group 写入队列，极端同字段并发仍建议后续补充更细粒度合并策略。
+
+## 45. 2026-08-24 水印几何、档案背景与 iOS 预览非阻塞
+
+### 舞台水印
+
+- Web/iPad 水印继续保持 `44%` 不透明度，中心两行文字为 `MagicFloor` 与 `preview`，EXE 继续不绘制水印。
+- 两条响应式 SVG 虚线改为贯穿舞台的交叉对角线：左上 `(160,90)` → 右下 `(1760,990)`，左下 `(160,990)` → 右上 `(1760,90)`；两线精确交于舞台中心 `(960,540)`，`MagicFloor / preview` 两行文字整体位于交叉点。线条继续使用 `10px` 圆端点、`30px 20px` 虚线节奏和深色阴影。
+- 水印使用 `pointer-events: none`、`aria-hidden` 和非缩放线宽，不会挡住物件拖动或目标点编辑。
+
+### 档案背景与遮罩
+
+- iPad 作品档案、返回档案路由、EXE 档案镜像统一使用 `#69bbd6`、同一纵向渐变、同一 `magic-floor-background.webp`、`center / center bottom` 与 `cover` 参数。
+- EXE 档案页移除常态 `.archive-view::before` 半透明暗层；转场期间所需滤镜和弹窗遮罩继续保留。iPad/EXE 镜像图片保持 `contain` 与透明背景，4:3 内容两侧显示固定底图。
+- 档案截图 `html-to-image` 的 fallback 背景改为 `#69bbd6`，避免截图透明区域与 EXE 底图出现色差；截图专用 breadcrumbs 样式不变。
+
+### iOS 预览
+
+- 点击“预览”后先建立本地 `replayId`、立即进入 iPad 本地播放，再后台执行背景、物件、气泡图片和音频同步；EXE 未启动时不再阻塞动画。
+- 同步请求增加 `15s` XMLHttpRequest 超时，预览层增加 `8s` 非阻塞同步保护；失败只显示可关闭的同步提示，不影响本地播放。
+- `requestId`、`replayId` 与 `previewModeRef` 防止旧同步任务在快速“预览／停止”或重新编辑后覆盖新状态；EXE 恢复连接后会以同一 replay 号补发最新预览状态。
+
+### 构建与验证
+
+- `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、`test:motion`、`test:target-motion`、`test:background-order`、`test:presentation`（23/23）和 `git diff --check` 全部通过。
+- `npm run sync:ios` 已重新执行；交叉水印修正后的 `dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `09BE0579DFDAEF950A15AB2296073080BD5B0CAACEC6F7A2934A9F69407C770D`。当前 Web 资源为：
+
+```text
+dist/assets/index-C4Dny2sH.js
+dist/assets/index-DAqEwegZ.css
+dist/assets/web-wUuux34v.js
+```
+
+- 已执行 `npm --prefix desktop-runtime run pack:all`；打包前自动删除两个旧 release 目录。标准版 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe` 为 `85,316,400` bytes，SHA-256 `C88FF6F090FA380B0760FFE553D9F7C92BFB379084D91156B9AABC77B2CF92D3`；翻转版 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe` 为 `85,303,295` bytes，SHA-256 `0A375C9F073AA6BFD953944E605C7DCAB5080D5A1303953139EBA294A747A2F0`。
+- `npm run lint` 未执行成功，原因是仓库当前没有 ESLint 配置文件；不是本轮代码规则错误。
+
+## 46. 2026-08-25 水印中心留白、出场排序短文案与全部 BGM 清除
+
+### 水印中心安全区
+
+- 两条对角虚线继续使用完整交叉几何，但新增 `dynamic-stage-watermark-safe-zone-mask`：全舞台白色遮罩中以 `(660,420)`、`600 × 240`、圆角 `52` 的黑色区域挖空中心。虚线在 `MagicFloor / preview` 周围完全消失，中心仍显示真实舞台内容，不绘制任何底色卡片。
+- 遮罩只应用于虚线组，中心文字不受影响；既有 `44%` 不透明度、虚线节奏、阴影、响应式 SVG 与 `pointer-events: none` 保持不变。EXE 按既定产品规则继续不显示水印。
+
+### 出场排序文案
+
+- “物件联动／触发物件／受控物件／物件关系”统一改为“出场排序／当前物件／随后物件／出场顺序”。新增与编辑标题分别为“添加出场顺序”和“编辑出场顺序”。
+- 操作项缩短为“不设置／指定出场／指定隐藏／相隔时间”，结果摘要改为 `A → N 秒 → B 出场/隐藏`；背景继承、替换提示、空状态与循环错误均改为一行短句。
+- 列表不再显示与当前任务无关的移动和动画编号，未排序物件只显示“可加入排序”；底部操作统一为“移出排序／保存排序／替换排序”。本轮没有修改绑定数据、延迟计算、显示/隐藏行为、背景继承、多级关系、循环检测或 Unity 协议。
+- 简体中文、繁体中文、英文、葡萄牙文和波兰文已同步更新，不再让非中文界面回退到旧技术术语。
+
+### 一键清除全部 BGM
+
+- 编辑背景的“背景音乐”卡片新增全宽轻警示按钮“清除全部 BGM”。没有任何背景使用 BGM 时按钮禁用；点击后直接执行，不增加二次确认弹窗，并显示短暂状态“已清除全部 BGM”。
+- 操作一次传入当前作品的全部背景 ID，通过既有 `setDynamicBackgroundBgm(..., undefined)` 清除每个背景的 `bgmAudioId`，同时停止音源试听与正在播放的 BGM、清空当前下拉草稿，再使用 `sendGroupStateSync(nextGroup)` 同步 EXE。
+- 全清只解除背景与音乐的关联，不删除 `audioLibrary`，不影响物件音源，也不改变背景数量、顺序或当前背景。
+
+### 构建与验证
+
+- `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:background-order`、`test:presentation`（23/23）与 `git diff --check` 全部通过。
+- `test:creation-flow` 新增真实存储验证：三张背景全部清除 BGM 后，当前背景镜像、背景顺序与音源库保持完整；同时检查水印安全区覆盖中心且只遮虚线。
+- Playwright 在 `1024 × 768` 与 `1366 × 1024` 两种 iPad 视口通过：中心文字区没有虚线、出场排序弹窗没有溢出、全清按钮可见且可用；点击后 3 张背景的 BGM 均为空，音源库数量保持 `1`，按钮随即变为禁用。
+- 实测截图：`transition-portal-preview/test-artifacts/linkage/ipad-air-layers.png`、`ipad-air-modal.png`、`ipad-air-background-bgm.png` 及对应 `ipad-pro-12-9-*` 文件。
+- `npm run sync:ios` 已执行；`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `EAD1ADA62EB1D4385BB1CFD4A4E3EE2187EFD49991815FAA6D822BC21E5A63E4`。当前资源为：
+
+```text
+dist/assets/index-CKhuX-7e.js
+dist/assets/index-BgKvzNqv.css
+dist/assets/web-B2G6A544.js
+```
+
+- 本轮没有修改桌面运行时代码或协议，现有标准版与翻转版 EXE 已能接收完整 group state 中清空后的 BGM 数据，因此无需重复打包。
+
+## 47. 2026-08-25 出场排序“紧随其后”与物件 A/B 别名
+
+### “紧随其后”的真实语义
+
+- 出场排序弹窗原来的“不设置”不是单纯改字：该旧选项实际会解除关系，若只替换文案会造成严重误导。现在模式栏改为“紧随其后／指定出场／指定隐藏”，不再向用户暴露内部 `none` 删除模式。
+- “紧随其后”保存为既有协议的 `mode: 'showAfter'` 与 `delayMs: 0`，表示物件 A 的出场动画完成后，物件 B 立即开始出场；没有新增存储字段、协议版本或 Unity 分支，iPad、本地预览与 EXE 可继续使用同一时间线语义。
+- 新建排序默认选择“紧随其后”，此时不显示无意义的秒数输入。选择“指定出场”或“指定隐藏”时才显示相隔时间。
+- 已有 `showAfter + 0ms` 关系重新打开时显示为“紧随其后”；非零 `showAfter` 仍显示“指定出场”，`hideAfter` 仍显示“指定隐藏”。“指定出场 0 秒”与“紧随其后”的持久化结果相同，因此重新打开会统一显示为“紧随其后”。
+- 解除关系继续由弹窗底部独立的“移出排序”按钮负责，内部仍使用 `none` 作为删除哨兵；用户不会再把解除排序误认为一种出场方式。
+
+### 物件 A / 物件 B
+
+- 弹窗顶部关系示意和底部结果摘要不再显示长素材名称，固定显示“物件A”和“物件B”，例如 `物件A → 物件B 紧随其后`。
+- 物件选择列表继续显示真实素材名称与缩略图，已有排序提示也继续引用真实名称，确保用户仍能准确选择目标物件。
+- A/B 只是在当前关系弹窗中的视觉别名，不会重命名物件，不会修改作品档案数据，也不会改变发送给 Unity/EXE 的物件 ID 或名称。
+- 关系示意增加只供辅助技术读取的真实名称映射，例如“物件A：原素材名；物件B：原素材名”；缩略图保持装饰性，读屏用户仍能知道 A/B 对应哪个素材。
+
+### 五语与回归
+
+- 简体中文、繁体中文、英文、葡萄牙文和波兰文均新增“紧随其后”、物件 A/B、即时摘要和无障碍真实名称映射；五种语言均移除误导性的“不设置／Not Set”等选项文案。
+- `test:creation-flow` 新增编辑器模式与存储模式分离、零延时回填、`immediate → showAfter + 0ms`、模式栏不含 `none`、独立移出排序、A/B 别名及五语占位符检查。
+- 桌面出场时间线新增零延时语义断言：物件 B 的 `entranceStartMs` 必须严格等于物件 A 的 `appearanceCompleteMs`。
+- Playwright 在 `1024 × 768` 与 `1366 × 1024` 两种 iPad 视口通过：模式顺序为“紧随其后／指定出场／指定隐藏”，顶部为“物件A／物件B”，紧随其后不显示时间框，真实素材名仍在选择列表；保存后 localStorage 实测为 `showAfter + 0ms`，随后可重新打开并正常“移出排序”，弹窗没有溢出。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`node desktop-runtime/scripts/verify-advanced-appearance.mjs` 与双视口 `verify-linkage-layout.mjs`。
+- 已执行 `npm run sync:ios`；`dist/index.html` 与 `ios/App/App/public/index.html` 的 SHA-256 均为 `AE32B178B897B6384F69EC3762D38DCBE571F1A34E0EBCBDF75325DF495F1AEC`。当前资源为：
+
+```text
+dist/assets/index-_8PLZFNY.js
+dist/assets/index-BgKvzNqv.css
+dist/assets/web-DNMCaYcE.js
+```
+
+- 本轮没有修改桌面播放生产代码或 Unity 协议；EXE 已支持 `showAfter + 0ms`，无需为该文案与编辑器改动重新打包。
+
+## 48. 2026-08-25 关联物件舞台命中与同背景候选过滤
+
+### 舞台点击修复
+
+- 关联覆盖线与节点原本已经是 `pointer-events: none`，并不是遮挡点击的来源。实际问题位于舞台几何命中：旧逻辑使用作品中的全部物件作为候选，当前背景没有渲染的高层物件仍可吞掉点击；同时旧逻辑会把当前已选物件强制放到命中首位，两个扩大触控区相交时，即使随后物件图层更高，也会反复选中原物件。
+- 舞台命中候选现在只取当前真正渲染的 `displayedItems`，其中已经包含关联父子链的有效背景继承结果；其他背景的隐藏物件不再参与命中。
+- 移除“当前已选物件强制优先”规则，恢复按 `order` 从高到低命中，与舞台实际 `z-index` 和视觉前后关系一致。关联物件可直接在舞台选中、拖动或缩放，不再需要先到图层列表选中。
+- 既有最小 `64px` 触控范围和每边 `14px` 触控留白保持不变，修复没有缩小 iPad 点按区域；关联线仍不拦截手势。
+
+### 随后物件背景规则
+
+- “选择随后物件”现在要求当前物件与候选物件至少共享一个有效背景。示例：物件 A 只使用背景 A 时，物件 B 使用背景 A 或 `A+B` 会出现；物件 B 只使用背景 B 时不会出现。
+- 任一物件设置为“所有背景”（`backgroundIds: []`）时可与任意背景范围匹配；作品尚未添加背景时，不会因此禁用出场排序。
+- 比较的是运行时有效背景而不是原始存储值：已关联子物件递归继承父物件背景，当前物件本身若是子物件也使用继承后的范围。这样既有合法父子链在编辑时不会因为隐藏的历史背景配置而从列表消失。
+- 背景交集只认可当前作品中真实存在的背景 ID，已删除或损坏的残留 ID 即使相同也不算匹配；循环检测仍独立生效。
+- 候选按钮过滤之外，在点击候选和最终保存时还会基于 `latestGroupRef` 重新校验背景与循环，避免弹窗期间外部同步改变数据后写入无效关系。
+- 如果存在其他物件但都没有共同背景，空状态显示“没有使用相同背景的物件”；异常保存请求显示“请选择使用相同背景的物件”。两条短文案已经同步简体中文、繁体中文、英文、葡萄牙文和波兰文。
+- 本轮只限制编辑器可选目标，不修改物件自己的 `backgroundIds`、父子背景继承、解除关联后的历史背景恢复、GroupStateSync 或 Unity/EXE 协议。
+
+### 验证与构建
+
+- `test:creation-flow` 新增舞台只命中 `displayedItems`、不再提升当前选中物件、有效背景递归计算、真实背景交集、所有背景／无背景兼容、候选与保存双重校验以及五语短文案检查。
+- Playwright 在 `1024 × 768` 与 `1366 × 1024` 两种 iPad 视口真实验证：A 与关联 B 的扩大命中区相交，且 B 同坐标存在一个图层更高但只属于背景 B 的隐藏物件；直接点舞台仍准确选中 B。关联覆盖层计算样式继续为 `pointer-events: none`。
+- 同一真实弹窗验证：当前物件使用背景 A 时，只使用背景 B 的候选数量为 `0`，使用 `A+B` 的候选数量为 `1`，“所有背景”的候选数量为 `1`；既有 raw 背景不同但有效背景继承一致的子物件仍正常出现、编辑与保存。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`node desktop-runtime/scripts/verify-advanced-appearance.mjs`、双视口 `verify-linkage-layout.mjs` 与生产构建。
+- 已执行 `npm run sync:ios`；`dist/index.html` 与 `ios/App/App/public/index.html` 的 SHA-256 均为 `EC04DDE28FA0925E53B4712D191BB0C6E1008874EE04E1DFBBBFD62279E388E6`。当前资源为：
+
+```text
+dist/assets/index-Ct0KYw2H.js
+dist/assets/index-BgKvzNqv.css
+dist/assets/web-C2P8HtOP.js
+```
+
+- 本轮没有修改 EXE 播放生产代码或 Unity 协议，标准版与翻转版无需重新打包；iPad 保存的关系数据格式保持不变。
+
+## 49. 2026-08-25 气泡新增／编辑页完整繁体化
+
+### 简体残留修复
+
+- 根因不是繁体词库内容错误，而是新增与编辑共用的 `DynamicBubbleEditor.tsx` 仍有大量简体中文直接写在组件中。现已把弹窗标题、说明、关闭按钮、舞台预览、气泡类型、气泡／标题样式、正文与图片、显示方式、文字外观、颜色、遮罩、校验错误、保存状态、提示文字、tooltip 与 `aria-label` 全部改为翻译键；该组件不再包含任何中文硬编码。
+- 繁体界面统一使用“新增氣泡／編輯氣泡、想像氣泡、標題遮罩、膠囊、標籤、底線、圖片、檔案、完整置中顯示、逐字顯示、自訂、儲存”等繁体用语，不再混入“添加／编辑／想象／标题／下划线／文件／居中／保存”等简体词。
+- 标题遮罩的五种样式、文字颜色与遮罩颜色选项由固定中文改为 `labelKey / descriptionKey`；切换语言时，样式名称、说明与颜色名会一起刷新。预览占位文字的 `useMemo` 也加入翻译依赖，弹窗打开期间切换语言不会保留旧文字。
+- 图片类型错误、空正文／空标题／想像气泡缺少内容以及保存失败均使用当前语言；新增模式显示“新增氣泡”，编辑模式显示“編輯氣泡／儲存”，不再共用简体按钮。
+
+### 控制页入口与五语
+
+- 右侧图层“+”菜单的关闭说明、物件类型、上载物件、相簿／拍照／檔案、气泡入口与说明均接入翻译；繁体采用现有香港界面的“上載／相簿／檔案／選單”术语。
+- 新建无正文名称的气泡，其系统默认名称现在跟随当前语言；气泡缩略图的编辑 `aria-label` 与“編輯標題遮罩／編輯氣泡”提示也已本地化。用户自行填写或修改的物件名称不会被改写。
+- `zh-Hans`、`zh-Hant`、`en`、`pt-PT`、`pl-PL` 五套词库已同步补齐完整气泡编辑文案；`zh-Hant.ts` 继续作为 `TranslationResource` 的键集合来源，其他语言由 TypeScript 强制检查完整性。
+
+### 验证与构建
+
+- `test:creation-flow` 新增五语气泡键完整性、图片／物件名称占位符、繁体关键术语、共用新增／编辑模式以及气泡编辑组件零中文硬编码检查；控制页气泡入口也会拒绝重新引入指定简体字面量。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、生产构建与 `git diff --check`。测试页 `http://127.0.0.1:5173/` 返回 `200`。
+- 已执行 `npm run sync:ios`；`dist/index.html` 与 `ios/App/App/public/index.html` 的 SHA-256 均为 `CE6520F367240658ADA8EDA9EE2A5D1505CB574A35100DDA001D1420A4B5ADD5`。当前资源为：
+
+```text
+dist/assets/index-BB8ct7LU.js
+dist/assets/index-BgKvzNqv.css
+dist/assets/web-3ui0Ni4Z.js
+```
+
+- 本轮只修改 iPad/Web 编辑界面文案与编译资源，没有改变气泡数据结构、图片选择方式、舞台渲染、同步协议或 EXE 播放逻辑，因此标准版与翻转版 EXE 无需重新打包。

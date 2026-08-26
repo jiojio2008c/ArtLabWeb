@@ -4,6 +4,7 @@ export const APPEARANCE_FADE_DURATION_MS = 420
 export const APPEARANCE_DROP_DURATION_MS = 620
 export const APPEARANCE_TRACK_SLIDE_DURATION_MS = 560
 export const MAX_LINKED_APPEARANCE_DELAY_MS = 600000
+export const DYNAMIC_APPEARANCE_EASING = 'cubic-bezier(0.333333, 0, 0.666667, 1)'
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value))
 
@@ -326,4 +327,112 @@ export const sampleDynamicAppearanceTimeline = (schedule, elapsedMs) => {
     interactive: alpha > 0.04,
     animationElapsedMs: Math.max(0, elapsed - schedule.activeStartMs)
   }
+}
+
+export const getDynamicAppearanceAnimationSeekMs = (schedule, elapsedMs) => {
+  if (!schedule) return 0
+
+  const numericElapsed = Number(elapsedMs)
+  const elapsed = Number.isFinite(numericElapsed) ? Math.max(0, numericElapsed) : 0
+  if (schedule.kind === 'hideAfter') {
+    const hideStartMs = Number(schedule.hideStartMs)
+    if (!Number.isFinite(hideStartMs)) return 0
+    return clamp(elapsed - hideStartMs, 0, APPEARANCE_FADE_DURATION_MS)
+  }
+
+  const entranceStartMs = Number(schedule.entranceStartMs)
+  const entranceDurationMs = Number(schedule.entranceDurationMs)
+  if (!Number.isFinite(entranceStartMs) || !Number.isFinite(entranceDurationMs)) return 0
+  return clamp(
+    elapsed - entranceStartMs,
+    0,
+    Math.max(0, entranceDurationMs)
+  )
+}
+
+export const canContinueDynamicAppearanceEpoch = (
+  item,
+  previousEpoch,
+  {
+    sameSession = true,
+    rootActive = false,
+    triggerContinues = false,
+    schedule
+  } = {}
+) => {
+  if (!sameSession || !previousEpoch?.schedule) return false
+
+  const previousSchedule = previousEpoch.schedule
+  const currentSchedule = schedule
+  const linkedAppearance = item?.linkedAppearance
+  const currentLinked = currentSchedule
+    ? currentSchedule.linked === true
+    : Boolean(linkedAppearance)
+
+  if (!currentLinked) {
+    return rootActive && previousSchedule.linked !== true
+  }
+
+  const triggerItemId = currentSchedule?.triggerItemId ?? linkedAppearance?.triggerItemId
+  const kind = currentSchedule?.kind ?? linkedAppearance?.mode
+  const delayMs = currentSchedule?.delayMs ?? linkedAppearance?.delayMs
+  return triggerContinues
+    && previousSchedule.linked === true
+    && previousSchedule.triggerItemId === triggerItemId
+    && previousSchedule.kind === kind
+    && previousSchedule.delayMs === delayMs
+}
+
+export const getContinuableDynamicAppearanceItemIds = ({
+  items = [],
+  previousEpochs,
+  timeline = {},
+  activeItemIds = [],
+  sameSession = true
+} = {}) => {
+  if (!sameSession) return new Set()
+
+  const itemById = new Map(items.map((item) => [getItemId(item), item]).filter(([itemId]) => itemId))
+  const activeIds = activeItemIds instanceof Set ? activeItemIds : new Set(activeItemIds)
+  const continuationByItemId = new Map()
+  const resolvingItemIds = new Set()
+  const getPreviousEpoch = (itemId) => (
+    typeof previousEpochs?.get === 'function'
+      ? previousEpochs.get(itemId)
+      : previousEpochs?.[itemId]
+  )
+
+  const resolveContinuation = (itemId) => {
+    if (continuationByItemId.has(itemId)) return continuationByItemId.get(itemId)
+    if (resolvingItemIds.has(itemId)) return false
+
+    const item = itemById.get(itemId)
+    const schedule = timeline[itemId]
+    const previousEpoch = getPreviousEpoch(itemId)
+    if (!item || !schedule || !previousEpoch) {
+      continuationByItemId.set(itemId, false)
+      return false
+    }
+
+    resolvingItemIds.add(itemId)
+    const triggerContinues = schedule.linked === true
+      ? resolveContinuation(schedule.triggerItemId)
+      : false
+    const continues = canContinueDynamicAppearanceEpoch(item, previousEpoch, {
+      sameSession,
+      rootActive: activeIds.has(itemId),
+      triggerContinues,
+      schedule
+    })
+    resolvingItemIds.delete(itemId)
+    continuationByItemId.set(itemId, continues)
+    return continues
+  }
+
+  itemById.forEach((_item, itemId) => resolveContinuation(itemId))
+  return new Set(
+    Array.from(continuationByItemId.entries())
+      .filter(([, continues]) => continues)
+      .map(([itemId]) => itemId)
+  )
 }

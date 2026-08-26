@@ -10,10 +10,17 @@ const {
 } = require('./renderer/item-settings-copy-core.cjs')
 const {
   DEFAULT_WATERMARK_ENABLED,
+  DESKTOP_ADVANCED_FEATURES_ENABLED,
   isWatermarkSettingsEvent,
   resolveWatermarkEnabled,
   resolveWatermarkEnabledForEvent
 } = require('./runtime-display-settings-core.cjs')
+const {
+  isValidRevision,
+  shouldApplyGroupStateRevision,
+  shouldApplyGroupUploadSideEffect,
+  shouldApplySelectionRevision
+} = require('./group-state-revision-core.cjs')
 
 const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
@@ -30,8 +37,35 @@ let stateFile = ''
 let dynamicEventSequence = 0
 let lastDynamicEvent = null
 
+const DYNAMIC_STATE_REVISION_EVENTS = new Set([
+  'GroupCreate',
+  'GroupUpdate',
+  'GroupDelete',
+  'GroupAppearMode',
+  'GroupStateSync',
+  'GroupSelectAndSync',
+  'BackgroundSet',
+  'BackgroundDelete',
+  'BackgroundPlayback',
+  'ItemCreate',
+  'ItemUpdate',
+  'ItemDelete',
+  'ItemTransform',
+  'ItemDeform',
+  'ItemAnimation',
+  'ItemMotion',
+  'ItemSettingsCopy'
+])
+const DYNAMIC_SELECTION_EVENTS = new Set([
+  'GroupSelect',
+  'PreviewMode'
+])
+const DYNAMIC_FULL_STATE_EVENTS = new Set(['GroupStateSync', 'GroupSelectAndSync'])
+
 const runtimeState = {
   activeGroupId: null,
+  selectionRevision: 0,
+  groupStateRevisions: {},
   groups: {},
   assets: {},
   watermarkEnabled: DEFAULT_WATERMARK_ENABLED,
@@ -59,6 +93,7 @@ const runtimeState = {
   preview: {
     enabled: false,
     groupId: null,
+    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
     appearMode: 'all',
     intervalMs: 800,
     backgroundPlayMode: 'fixed',
@@ -168,8 +203,12 @@ const normalizeGroupItemLinks = (items = []) => {
 }
 
 const normalizeGroupItemLinksForModel = (group, items = []) => {
-  if (Number(group.linkedAppearanceModelVersion) === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
-    return normalizeGroupItemLinks(items)
+  const modelVersion = Number(group.linkedAppearanceModelVersion)
+  if (Number.isFinite(modelVersion) && modelVersion >= DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
+    group.linkedAppearanceModelVersion = modelVersion
+    return modelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
+      ? normalizeGroupItemLinks(items)
+      : items
   }
 
   const validItemIds = new Set(items.map((item) => item.itemId).filter(Boolean))
@@ -258,7 +297,11 @@ const loadState = () => {
     if (!fs.existsSync(stateFile)) return
     const loaded = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
     runtimeState.activeGroupId = loaded.activeGroupId ?? null
+    runtimeState.selectionRevision = isValidRevision(loaded.selectionRevision)
+      ? Number(loaded.selectionRevision)
+      : 0
     runtimeState.groups = loaded.groups ?? {}
+    runtimeState.groupStateRevisions = loaded.groupStateRevisions ?? {}
     runtimeState.assets = loaded.assets ?? {}
     runtimeState.watermarkEnabled = resolveWatermarkEnabled(runtimeState.watermarkEnabled, loaded)
     runtimeState.view = {
@@ -285,6 +328,7 @@ const loadState = () => {
     runtimeState.preview = {
       ...runtimeState.preview,
       ...(loaded.preview ?? {}),
+      advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
       enabled: false,
       startedAt: Date.now()
     }
@@ -300,6 +344,8 @@ const saveState = () => {
       stateFile,
       JSON.stringify({
         activeGroupId: runtimeState.activeGroupId,
+        selectionRevision: runtimeState.selectionRevision,
+        groupStateRevisions: runtimeState.groupStateRevisions,
         groups: runtimeState.groups,
         assets: runtimeState.assets,
         watermarkEnabled: runtimeState.watermarkEnabled,
@@ -352,9 +398,12 @@ const getPublicState = () => {
 
   return {
     activeGroupId: runtimeState.activeGroupId,
+    selectionRevision: runtimeState.selectionRevision,
+    groupStateRevisions: runtimeState.groupStateRevisions,
     groups: runtimeState.groups,
     assets,
     watermarkEnabled: runtimeState.watermarkEnabled,
+    watermarkVisible: false,
     view: publicView,
     preview: runtimeState.preview,
     server: runtimeState.server,
@@ -375,6 +424,9 @@ const broadcastServerStatus = () => {
 
 const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
   const id = groupId || DEFAULT_GROUP_ID
+  const storedRevision = isValidRevision(runtimeState.groupStateRevisions[id])
+    ? Number(runtimeState.groupStateRevisions[id])
+    : 0
   if (!runtimeState.groups[id]) {
     runtimeState.groups[id] = {
       groupId: id,
@@ -384,7 +436,8 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       backgroundPlayMode: 'fixed',
       backgroundIntervalMs: 5000,
       backgroundTransition: 'none',
-      advancedFeaturesEnabled: false,
+      advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
+      stateRevision: storedRevision,
       linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
       audioLibrary: [],
       items: [],
@@ -394,6 +447,13 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       updatedAt: Date.now()
     }
   }
+  runtimeState.groups[id].advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
+  runtimeState.groups[id].stateRevision = Math.max(
+    storedRevision,
+    isValidRevision(runtimeState.groups[id].stateRevision)
+      ? Number(runtimeState.groups[id].stateRevision)
+      : 0
+  )
   return runtimeState.groups[id]
 }
 
@@ -451,16 +511,18 @@ const defaultItem = (payload, order = 0) => {
 
 const normalizeStoredRuntimeState = () => {
   Object.values(runtimeState.groups).forEach((group) => {
-    group.advancedFeaturesEnabled = group.advancedFeaturesEnabled === true
+    group.advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
+    group.stateRevision = isValidRevision(group.stateRevision) ? Number(group.stateRevision) : 0
+    runtimeState.groupStateRevisions[group.groupId] = Math.max(
+      Number(runtimeState.groupStateRevisions[group.groupId]) || 0,
+      group.stateRevision
+    )
     group.appearAnimation = normalizeAppearAnimation(group.appearAnimation)
     group.backgroundTransition = normalizeBackgroundTransition(group.backgroundTransition)
     group.audioLibrary = Array.isArray(group.audioLibrary) ? group.audioLibrary : []
     group.backgrounds = (group.backgrounds ?? []).map((background) => ({
       ...background,
-      backgroundTransition: normalizeBackgroundTransition(
-        background.backgroundTransition,
-        group.backgroundTransition
-      ),
+      backgroundTransition: group.backgroundTransition,
       appearAnimation: undefined
     }))
     group.items = normalizeGroupItemLinksForModel(
@@ -604,6 +666,33 @@ const normalizeArchiveSource = (value) => {
 }
 
 const applyDynamicEvent = (eventName, payload) => {
+  let selectionAccepted = true
+  if (DYNAMIC_SELECTION_EVENTS.has(eventName) || DYNAMIC_FULL_STATE_EVENTS.has(eventName)) {
+    selectionAccepted = shouldApplySelectionRevision(
+      runtimeState.selectionRevision,
+      payload.selectionRevision
+    )
+    if (!selectionAccepted && DYNAMIC_SELECTION_EVENTS.has(eventName)) {
+      return
+    }
+  }
+
+  const eventGroupId = String(payload.groupId ?? '').trim()
+  if (eventGroupId && DYNAMIC_STATE_REVISION_EVENTS.has(eventName)) {
+    const currentRevision = runtimeState.groups[eventGroupId]?.stateRevision
+      ?? runtimeState.groupStateRevisions[eventGroupId]
+    if (!shouldApplyGroupStateRevision(currentRevision, payload.stateRevision)) {
+      return
+    }
+    if (isValidRevision(payload.stateRevision)) {
+      runtimeState.groupStateRevisions[eventGroupId] = Number(payload.stateRevision)
+    }
+  }
+
+  if (selectionAccepted && isValidRevision(payload.selectionRevision)) {
+    runtimeState.selectionRevision = Number(payload.selectionRevision)
+  }
+
   runtimeState.watermarkEnabled = resolveWatermarkEnabledForEvent(
     runtimeState.watermarkEnabled,
     eventName,
@@ -648,6 +737,7 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.view.mirror.startedAt = Number(payload.startedAt) || Date.now()
       runtimeState.view.mirror.elapsedMs = 0
       runtimeState.view.mirror.receivedAt = Date.now()
+      runtimeState.view.mirror.capturedAt = 0
       runtimeState.view.mirror.transition = 'none'
       runtimeState.preview.enabled = false
       break
@@ -661,7 +751,7 @@ const applyDynamicEvent = (eventName, payload) => {
       const duplicateReplay = runtimeState.view.mirror.replayId === replayId
       const capturedAt = Number(payload.capturedAt) || Date.now()
       if (duplicateReplay && runtimeState.view.mode === 'stage') return
-      if (duplicateReplay && runtimeState.view.mirror.snapshotDataUrl === snapshotDataUrl) return
+      if (duplicateReplay && capturedAt <= runtimeState.view.mirror.capturedAt) return
       if (
         !duplicateReplay
         && runtimeState.view.mode === 'archive'
@@ -724,11 +814,13 @@ const applyDynamicEvent = (eventName, payload) => {
 
     case 'GroupSelectAndSync':
     case 'GroupStateSync': {
-      const group = setActiveGroup(payload.groupId, payload.name)
-      runtimeState.view.mode = 'stage'
+      const group = selectionAccepted
+        ? setActiveGroup(payload.groupId, payload.name)
+        : ensureGroup(payload.groupId, payload.name)
+      if (selectionAccepted) runtimeState.view.mode = 'stage'
       group.name = payload.name ?? group.name
       group.linkedAppearanceModelVersion = Number(payload.linkedAppearanceModelVersion) || 0
-      group.advancedFeaturesEnabled = payload.advancedFeaturesEnabled === true
+      group.advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
       group.appearMode = payload.appearMode ?? group.appearMode ?? 'all'
       group.appearIntervalMs = payload.appearIntervalMs ?? group.appearIntervalMs ?? 800
       group.appearAnimation = normalizeAppearAnimation(payload.appearAnimation ?? group.appearAnimation)
@@ -763,10 +855,7 @@ const applyDynamicEvent = (eventName, payload) => {
             mediaType: background.mediaType ?? background.type ?? 'image',
             mimeType: background.mimeType ?? '',
             bgmAudioId: background.bgmAudioId ?? null,
-            backgroundTransition: normalizeBackgroundTransition(
-              background.backgroundTransition,
-              group.backgroundTransition
-            )
+            backgroundTransition: group.backgroundTransition
           }
         })
 
@@ -828,7 +917,7 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.preview = {
         enabled: Boolean(payload.enabled),
         groupId,
-        advancedFeaturesEnabled: payload.advancedFeaturesEnabled === true,
+        advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
         appearMode: payload.appearMode ?? ensureGroup(groupId).appearMode ?? 'all',
         intervalMs: payload.intervalMs ?? ensureGroup(groupId).appearIntervalMs ?? 800,
         appearAnimation: payload.appearAnimation ?? ensureGroup(groupId).appearAnimation ?? 'none',
@@ -854,6 +943,12 @@ const applyDynamicEvent = (eventName, payload) => {
       const group = ensureGroup(payload.groupId)
       const deleteIds = new Set(payload.assetIds ?? [])
       group.backgrounds = group.backgrounds.filter((background) => !deleteIds.has(background.assetId))
+      group.items = group.items.map((item) => ({
+        ...item,
+        backgroundIds: Array.isArray(item.backgroundIds)
+          ? item.backgroundIds.filter((backgroundId) => !deleteIds.has(backgroundId))
+          : []
+      }))
       group.activeBackgroundId = payload.nextActiveAssetId ?? group.backgrounds[0]?.assetId ?? null
       group.updatedAt = Date.now()
       break
@@ -1003,9 +1098,12 @@ const applyDynamicEvent = (eventName, payload) => {
       console.log('Unhandled dynamic event:', eventName, payload)
   }
 
+  const reportedEventName = DYNAMIC_FULL_STATE_EVENTS.has(eventName) && !selectionAccepted
+    ? 'GroupStateCached'
+    : eventName
   lastDynamicEvent = {
     sequence: ++dynamicEventSequence,
-    eventName,
+    eventName: reportedEventName,
     groupId: payload.groupId ?? runtimeState.activeGroupId ?? null,
     itemId: payload.itemId ?? null,
     enabled: eventName === 'PreviewMode' ? Boolean(payload.enabled) : undefined,
@@ -1122,6 +1220,34 @@ const handleUpload = (buffer, contentType) => {
   const name = fields.name || file.filename || assetId
   const mimeType = fields.mimeType || file.contentType || 'application/octet-stream'
   const mediaType = fields.mediaType || detectMediaType(mimeType, name)
+  const knownGroupRevision = runtimeState.groups[groupId]?.stateRevision
+    ?? runtimeState.groupStateRevisions[groupId]
+  const shouldUpdateGroup = shouldApplyGroupUploadSideEffect(
+    knownGroupRevision,
+    fields.stateRevision
+  )
+
+  if (!shouldUpdateGroup) {
+    return {
+      ok: true,
+      assetId,
+      role: fields.role || 'item',
+      groupId,
+      stateIgnored: true
+    }
+  }
+
+  const existingAsset = runtimeState.assets[assetId]
+  if (!shouldApplyGroupUploadSideEffect(existingAsset?.stateRevision, fields.stateRevision)) {
+    return {
+      ok: true,
+      assetId,
+      role: fields.role || 'item',
+      groupId,
+      stateIgnored: true
+    }
+  }
+
   const extension = getExtension(name, mimeType)
   const filePath = path.join(assetsDir, `${safeSegment(assetId)}${extension}`)
 
@@ -1136,12 +1262,16 @@ const handleUpload = (buffer, contentType) => {
     mediaType,
     mimeType,
     filePath,
+    stateRevision: isValidRevision(fields.stateRevision)
+      ? Number(fields.stateRevision)
+      : 0,
     updatedAt: Date.now()
   }
 
   runtimeState.assets[assetId] = asset
 
   const group = ensureGroup(groupId)
+
   if (asset.role === 'background') {
     upsertBackground(group, {
       assetId,

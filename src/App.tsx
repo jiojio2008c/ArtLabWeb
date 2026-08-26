@@ -7,6 +7,8 @@ import RemoteKeyboardPage from './components/RemoteKeyboardPage.tsx'
 import UploadPage from './components/UploadPage.tsx'
 import DirectUploadCompletePage from './components/DirectUploadCompletePage.tsx'
 import DirectUploadSelectPage from './components/DirectUploadSelectPage.tsx'
+import HomeReturnConfirmDialog from './components/HomeReturnConfirmDialog.tsx'
+import type { HomeReturnScope } from './components/HomeReturnConfirmDialog.tsx'
 import SettingsPanel from './components/SettingsPanel.tsx'
 import DynamicBackgroundPage from './components/DynamicBackgroundPage.tsx'
 import DynamicGroupsPage from './components/DynamicGroupsPage.tsx'
@@ -40,15 +42,12 @@ import {
   type DynamicArchiveSourceSnapshot
 } from './services/dynamicArtArchiveSync.ts'
 import { markDynamicReceiverNeedsResync } from './services/dynamicArtReceiverSync.ts'
-import {
-  loadDynamicCreationFlowSession,
-  removeDynamicCreationFlowSession
-} from './services/dynamicCreationFlowStorage.ts'
+import { removeDynamicCreationFlowSession } from './services/dynamicCreationFlowStorage.ts'
 import type { DynamicCreationFlowExperience } from './services/dynamicCreationFlowCore.js'
 import { handleGlobalButtonPointerDown } from './services/uiFeedback.ts'
 import { getCurrentSession, logoutCurrentSession, subscribeToAuthChanges } from './services/authService.ts'
 import { loadCurrentUserAccount, type UserAccount } from './services/userProfileService.ts'
-import { sendAppLaunchCommand, sendDynamicEvent, sendQrCodeCommand } from './services/unityBridge.ts'
+import { sendAppCloseCommand, sendAppLaunchCommand, sendDynamicEvent, sendQrCodeCommand } from './services/unityBridge.ts'
 import { preloadImage } from './services/transitionPerformance.ts'
 
 interface ImageData {
@@ -111,14 +110,28 @@ function App() {
   const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
   const [dynamicArchiveReturnActive, setDynamicArchiveReturnActive] = useState(false)
   const [dynamicArchiveReplayId, setDynamicArchiveReplayId] = useState('')
+  const [homeReturnScope, setHomeReturnScope] = useState<HomeReturnScope | null>(null)
+  const [homeReturnPending, setHomeReturnPending] = useState(false)
   const dynamicArchiveReturnTimerRef = useRef<number | null>(null)
   const dynamicArchiveSyncTimerRefs = useRef<number[]>([])
   const dynamicArchiveOpeningRef = useRef(false)
+  const homeReturnRequestRef = useRef<HomeReturnScope | null>(null)
+  const homeReturnPendingRef = useRef(false)
+  const homeReturnResetTimerRef = useRef<number | null>(null)
+  const dynamicHomeReturnBlockedRef = useRef(false)
+  const interactiveHomeReturnBlockedRef = useRef(false)
   const entryRootRef = useRef<HTMLElement>(null)
   const dynamicEntryCardRef = useRef<HTMLButtonElement>(null)
   const interactiveEntryCardRef = useRef<HTMLButtonElement>(null)
   const directSelectRootRef = useRef<HTMLElement>(null)
   const directUploadRootRef = useRef<HTMLElement>(null)
+
+  dynamicHomeReturnBlockedRef.current = Boolean(dynamicPortalOrigin || dynamicArtworkTransition)
+  interactiveHomeReturnBlockedRef.current = Boolean(
+    interactivePortalOrigin
+    || directThemeUploadTransition
+    || directThemeUploadReturnTransition
+  )
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
 
@@ -199,6 +212,9 @@ function App() {
     if (dynamicArchiveReturnTimerRef.current !== null) {
       window.clearTimeout(dynamicArchiveReturnTimerRef.current)
     }
+    if (homeReturnResetTimerRef.current !== null) {
+      window.clearTimeout(homeReturnResetTimerRef.current)
+    }
     clearDynamicArchiveSyncTimers()
   }, [])
 
@@ -227,6 +243,14 @@ function App() {
         setDirectThemeUploadTransition(null)
         setDirectThemeUploadReturnTransition(false)
         setDynamicArtworkTransition(null)
+        homeReturnRequestRef.current = null
+        homeReturnPendingRef.current = false
+        if (homeReturnResetTimerRef.current !== null) {
+          window.clearTimeout(homeReturnResetTimerRef.current)
+          homeReturnResetTimerRef.current = null
+        }
+        setHomeReturnScope(null)
+        setHomeReturnPending(false)
         setCurrentAccount(null)
         setAccountLoading(false)
         setAuthStatus('unauthenticated')
@@ -290,8 +314,12 @@ function App() {
   }, [authStatus])
 
   const updateNetworkSettings = useCallback((nextSettings: NetworkSettings) => {
-    saveNetworkSettings(nextSettings)
-    setNetworkSettings(nextSettings)
+    const normalizedSettings = {
+      ...nextSettings,
+      advancedFeaturesEnabled: true
+    }
+    saveNetworkSettings(normalizedSettings)
+    setNetworkSettings(normalizedSettings)
   }, [])
 
   const handleSettingsSave = useCallback((nextSettings: NetworkSettings) => {
@@ -301,18 +329,6 @@ function App() {
       watermarkEnabled: nextSettings.watermarkEnabled
     })
   }, [updateNetworkSettings])
-
-  const handleAdvancedFeaturesChange = useCallback((enabled: boolean) => {
-    if (networkSettings.advancedFeaturesEnabled === enabled) return
-
-    const nextSettings = {
-      ...networkSettings,
-      advancedFeaturesEnabled: enabled
-    }
-    updateNetworkSettings(nextSettings)
-    markDynamicReceiverNeedsResync(nextSettings.wsIp, nextSettings.dynamicPort)
-    if (!enabled) setDynamicEditorExperience('free')
-  }, [networkSettings, updateNetworkSettings])
 
   const updateWsIp = (wsIp: string) => {
     updateNetworkSettings({
@@ -453,9 +469,7 @@ function App() {
     navigateTo('directUpload')
   }
 
-  const resolveDynamicEditorExperience = (experience: DynamicCreationFlowExperience) => (
-    networkSettings.advancedFeaturesEnabled ? experience : 'free'
-  )
+  const resolveDynamicEditorExperience = (_experience: DynamicCreationFlowExperience) => 'free' as const
 
   const beginDynamicArtworkTransition = (
     group: DynamicGroup,
@@ -483,7 +497,7 @@ function App() {
   }
 
   const handleCreateDynamicGroup = (group: DynamicGroup) => {
-    beginDynamicArtworkTransition(group, undefined, 'flow')
+    beginDynamicArtworkTransition(group, undefined, 'free')
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
@@ -493,7 +507,8 @@ function App() {
     setSelectedDynamicItemId('')
   }
 
-  const handleReturnFromDynamicGroups = () => {
+  const completeDynamicArchiveReturn = () => {
+    clearDynamicArchiveSyncTimers()
     if (dynamicArchiveReturnTimerRef.current !== null) {
       window.clearTimeout(dynamicArchiveReturnTimerRef.current)
     }
@@ -506,12 +521,61 @@ function App() {
     }, 420)
   }
 
+  const requestHomeReturn = useCallback((scope: HomeReturnScope) => {
+    if (homeReturnRequestRef.current !== null || homeReturnPendingRef.current) return
+    if (scope === 'dynamic-art' && dynamicHomeReturnBlockedRef.current) return
+    if (scope === 'interactive-art' && interactiveHomeReturnBlockedRef.current) return
+
+    homeReturnRequestRef.current = scope
+    setHomeReturnScope(scope)
+  }, [])
+
+  const cancelHomeReturn = useCallback(() => {
+    if (homeReturnPendingRef.current) return
+    homeReturnRequestRef.current = null
+    setHomeReturnScope(null)
+  }, [])
+
+  const confirmHomeReturn = () => {
+    const scope = homeReturnRequestRef.current
+    if (!scope || homeReturnPendingRef.current) return
+
+    homeReturnPendingRef.current = true
+    setHomeReturnPending(true)
+    sendAppCloseCommand(
+      networkSettings.wsIp,
+      networkSettings.interactivePort,
+      scope
+    )
+    homeReturnRequestRef.current = null
+
+    if (scope === 'dynamic-art') {
+      completeDynamicArchiveReturn()
+    } else {
+      navigateTo('entry')
+    }
+
+    if (homeReturnResetTimerRef.current !== null) {
+      window.clearTimeout(homeReturnResetTimerRef.current)
+    }
+    homeReturnResetTimerRef.current = window.setTimeout(() => {
+      homeReturnResetTimerRef.current = null
+      setHomeReturnScope(null)
+      homeReturnPendingRef.current = false
+      setHomeReturnPending(false)
+    }, 180)
+  }
+
+  const handleReturnFromDynamicGroups = useCallback(() => {
+    requestHomeReturn('dynamic-art')
+  }, [requestHomeReturn])
+
+  const handleReturnFromDirectSelect = useCallback(() => {
+    requestHomeReturn('interactive-art')
+  }, [requestHomeReturn])
+
   const handleSelectDynamicGroup = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
-    const flowSession = loadDynamicCreationFlowSession(group.id, {
-      itemIds: group.items.map((item) => item.id),
-      defaultExperience: 'free'
-    })
-    beginDynamicArtworkTransition(group, origin, flowSession.experience)
+    beginDynamicArtworkTransition(group, origin, 'free')
   }
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
@@ -522,11 +586,7 @@ function App() {
 
   const handleOpenDynamicControl = (itemId = '') => {
     if (!selectedDynamicGroup) return
-    const flowSession = loadDynamicCreationFlowSession(selectedDynamicGroup.id, {
-      itemIds: selectedDynamicGroup.items.map((item) => item.id),
-      defaultExperience: 'free'
-    })
-    setDynamicEditorExperience(resolveDynamicEditorExperience(flowSession.experience))
+    setDynamicEditorExperience('free')
     setSelectedDynamicItemId(itemId)
     navigateTo('dynamicControl')
   }
@@ -560,6 +620,14 @@ function App() {
     setDirectThemeUploadTransition(null)
     setDirectThemeUploadReturnTransition(false)
     setDynamicArtworkTransition(null)
+    homeReturnRequestRef.current = null
+    homeReturnPendingRef.current = false
+    if (homeReturnResetTimerRef.current !== null) {
+      window.clearTimeout(homeReturnResetTimerRef.current)
+      homeReturnResetTimerRef.current = null
+    }
+    setHomeReturnScope(null)
+    setHomeReturnPending(false)
     setAuthStatus('authenticated')
   }
 
@@ -575,6 +643,14 @@ function App() {
     setDirectThemeUploadTransition(null)
     setDirectThemeUploadReturnTransition(false)
     setDynamicArtworkTransition(null)
+    homeReturnRequestRef.current = null
+    homeReturnPendingRef.current = false
+    if (homeReturnResetTimerRef.current !== null) {
+      window.clearTimeout(homeReturnResetTimerRef.current)
+      homeReturnResetTimerRef.current = null
+    }
+    setHomeReturnScope(null)
+    setHomeReturnPending(false)
     setCurrentAccount(null)
     setAccountLoading(false)
     setAuthStatus('unauthenticated')
@@ -660,8 +736,6 @@ function App() {
                 groups={renderedDynamicArchiveGroups}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
-                advancedFeaturesEnabled={networkSettings.advancedFeaturesEnabled}
-                onAdvancedFeaturesChange={handleAdvancedFeaturesChange}
                 onBack={handleReturnFromDynamicGroups}
                 onCreateGroup={handleCreateDynamicGroup}
                 onUpdateGroup={updateDynamicGroupState}
@@ -678,7 +752,7 @@ function App() {
                 group={selectedDynamicGroup}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
-                advancedFeaturesEnabled={networkSettings.advancedFeaturesEnabled}
+                advancedFeaturesEnabled
                 watermarkEnabled={networkSettings.watermarkEnabled}
                 onBack={handleReturnFromDynamicControl}
                 onGroupChange={updateDynamicGroupState}
@@ -732,7 +806,7 @@ function App() {
             rootRef={directSelectRootRef}
             selectedThemeId={selectedDirectTheme.id}
             transitioning={Boolean(directThemeUploadTransition || directThemeUploadReturnTransition)}
-            onBackToEntry={() => navigateTo('entry')}
+            onBackToEntry={handleReturnFromDirectSelect}
             onSelectTheme={handleSelectDirectTheme}
           />
         ) : currentPage === 'directUpload' ? (
@@ -859,6 +933,15 @@ function App() {
               setDynamicArtworkTransition(null)
             })
           }}
+        />
+      )}
+
+      {homeReturnScope && (
+        <HomeReturnConfirmDialog
+          scope={homeReturnScope}
+          pending={homeReturnPending}
+          onCancel={cancelHomeReturn}
+          onConfirm={confirmHomeReturn}
         />
       )}
 

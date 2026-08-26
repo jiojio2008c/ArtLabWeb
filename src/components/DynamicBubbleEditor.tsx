@@ -9,6 +9,7 @@ import {
   type FormEvent
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Check,
   Cloud,
@@ -19,6 +20,12 @@ import {
   Trash2,
   X
 } from 'lucide-react'
+import {
+  bubbleShapeCommandsToSvgPath,
+  deriveBubbleOutlineColor,
+  getBubbleShapeDefinition,
+  normalizeBubbleColor
+} from '../../desktop-runtime/renderer/bubble-shape-catalog.js'
 import DynamicBubbleVisual, {
   type DynamicBubbleDraft,
   type DynamicBubbleImageDraft,
@@ -50,49 +57,107 @@ interface EditorErrors {
   submit?: string
 }
 
-const DIALOGUE_STYLES: Array<{ id: DynamicBubbleStyleId; label: string; description: string }> = [
-  { id: 'dialogue-rounded-left', label: '圆润·左', description: '尾巴向左' },
-  { id: 'dialogue-rounded-right', label: '圆润·右', description: '尾巴向右' },
-  { id: 'dialogue-soft-left', label: '轻柔·左', description: '尾巴向左' },
-  { id: 'dialogue-soft-right', label: '轻柔·右', description: '尾巴向右' },
-  { id: 'dialogue-comic-left', label: '漫画·左', description: '尾巴向左' },
-  { id: 'dialogue-comic-right', label: '漫画·右', description: '尾巴向右' }
+interface BubbleStyleOption {
+  id: DynamicBubbleStyleId
+  labelKey: string
+  descriptionKey: string
+}
+
+interface BubbleShapeSwatchProps {
+  styleId: DynamicBubbleStyleId
+  surfaceColor: string
+  outlineColor: string
+}
+
+const BubbleShapeSwatch: React.FC<BubbleShapeSwatchProps> = ({
+  styleId,
+  surfaceColor,
+  outlineColor
+}) => {
+  const definition = getBubbleShapeDefinition(styleId)
+  const shapePath = bubbleShapeCommandsToSvgPath(definition.bodyCommands)
+  const { viewBox } = definition
+
+  return (
+    <span className="dynamic-bubble-style-swatch" aria-hidden="true">
+      <svg
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+        preserveAspectRatio="xMidYMid meet"
+        focusable="false"
+      >
+        <path
+          className="dynamic-bubble-style-swatch-body"
+          d={shapePath}
+          fill={surfaceColor}
+          stroke={outlineColor}
+        />
+        {definition.decorations.map((decoration, index) => (
+          <circle
+            key={`${decoration.cx}-${decoration.cy}-${index}`}
+            className="dynamic-bubble-style-swatch-decoration"
+            cx={decoration.cx}
+            cy={decoration.cy}
+            r={decoration.radius}
+            fill={surfaceColor}
+            stroke={outlineColor}
+          />
+        ))}
+      </svg>
+    </span>
+  )
+}
+
+const DIALOGUE_STYLES: BubbleStyleOption[] = [
+  { id: 'dialogue-rounded-left', labelKey: 'bubbleEditor.style.dialogueRounded', descriptionKey: 'bubbleEditor.direction.left' },
+  { id: 'dialogue-rounded-right', labelKey: 'bubbleEditor.style.dialogueRounded', descriptionKey: 'bubbleEditor.direction.right' },
+  { id: 'dialogue-soft-left', labelKey: 'bubbleEditor.style.dialogueSoft', descriptionKey: 'bubbleEditor.direction.left' },
+  { id: 'dialogue-soft-right', labelKey: 'bubbleEditor.style.dialogueSoft', descriptionKey: 'bubbleEditor.direction.right' },
+  { id: 'dialogue-comic-left', labelKey: 'bubbleEditor.style.dialogueComic', descriptionKey: 'bubbleEditor.direction.left' },
+  { id: 'dialogue-comic-right', labelKey: 'bubbleEditor.style.dialogueComic', descriptionKey: 'bubbleEditor.direction.right' }
 ]
 
-const THOUGHT_STYLES: Array<{ id: DynamicBubbleStyleId; label: string; description: string }> = [
-  { id: 'thought-cloud-left', label: '云朵·左', description: '尾巴向左' },
-  { id: 'thought-cloud-right', label: '云朵·右', description: '尾巴向右' },
-  { id: 'thought-soft-left', label: '柔光·左', description: '尾巴向左' },
-  { id: 'thought-soft-right', label: '柔光·右', description: '尾巴向右' }
+const THOUGHT_STYLES: BubbleStyleOption[] = [
+  { id: 'thought-cloud-left', labelKey: 'bubbleEditor.style.thoughtCloud', descriptionKey: 'bubbleEditor.direction.left' },
+  { id: 'thought-cloud-right', labelKey: 'bubbleEditor.style.thoughtCloud', descriptionKey: 'bubbleEditor.direction.right' }
 ]
 
-const TITLE_STYLES: Array<{ id: DynamicBubbleStyleId; label: string; description: string }> = [
-  { id: 'title-rounded', label: '圆角', description: '经典遮罩' },
-  { id: 'title-pill', label: '胶囊', description: '柔和圆润' },
-  { id: 'title-ticket', label: '标签', description: '俐落切角' },
-  { id: 'title-underline', label: '下划线', description: '轻量简洁' },
-  { id: 'title-none', label: '无', description: '纯文字' }
+const TITLE_STYLES: BubbleStyleOption[] = [
+  { id: 'title-rounded', labelKey: 'bubbleEditor.style.titleRounded', descriptionKey: 'bubbleEditor.styleHint.titleRounded' },
+  { id: 'title-pill', labelKey: 'bubbleEditor.style.titlePill', descriptionKey: 'bubbleEditor.styleHint.titlePill' },
+  { id: 'title-ticket', labelKey: 'bubbleEditor.style.titleTicket', descriptionKey: 'bubbleEditor.styleHint.titleTicket' },
+  { id: 'title-underline', labelKey: 'bubbleEditor.style.titleUnderline', descriptionKey: 'bubbleEditor.styleHint.titleUnderline' },
+  { id: 'title-none', labelKey: 'bubbleEditor.style.titleNone', descriptionKey: 'bubbleEditor.styleHint.titleNone' }
 ]
 
 const LEGACY_TITLE_MASK_IDS: DynamicBubbleTitleMaskId[] = ['rounded', 'pill', 'ticket', 'underline', 'none']
 
 const TEXT_COLORS = [
-  { label: '墨黑', color: '#20302d' },
-  { label: '白色', color: '#ffffff' },
-  { label: '深蓝', color: '#173b5f' },
-  { label: '深绿', color: '#175a49' },
-  { label: '暖红', color: '#8b332c' },
-  { label: '金色', color: '#b87512' }
+  { labelKey: 'bubbleEditor.color.inkBlack', color: '#20302d' },
+  { labelKey: 'bubbleEditor.color.white', color: '#ffffff' },
+  { labelKey: 'bubbleEditor.color.deepBlue', color: '#173b5f' },
+  { labelKey: 'bubbleEditor.color.deepGreen', color: '#175a49' },
+  { labelKey: 'bubbleEditor.color.warmRed', color: '#8b332c' },
+  { labelKey: 'bubbleEditor.color.gold', color: '#b87512' }
 ]
 
 const MASK_COLORS = [
-  { label: '深墨', color: '#263a3b' },
-  { label: '青蓝', color: '#0c8fa4' },
-  { label: '珊瑚', color: '#dd6859' },
-  { label: '暖阳', color: '#c88722' },
-  { label: '紫罗兰', color: '#7567b4' },
-  { label: '白色', color: '#ffffff' }
+  { labelKey: 'bubbleEditor.color.deepInk', color: '#263a3b' },
+  { labelKey: 'bubbleEditor.color.cyanBlue', color: '#0c8fa4' },
+  { labelKey: 'bubbleEditor.color.coral', color: '#dd6859' },
+  { labelKey: 'bubbleEditor.color.warmSun', color: '#c88722' },
+  { labelKey: 'bubbleEditor.color.violet', color: '#7567b4' },
+  { labelKey: 'bubbleEditor.color.white', color: '#ffffff' }
 ]
+
+const BUBBLE_SURFACE_COLORS = [
+  { labelKey: 'bubbleEditor.color.white', color: '#ffffff' },
+  { labelKey: 'bubbleEditor.color.warmWhite', color: '#fffef6' },
+  { labelKey: 'bubbleEditor.color.softYellow', color: '#fff2b8' },
+  { labelKey: 'bubbleEditor.color.coral', color: '#ffd6ce' },
+  { labelKey: 'bubbleEditor.color.skyBlue', color: '#dcefff' },
+  { labelKey: 'bubbleEditor.color.mint', color: '#dff5e8' },
+  { labelKey: 'bubbleEditor.color.lavender', color: '#eee5ff' }
+] as const
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -102,16 +167,54 @@ const getStylesForType = (bubbleType: DynamicBubbleType) => {
   return DIALOGUE_STYLES
 }
 
-const isLightColor = (color: string) => {
-  const normalized = color.trim().replace(/^#/, '')
-  if (!/^[0-9a-f]{6}$/i.test(normalized)) return false
-  const channels = [0, 2, 4].map((index) => Number.parseInt(normalized.slice(index, index + 2), 16) / 255)
-  const linearChannels = channels.map((channel) => (
+const getDefaultStyleId = (bubbleType: DynamicBubbleType): DynamicBubbleStyleId => (
+  bubbleType === 'thought'
+    ? 'thought-cloud-right'
+    : bubbleType === 'title' ? 'title-rounded' : 'dialogue-rounded-right'
+)
+
+const normalizeEditorStyleId = (
+  bubbleType: DynamicBubbleType,
+  styleId: DynamicBubbleStyleId | undefined
+): DynamicBubbleStyleId => {
+  const allowedStyles = getStylesForType(bubbleType)
+  if (bubbleType === 'title') {
+    return allowedStyles.some((style) => style.id === styleId)
+      ? styleId as DynamicBubbleStyleId
+      : getDefaultStyleId(bubbleType)
+  }
+
+  const canonicalStyleId = getBubbleShapeDefinition(styleId ?? getDefaultStyleId(bubbleType)).styleId as DynamicBubbleStyleId
+  return allowedStyles.some((style) => style.id === canonicalStyleId)
+    ? canonicalStyleId
+    : getDefaultStyleId(bubbleType)
+}
+
+const getColorChannels = (color: string) => {
+  const normalized = normalizeBubbleColor(color).slice(1, 7)
+  return [0, 2, 4].map((index) => Number.parseInt(normalized.slice(index, index + 2), 16) / 255)
+}
+
+const getRelativeLuminance = (color: string) => {
+  const linearChannels = getColorChannels(color).map((channel) => (
     channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
   ))
-  const luminance = 0.2126 * linearChannels[0] + 0.7152 * linearChannels[1] + 0.0722 * linearChannels[2]
-  return luminance > 0.58
+  return 0.2126 * linearChannels[0] + 0.7152 * linearChannels[1] + 0.0722 * linearChannels[2]
 }
+
+const isLightColor = (color: string) => {
+  return getRelativeLuminance(color) > 0.58
+}
+
+const getContrastRatio = (firstColor: string, secondColor: string) => {
+  const firstLuminance = getRelativeLuminance(firstColor)
+  const secondLuminance = getRelativeLuminance(secondColor)
+  const lighter = Math.max(firstLuminance, secondLuminance)
+  const darker = Math.min(firstLuminance, secondLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+const defaultDialogueShape = getBubbleShapeDefinition('dialogue-rounded-right')
 
 const DEFAULT_BUBBLE: DynamicBubbleDraft = {
   bubbleType: 'dialogue',
@@ -123,34 +226,38 @@ const DEFAULT_BUBBLE: DynamicBubbleDraft = {
   fontSizePx: 52,
   textColor: '#20302d',
   surfaceId: 'light',
+  surfaceColor: defaultDialogueShape.defaultSurfaceColor,
+  outlineColor: defaultDialogueShape.defaultOutlineColor,
   titleMaskId: 'rounded',
   paletteId: 'ocean',
   maskColor: '#0c8fa4',
   maskOpacity: 0.92,
-  widthPx: 1080,
-  heightPx: 480
+  widthPx: defaultDialogueShape.defaultWidth,
+  heightPx: defaultDialogueShape.defaultHeight
 }
 
 const normalizeInitialValue = (initialValue?: Partial<DynamicBubbleDraft>): DynamicBubbleDraft => {
   const bubbleType = initialValue?.bubbleType ?? DEFAULT_BUBBLE.bubbleType
-  const allowedStyles = getStylesForType(bubbleType)
-  const styleId = allowedStyles.some(({ id }) => id === initialValue?.styleId)
-    ? initialValue?.styleId as DynamicBubbleStyleId
-    : allowedStyles[0].id
+  const styleId = normalizeEditorStyleId(bubbleType, initialValue?.styleId)
+  const shapeDefinition = bubbleType === 'title' ? null : getBubbleShapeDefinition(styleId)
+  const defaultSurfaceColor = shapeDefinition?.defaultSurfaceColor ?? '#ffffff'
+  const defaultOutlineColor = shapeDefinition?.defaultOutlineColor ?? '#263a3b'
 
   return {
     ...DEFAULT_BUBBLE,
     ...initialValue,
     bubbleType,
     styleId,
+    surfaceColor: normalizeBubbleColor(initialValue?.surfaceColor, defaultSurfaceColor),
+    outlineColor: normalizeBubbleColor(initialValue?.outlineColor, defaultOutlineColor),
     titleMaskId: LEGACY_TITLE_MASK_IDS.includes(initialValue?.titleMaskId as DynamicBubbleTitleMaskId)
       ? initialValue?.titleMaskId as DynamicBubbleTitleMaskId
       : DEFAULT_BUBBLE.titleMaskId,
     paletteId: initialValue?.paletteId ?? (bubbleType === 'thought' ? 'ink' : 'ocean'),
     maskColor: initialValue?.maskColor ?? DEFAULT_BUBBLE.maskColor,
     maskOpacity: clamp(initialValue?.maskOpacity ?? DEFAULT_BUBBLE.maskOpacity, 0, 1),
-    widthPx: initialValue?.widthPx ?? (bubbleType === 'thought' ? 940 : bubbleType === 'title' ? 900 : 1080),
-    heightPx: initialValue?.heightPx ?? (bubbleType === 'thought' ? 680 : bubbleType === 'title' ? 220 : 480)
+    widthPx: initialValue?.widthPx ?? shapeDefinition?.defaultWidth ?? 900,
+    heightPx: initialValue?.heightPx ?? shapeDefinition?.defaultHeight ?? 220
   }
 }
 
@@ -172,6 +279,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
   onCancel,
   onSubmit
 }) => {
+  const { t } = useTranslation()
   const titleId = useId()
   const descriptionId = useId()
   const contentErrorId = useId()
@@ -197,16 +305,44 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
   const hasCustomTextColor = !TEXT_COLORS.some(({ color }) => color.toLowerCase() === draft.textColor.toLowerCase())
   const maskColor = draft.maskColor ?? '#0c8fa4'
   const hasCustomMaskColor = !MASK_COLORS.some(({ color }) => color.toLowerCase() === maskColor.toLowerCase())
-  const usesDarkSurface = draft.styleId.startsWith('dialogue-comic')
+  const activeShapeDefinition = isStandaloneTitle ? null : getBubbleShapeDefinition(draft.styleId)
+  const surfaceColor = normalizeBubbleColor(
+    draft.surfaceColor,
+    activeShapeDefinition?.defaultSurfaceColor ?? defaultDialogueShape.defaultSurfaceColor
+  )
+  const outlineColor = normalizeBubbleColor(
+    draft.outlineColor,
+    activeShapeDefinition?.defaultOutlineColor ?? deriveBubbleOutlineColor(surfaceColor)
+  )
+  const surfaceMatchesStyleDefault = Boolean(
+    activeShapeDefinition
+    && surfaceColor.toLowerCase() === activeShapeDefinition.defaultSurfaceColor.toLowerCase()
+  )
+  const showStyleDefaultSurface = Boolean(
+    activeShapeDefinition
+    && !BUBBLE_SURFACE_COLORS.some(({ color }) => (
+      color.toLowerCase() === activeShapeDefinition.defaultSurfaceColor.toLowerCase()
+    ))
+  )
+  const usesDefaultSurface = Boolean(
+    surfaceMatchesStyleDefault
+    && activeShapeDefinition
+    && outlineColor.toLowerCase() === activeShapeDefinition.defaultOutlineColor.toLowerCase()
+  )
+  const hasCustomSurfaceColor = !surfaceMatchesStyleDefault
+    && !BUBBLE_SURFACE_COLORS.some(({ color }) => color.toLowerCase() === surfaceColor.toLowerCase())
+  const usesDarkSurface = !isLightColor(surfaceColor)
   const hasLowTextContrast = isStandaloneTitle
-    ? draft.styleId !== 'title-none' && isLightColor(draft.textColor) === isLightColor(maskColor)
-    : usesDarkSurface ? !isLightColor(draft.textColor) : isLightColor(draft.textColor)
+    ? draft.styleId !== 'title-none' && getContrastRatio(draft.textColor, maskColor) < 3
+    : getContrastRatio(draft.textColor, surfaceColor) < 3
   const previewBubble = useMemo<DynamicBubbleDraft>(() => ({
     ...draft,
     bodyText: draft.bodyText || (draft.bubbleType === 'thought' && draft.image
       ? ''
-      : draft.bubbleType === 'title' ? '在这里输入标题' : '在这里输入气泡内容')
-  }), [draft])
+      : draft.bubbleType === 'title'
+        ? t('bubbleEditor.preview.titlePlaceholder')
+        : t('bubbleEditor.preview.bodyPlaceholder'))
+  }), [draft, t])
 
   const clearGeneratedImageUrl = useCallback(() => {
     if (!generatedImageUrlRef.current) return
@@ -300,34 +436,62 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
   }
 
   const handleBubbleTypeChange = (bubbleType: DynamicBubbleType) => {
-    setDraft((current) => ({
-      ...current,
-      bubbleType,
-      styleId: bubbleType === 'thought'
-        ? 'thought-cloud-right'
-        : bubbleType === 'title' ? 'title-rounded' : 'dialogue-rounded-right',
-      title: bubbleType === 'title' ? '' : current.title,
-      bodyText: bubbleType === 'title' && !current.bodyText.trim()
-        ? current.title
-        : current.bodyText,
-      textColor: bubbleType === 'title' ? '#ffffff' : '#20302d',
-      paletteId: bubbleType === 'thought' ? 'ink' : 'ocean',
-      maskColor: current.maskColor ?? '#0c8fa4',
-      maskOpacity: clamp(current.maskOpacity, 0, 1),
-      widthPx: bubbleType === 'thought' ? 940 : bubbleType === 'title' ? 900 : 1080,
-      heightPx: bubbleType === 'thought' ? 680 : bubbleType === 'title' ? 220 : 480
-    }))
+    setDraft((current) => {
+      const styleId = getDefaultStyleId(bubbleType)
+      const shapeDefinition = bubbleType === 'title' ? null : getBubbleShapeDefinition(styleId)
+      const nextSurfaceColor = shapeDefinition?.defaultSurfaceColor ?? '#ffffff'
+      return {
+        ...current,
+        bubbleType,
+        styleId,
+        title: bubbleType === 'title' ? '' : current.title,
+        bodyText: bubbleType === 'title' && !current.bodyText.trim()
+          ? current.title
+          : current.bodyText,
+        textColor: bubbleType === 'title' || !isLightColor(nextSurfaceColor) ? '#ffffff' : '#20302d',
+        surfaceColor: nextSurfaceColor,
+        outlineColor: shapeDefinition?.defaultOutlineColor ?? '#263a3b',
+        paletteId: bubbleType === 'thought' ? 'ink' : 'ocean',
+        maskColor: current.maskColor ?? '#0c8fa4',
+        maskOpacity: clamp(current.maskOpacity, 0, 1),
+        widthPx: shapeDefinition?.defaultWidth ?? 900,
+        heightPx: shapeDefinition?.defaultHeight ?? 220
+      }
+    })
     setErrors((current) => ({ ...current, content: undefined, submit: undefined }))
     setPlaybackKey((current) => current + 1)
   }
 
   const handleStyleChange = (styleId: DynamicBubbleStyleId) => {
     setDraft((current) => {
-      const wasDarkSurface = current.styleId.startsWith('dialogue-comic')
-      const nextUsesDarkSurface = styleId.startsWith('dialogue-comic')
+      if (current.bubbleType !== 'title') {
+        const currentDefinition = getBubbleShapeDefinition(current.styleId)
+        const nextDefinition = getBubbleShapeDefinition(styleId)
+        const currentUsesDefault = normalizeBubbleColor(current.surfaceColor).toLowerCase()
+          === currentDefinition.defaultSurfaceColor.toLowerCase()
+          && normalizeBubbleColor(current.outlineColor).toLowerCase()
+            === currentDefinition.defaultOutlineColor.toLowerCase()
+        const surfaceColor = currentUsesDefault
+          ? nextDefinition.defaultSurfaceColor
+          : normalizeBubbleColor(current.surfaceColor, nextDefinition.defaultSurfaceColor)
+        const outlineColor = currentUsesDefault
+          ? nextDefinition.defaultOutlineColor
+          : normalizeBubbleColor(current.outlineColor, deriveBubbleOutlineColor(surfaceColor))
+        const textColor = currentUsesDefault && getContrastRatio(current.textColor, surfaceColor) < 3
+          ? isLightColor(surfaceColor) ? '#20302d' : '#ffffff'
+          : current.textColor
+        return {
+          ...current,
+          styleId: nextDefinition.styleId as DynamicBubbleStyleId,
+          surfaceColor,
+          outlineColor,
+          textColor,
+          widthPx: nextDefinition.defaultWidth,
+          heightPx: nextDefinition.defaultHeight
+        }
+      }
+
       let textColor = current.textColor
-      if (nextUsesDarkSurface && !wasDarkSurface && !isLightColor(textColor)) textColor = '#ffffff'
-      if (!nextUsesDarkSurface && wasDarkSurface && isLightColor(textColor)) textColor = '#20302d'
       if (styleId === 'title-none' && current.styleId !== 'title-none' && isLightColor(textColor)) textColor = '#20302d'
       if (styleId.startsWith('title-') && styleId !== 'title-none' && current.styleId === 'title-none' && !isLightColor(textColor)) {
         textColor = '#ffffff'
@@ -336,13 +500,31 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
     })
   }
 
+  const setBubbleSurfaceColor = (nextColor: string) => {
+    const normalizedSurfaceColor = normalizeBubbleColor(nextColor, surfaceColor)
+    setDraft((current) => ({
+      ...current,
+      surfaceColor: normalizedSurfaceColor,
+      outlineColor: deriveBubbleOutlineColor(normalizedSurfaceColor)
+    }))
+  }
+
+  const restoreBubbleSurface = () => {
+    if (!activeShapeDefinition) return
+    setDraft((current) => ({
+      ...current,
+      surfaceColor: activeShapeDefinition.defaultSurfaceColor,
+      outlineColor: activeShapeDefinition.defaultOutlineColor
+    }))
+  }
+
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
 
     if (!file.type.startsWith('image/')) {
-      setErrors((current) => ({ ...current, content: '请选择图片文件。' }))
+      setErrors((current) => ({ ...current, content: t('bubbleEditor.error.imageFileRequired') }))
       return
     }
 
@@ -376,8 +558,10 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
     if (!draft.bodyText.trim() && (draft.bubbleType !== 'thought' || !draft.image)) {
       setErrors({
         content: draft.bubbleType === 'thought'
-          ? '请输入文字或添加一张图片。'
-          : draft.bubbleType === 'title' ? '请输入标题文字。' : '请输入气泡正文。'
+          ? t('bubbleEditor.error.thoughtContentRequired')
+          : draft.bubbleType === 'title'
+            ? t('bubbleEditor.error.titleRequired')
+            : t('bubbleEditor.error.bodyRequired')
       })
       if (draft.bubbleType === 'title') titleTextInputRef.current?.focus()
       else bodyInputRef.current?.focus()
@@ -404,7 +588,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
         surfaceId: draft.surfaceId ?? 'light'
       })
     } catch {
-      setErrors((current) => ({ ...current, submit: '暂时无法保存，请稍后再试。' }))
+      setErrors((current) => ({ ...current, submit: t('bubbleEditor.error.saveFailed') }))
     } finally {
       setSubmitting(false)
     }
@@ -427,15 +611,15 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
       >
         <header className="dynamic-bubble-editor-heading">
           <div>
-            <p>文字物件</p>
-            <h2 id={titleId}>{mode === 'edit' ? '编辑气泡' : '添加气泡'}</h2>
-            <span id={descriptionId}>填写内容并在左侧查看效果</span>
+            <p>{t('bubbleEditor.eyebrow')}</p>
+            <h2 id={titleId}>{t(mode === 'edit' ? 'bubbleEditor.heading.edit' : 'bubbleEditor.heading.add')}</h2>
+            <span id={descriptionId}>{t('bubbleEditor.description')}</span>
           </div>
           <button
             type="button"
             className="dynamic-bubble-icon-button"
-            aria-label="关闭气泡编辑器"
-            title="关闭"
+            aria-label={t('bubbleEditor.closeEditorAria')}
+            title={t('common.close')}
             onClick={onCancel}
             disabled={isBusy}
           >
@@ -444,7 +628,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
         </header>
 
         <div className="dynamic-bubble-editor-layout">
-          <section className="dynamic-bubble-preview-pane" aria-label="气泡预览">
+          <section className="dynamic-bubble-preview-pane" aria-label={t('bubbleEditor.preview.regionAria')}>
             <div
               className={`dynamic-bubble-stage-preview ${stageBackgroundUrl ? 'has-background' : ''}`}
               style={stageBackgroundUrl ? { backgroundImage: `url("${stageBackgroundUrl}")` } : undefined}
@@ -455,12 +639,12 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                 animate
                 playbackKey={playbackKey}
                 revealDelayMs={0}
-                ariaLabel="当前气泡效果预览"
+                ariaLabel={t('bubbleEditor.preview.currentAria')}
               />
             </div>
             <div className="dynamic-bubble-preview-actions">
               <div>
-                <strong>舞台预览</strong>
+                <strong>{t('edit.stagePreview')}</strong>
                 <span>16:9</span>
               </div>
               <button
@@ -470,7 +654,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                 disabled={draft.revealMode !== 'typewriter'}
               >
                 <RefreshCw aria-hidden="true" />
-                重播
+                {t('bubbleEditor.preview.replay')}
               </button>
             </div>
           </section>
@@ -478,7 +662,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
           <div className="dynamic-bubble-settings-pane">
             <div className="dynamic-bubble-settings-scroll">
               <fieldset className="dynamic-bubble-fieldset">
-                <legend><span>1</span>气泡类型</legend>
+                <legend><span>1</span>{t('bubbleEditor.section.type')}</legend>
                 <div className="dynamic-bubble-type-options">
                   <label className={draft.bubbleType === 'dialogue' ? 'is-selected' : ''}>
                     <input
@@ -490,7 +674,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                       onChange={() => handleBubbleTypeChange('dialogue')}
                     />
                     <span className="dynamic-bubble-option-icon"><MessageCircle aria-hidden="true" /></span>
-                    <span><strong>对话气泡</strong><small>角色说话</small></span>
+                    <span><strong>{t('bubbleEditor.type.dialogue')}</strong><small>{t('bubbleEditor.type.dialogueHint')}</small></span>
                     <Check className="dynamic-bubble-option-check" aria-hidden="true" />
                   </label>
                   <label className={draft.bubbleType === 'thought' ? 'is-selected' : ''}>
@@ -503,7 +687,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                       onChange={() => handleBubbleTypeChange('thought')}
                     />
                     <span className="dynamic-bubble-option-icon"><Cloud aria-hidden="true" /></span>
-                    <span><strong>想象气泡</strong><small>想法或画面</small></span>
+                    <span><strong>{t('bubbleEditor.type.thought')}</strong><small>{t('bubbleEditor.type.thoughtHint')}</small></span>
                     <Check className="dynamic-bubble-option-check" aria-hidden="true" />
                   </label>
                   <label className={draft.bubbleType === 'title' ? 'is-selected' : ''}>
@@ -516,17 +700,31 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                       onChange={() => handleBubbleTypeChange('title')}
                     />
                     <span className="dynamic-bubble-option-icon"><Heading aria-hidden="true" /></span>
-                    <span><strong>标题遮罩</strong><small>独立标题文字</small></span>
+                    <span><strong>{t('bubbleEditor.type.title')}</strong><small>{t('bubbleEditor.type.titleHint')}</small></span>
                     <Check className="dynamic-bubble-option-check" aria-hidden="true" />
                   </label>
                 </div>
               </fieldset>
 
               <fieldset className="dynamic-bubble-fieldset">
-                <legend><span>2</span>{isStandaloneTitle ? '标题样式' : '气泡样式'}</legend>
+                <legend><span>2</span>{t(isStandaloneTitle ? 'bubbleEditor.section.titleStyle' : 'bubbleEditor.section.bubbleStyle')}</legend>
                 <div className={`dynamic-bubble-style-options count-${styles.length}`}>
-                  {styles.map((style) => (
-                    <label key={style.id} className={draft.styleId === style.id ? 'is-selected' : ''}>
+                  {styles.map((style) => {
+                    const styleLabel = t(style.labelKey)
+                    const styleDescription = t(style.descriptionKey)
+                    const styleDefinition = isStandaloneTitle ? null : getBubbleShapeDefinition(style.id)
+                    const swatchSurfaceColor = usesDefaultSurface && styleDefinition
+                      ? styleDefinition.defaultSurfaceColor
+                      : surfaceColor
+                    const swatchOutlineColor = usesDefaultSurface && styleDefinition
+                      ? styleDefinition.defaultOutlineColor
+                      : outlineColor
+                    return (
+                    <label
+                      key={style.id}
+                      className={draft.styleId === style.id ? 'is-selected' : ''}
+                      title={`${styleLabel} · ${styleDescription}`}
+                    >
                       <input
                         type="radio"
                         name="bubble-style"
@@ -540,31 +738,132 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                           aria-hidden="true"
                         />
                       ) : (
-                        <span
-                          className={`dynamic-bubble-style-swatch style-${style.id.replace(/-(left|right)$/, '')} direction-${style.id.endsWith('-left') ? 'left' : 'right'}`}
-                          aria-hidden="true"
-                        >
-                          <i />
-                        </span>
+                        <BubbleShapeSwatch
+                          styleId={style.id}
+                          surfaceColor={swatchSurfaceColor}
+                          outlineColor={swatchOutlineColor}
+                        />
                       )}
-                      <strong>{style.label}</strong>
-                      <small>{style.description}</small>
+                      <strong>{styleLabel}</strong>
+                      <small>{styleDescription}</small>
                     </label>
-                  ))}
+                    )
+                  })}
                 </div>
+
+                {!isStandaloneTitle && (
+                  <div className="dynamic-bubble-surface-field">
+                    <div className="dynamic-bubble-surface-heading">
+                      <span>{t('bubbleEditor.surfaceColor')}</span>
+                      <small>{t('bubbleEditor.surfaceColorHint')}</small>
+                    </div>
+                    <div
+                      className="dynamic-bubble-color-options dynamic-bubble-surface-color-options"
+                      role="radiogroup"
+                      aria-label={t('bubbleEditor.surfaceColor')}
+                    >
+                      {showStyleDefaultSurface && activeShapeDefinition && (
+                        <label
+                          className={surfaceMatchesStyleDefault ? 'is-selected' : ''}
+                          title={t('bubbleEditor.color.styleDefault')}
+                        >
+                          <input
+                            type="radio"
+                            name="bubble-surface-color"
+                            value={activeShapeDefinition.defaultSurfaceColor}
+                            checked={surfaceMatchesStyleDefault}
+                            onChange={restoreBubbleSurface}
+                          />
+                          <span
+                            style={{
+                              backgroundColor: activeShapeDefinition.defaultSurfaceColor,
+                              borderColor: activeShapeDefinition.defaultOutlineColor
+                            }}
+                            aria-hidden="true"
+                          >
+                            {surfaceMatchesStyleDefault && <Check />}
+                          </span>
+                          <small>{t('bubbleEditor.color.styleDefault')}</small>
+                        </label>
+                      )}
+                      {BUBBLE_SURFACE_COLORS.map((colorOption) => {
+                        const colorLabel = t(colorOption.labelKey)
+                        const selected = surfaceColor.toLowerCase() === colorOption.color.toLowerCase()
+                        return (
+                          <label
+                            key={colorOption.color}
+                            className={selected ? 'is-selected' : ''}
+                            title={colorLabel}
+                          >
+                            <input
+                              type="radio"
+                              name="bubble-surface-color"
+                              value={colorOption.color}
+                              checked={selected}
+                              onChange={() => setBubbleSurfaceColor(colorOption.color)}
+                            />
+                            <span
+                              style={{
+                                backgroundColor: colorOption.color,
+                                borderColor: deriveBubbleOutlineColor(colorOption.color)
+                              }}
+                              aria-hidden="true"
+                            >
+                              {selected && <Check />}
+                            </span>
+                            <small>{colorLabel}</small>
+                          </label>
+                        )
+                      })}
+                      <label
+                        className={`dynamic-bubble-custom-color ${hasCustomSurfaceColor ? 'is-selected' : ''}`}
+                        title={t('bubbleEditor.color.custom')}
+                      >
+                        <input
+                          type="color"
+                          value={surfaceColor.slice(0, 7)}
+                          aria-label={t('bubbleEditor.color.custom')}
+                          onChange={(event) => setBubbleSurfaceColor(event.target.value)}
+                        />
+                        <span
+                          aria-hidden="true"
+                          style={hasCustomSurfaceColor
+                            ? {
+                                backgroundColor: surfaceColor,
+                                backgroundImage: 'none',
+                                borderColor: outlineColor
+                              }
+                            : undefined}
+                        >
+                          {hasCustomSurfaceColor && <Check />}
+                        </span>
+                        <small>{t('bubbleEditor.color.custom')}</small>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="dynamic-bubble-reset-color-button"
+                      onClick={restoreBubbleSurface}
+                      disabled={usesDefaultSurface}
+                      aria-label={t('bubbleEditor.restoreDefaultAria')}
+                    >
+                      {t('bubbleEditor.restoreDefault')}
+                    </button>
+                  </div>
+                )}
               </fieldset>
 
               <fieldset className="dynamic-bubble-fieldset">
-                <legend><span>3</span>内容</legend>
+                <legend><span>3</span>{t('bubbleEditor.section.content')}</legend>
                 {isStandaloneTitle ? (
                   <label className="dynamic-bubble-text-field">
-                    <span>标题文字</span>
+                    <span>{t('bubbleEditor.content.titleText')}</span>
                     <input
                       ref={titleTextInputRef}
                       type="text"
                       value={draft.bodyText}
                       maxLength={80}
-                      placeholder="输入要显示的标题"
+                      placeholder={t('bubbleEditor.content.titlePlaceholder')}
                       aria-invalid={Boolean(errors.content)}
                       aria-describedby={errors.content ? contentErrorId : undefined}
                       onChange={(event) => updateDraft('bodyText', event.target.value)}
@@ -573,13 +872,18 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                   </label>
                 ) : (
                   <label className="dynamic-bubble-text-field">
-                    <span>正文 {draft.bubbleType === 'thought' && <small>文字或图片至少填写一项</small>}</span>
+                    <span>
+                      {t('bubbleEditor.content.body')}
+                      {draft.bubbleType === 'thought' && <small>{t('bubbleEditor.content.thoughtRequirement')}</small>}
+                    </span>
                     <textarea
                       ref={bodyInputRef}
                       value={draft.bodyText}
                       maxLength={280}
                       rows={4}
-                      placeholder={draft.bubbleType === 'thought' ? '输入想法，也可以只添加图片' : '输入角色要说的话'}
+                      placeholder={t(draft.bubbleType === 'thought'
+                        ? 'bubbleEditor.content.thoughtPlaceholder'
+                        : 'bubbleEditor.content.dialoguePlaceholder')}
                       aria-invalid={Boolean(errors.content)}
                       aria-describedby={errors.content ? contentErrorId : undefined}
                       onChange={(event) => updateDraft('bodyText', event.target.value)}
@@ -591,8 +895,8 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                 {draft.bubbleType === 'thought' && (
                   <div className="dynamic-bubble-image-field">
                     <div className="dynamic-bubble-field-label">
-                      <span>图片 <small>可选</small></span>
-                      <small>系统会打开相册、拍照或文件</small>
+                      <span>{t('bubbleEditor.image.label')} <small>{t('bubbleEditor.image.optional')}</small></span>
+                      <small>{t('bubbleEditor.image.pickerHint')}</small>
                     </div>
                     <input
                       ref={imageInputRef}
@@ -605,11 +909,11 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                     {draft.image ? (
                       <div className="dynamic-bubble-image-selection">
                         <div className="dynamic-bubble-image-selection-preview">
-                          <img src={draft.image.url} alt={`已选择：${draft.image.name}`} />
+                          <img src={draft.image.url} alt={t('bubbleEditor.image.selectedAlt', { name: draft.image.name })} />
                         </div>
                         <div>
                           <strong>{draft.image.name}</strong>
-                          <span>完整居中显示</span>
+                          <span>{t('bubbleEditor.image.fitStatus')}</span>
                         </div>
                         <button
                           ref={imageActionRef}
@@ -617,13 +921,13 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                           className="dynamic-bubble-small-button"
                           onClick={() => imageInputRef.current?.click()}
                         >
-                          更换
+                          {t('bubbleEditor.image.replace')}
                         </button>
                         <button
                           type="button"
                           className="dynamic-bubble-icon-button danger"
-                          aria-label="移除图片"
-                          title="移除图片"
+                          aria-label={t('bubbleEditor.image.remove')}
+                          title={t('bubbleEditor.image.remove')}
                           onClick={removeImage}
                         >
                           <Trash2 aria-hidden="true" />
@@ -637,7 +941,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                         onClick={() => imageInputRef.current?.click()}
                       >
                         <ImagePlus aria-hidden="true" />
-                        <span><strong>添加图片</strong><small>任何尺寸都会完整显示</small></span>
+                        <span><strong>{t('bubbleEditor.image.add')}</strong><small>{t('bubbleEditor.image.fitHint')}</small></span>
                       </button>
                     )}
                   </div>
@@ -649,7 +953,7 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
               </fieldset>
 
               <fieldset className="dynamic-bubble-fieldset">
-                <legend><span>4</span>显示方式</legend>
+                <legend><span>4</span>{t('bubbleEditor.section.reveal')}</legend>
                 <div className="dynamic-bubble-reveal-options">
                   <label className={draft.revealMode === 'all' ? 'is-selected' : ''}>
                     <input
@@ -659,8 +963,8 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                       checked={draft.revealMode === 'all'}
                       onChange={() => updateDraft('revealMode', 'all')}
                     />
-                    <strong>全部显示</strong>
-                    <small>立即显示完整内容</small>
+                    <strong>{t('bubbleEditor.reveal.all')}</strong>
+                    <small>{t('bubbleEditor.reveal.allHint')}</small>
                   </label>
                   <label className={draft.revealMode === 'typewriter' ? 'is-selected' : ''}>
                     <input
@@ -673,35 +977,46 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                         setPlaybackKey((current) => current + 1)
                       }}
                     />
-                    <strong>逐字显示</strong>
-                    <small>文字按顺序出现</small>
+                    <strong>{t('bubbleEditor.reveal.typewriter')}</strong>
+                    <small>{t('bubbleEditor.reveal.typewriterHint')}</small>
                   </label>
                 </div>
 
                 {draft.revealMode === 'typewriter' && (
                   <label className="dynamic-bubble-range-field">
-                    <span><strong>显示速度</strong><output>{draft.revealIntervalMs <= 55 ? '快' : draft.revealIntervalMs >= 120 ? '慢' : '标准'}</output></span>
+                    <span>
+                      <strong>{t('bubbleEditor.reveal.speed')}</strong>
+                      <output>{t(draft.revealIntervalMs <= 55
+                        ? 'bubbleEditor.speed.fast'
+                        : draft.revealIntervalMs >= 120
+                          ? 'bubbleEditor.speed.slow'
+                          : 'bubbleEditor.speed.standard')}</output>
+                    </span>
                     <input
                       type="range"
                       min="35"
                       max="160"
                       step="5"
                       value={195 - draft.revealIntervalMs}
-                      aria-label="逐字显示速度"
+                      aria-label={t('bubbleEditor.reveal.speedAria')}
                       onChange={(event) => {
                         updateDraft('revealIntervalMs', 195 - Number(event.target.value))
                         setPlaybackKey((current) => current + 1)
                       }}
                     />
-                    <small><span>慢</span><span>标准</span><span>快</span></small>
+                    <small>
+                      <span>{t('bubbleEditor.speed.slow')}</span>
+                      <span>{t('bubbleEditor.speed.standard')}</span>
+                      <span>{t('bubbleEditor.speed.fast')}</span>
+                    </small>
                   </label>
                 )}
               </fieldset>
 
               <fieldset className="dynamic-bubble-fieldset">
-                <legend><span>5</span>文字外观</legend>
+                <legend><span>5</span>{t('bubbleEditor.section.textAppearance')}</legend>
                 <label className="dynamic-bubble-range-field">
-                  <span><strong>文字大小</strong><output>{draft.fontSizePx}px</output></span>
+                  <span><strong>{t('bubbleEditor.text.size')}</strong><output>{draft.fontSizePx}px</output></span>
                   <input
                     type="range"
                     min="32"
@@ -710,14 +1025,20 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                     value={draft.fontSizePx}
                     onChange={(event) => updateDraft('fontSizePx', Number(event.target.value))}
                   />
-                  <small><span>小</span><span>标准</span><span>大</span></small>
+                  <small>
+                    <span>{t('bubbleEditor.size.small')}</span>
+                    <span>{t('bubbleEditor.size.standard')}</span>
+                    <span>{t('bubbleEditor.size.large')}</span>
+                  </small>
                 </label>
 
                 <div className="dynamic-bubble-color-field">
-                  <span>文字颜色</span>
+                  <span>{t('bubbleEditor.text.color')}</span>
                   <div className="dynamic-bubble-color-options">
-                    {TEXT_COLORS.map((textColor) => (
-                      <label key={textColor.color} title={textColor.label}>
+                    {TEXT_COLORS.map((textColor) => {
+                      const colorLabel = t(textColor.labelKey)
+                      return (
+                      <label key={textColor.color} title={colorLabel}>
                         <input
                           type="radio"
                           name="text-color"
@@ -728,28 +1049,31 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                         <span style={{ backgroundColor: textColor.color }} aria-hidden="true">
                           {draft.textColor.toLowerCase() === textColor.color.toLowerCase() && <Check />}
                         </span>
-                        <small>{textColor.label}</small>
+                        <small>{colorLabel}</small>
                       </label>
-                    ))}
+                      )
+                    })}
                     <label className={`dynamic-bubble-custom-color ${hasCustomTextColor ? 'is-selected' : ''}`}>
                       <input
                         type="color"
                         value={draft.textColor}
-                        aria-label="自定义文字颜色"
+                        aria-label={t('bubbleEditor.text.customColorAria')}
                         onChange={(event) => updateDraft('textColor', event.target.value)}
                       />
                       <span
                         aria-hidden="true"
                         style={hasCustomTextColor ? { backgroundColor: draft.textColor, backgroundImage: 'none' } : undefined}
                       />
-                      <small>自定义</small>
+                      <small>{t('bubbleEditor.color.custom')}</small>
                     </label>
                   </div>
                   {hasLowTextContrast && (
                     <p className="dynamic-bubble-contrast-note" role="status">
                       {isStandaloneTitle
-                        ? '文字与遮罩颜色接近，建议换一种文字颜色。'
-                        : `对比度偏低，建议使用${usesDarkSurface ? '浅色' : '深色'}文字。`}
+                        ? t('bubbleEditor.contrastMaskText')
+                        : t(usesDarkSurface
+                            ? 'bubbleEditor.contrastUseLight'
+                            : 'bubbleEditor.contrastUseDark')}
                     </p>
                   )}
                 </div>
@@ -757,10 +1081,12 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                 {isStandaloneTitle && draft.styleId !== 'title-none' && (
                   <div className="dynamic-bubble-mask-appearance">
                     <div className="dynamic-bubble-color-field">
-                      <span>遮罩颜色</span>
+                      <span>{t('bubbleEditor.mask.color')}</span>
                       <div className="dynamic-bubble-color-options">
-                        {MASK_COLORS.map((colorOption) => (
-                          <label key={colorOption.color} title={colorOption.label}>
+                        {MASK_COLORS.map((colorOption) => {
+                          const colorLabel = t(colorOption.labelKey)
+                          return (
+                          <label key={colorOption.color} title={colorLabel}>
                             <input
                               type="radio"
                               name="mask-color"
@@ -771,28 +1097,29 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                             <span style={{ backgroundColor: colorOption.color }} aria-hidden="true">
                               {maskColor.toLowerCase() === colorOption.color.toLowerCase() && <Check />}
                             </span>
-                            <small>{colorOption.label}</small>
+                            <small>{colorLabel}</small>
                           </label>
-                        ))}
+                          )
+                        })}
                         <label className={`dynamic-bubble-custom-color ${hasCustomMaskColor ? 'is-selected' : ''}`}>
                           <input
                             type="color"
                             value={maskColor}
-                            aria-label="自定义遮罩颜色"
+                            aria-label={t('bubbleEditor.mask.customColorAria')}
                             onChange={(event) => updateDraft('maskColor', event.target.value)}
                           />
                           <span
                             aria-hidden="true"
                             style={hasCustomMaskColor ? { backgroundColor: maskColor, backgroundImage: 'none' } : undefined}
                           />
-                          <small>自定义</small>
+                          <small>{t('bubbleEditor.color.custom')}</small>
                         </label>
                       </div>
                     </div>
 
                     <label className="dynamic-bubble-range-field">
                       <span>
-                        <strong>遮罩透明度</strong>
+                        <strong>{t('bubbleEditor.mask.opacity')}</strong>
                         <output>{Math.round(draft.maskOpacity * 100)}%</output>
                       </span>
                       <input
@@ -801,10 +1128,14 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
                         max="100"
                         step="1"
                         value={Math.round(draft.maskOpacity * 100)}
-                        aria-label="遮罩透明度"
+                        aria-label={t('bubbleEditor.mask.opacity')}
                         onChange={(event) => updateDraft('maskOpacity', Number(event.target.value) / 100)}
                       />
-                      <small><span>透明</span><span>半透明</span><span>不透明</span></small>
+                      <small>
+                        <span>{t('bubbleEditor.opacity.transparent')}</span>
+                        <span>{t('bubbleEditor.opacity.semiTransparent')}</span>
+                        <span>{t('bubbleEditor.opacity.opaque')}</span>
+                      </small>
                     </label>
                   </div>
                 )}
@@ -818,10 +1149,10 @@ const DynamicBubbleEditor: React.FC<DynamicBubbleEditorProps> = ({
             {errors.submit && <p role="alert">{errors.submit}</p>}
           </div>
           <button type="button" className="dynamic-bubble-secondary-button" onClick={onCancel} disabled={isBusy}>
-            取消
+            {t('common.cancel')}
           </button>
           <button type="submit" className="dynamic-bubble-primary-button" disabled={isBusy}>
-            {isBusy ? '正在保存…' : mode === 'edit' ? '保存' : '添加气泡'}
+            {isBusy ? t('bubbleEditor.saving') : t(mode === 'edit' ? 'common.save' : 'bubbleEditor.heading.add')}
           </button>
         </footer>
       </form>

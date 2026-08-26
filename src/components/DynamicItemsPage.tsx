@@ -10,7 +10,11 @@ import {
   type DynamicGroup,
   type DynamicItem
 } from '../services/dynamicArtStorage.ts'
-import { sendDynamicEvent, uploadUnityAsset } from '../services/unityBridge.ts'
+import {
+  reserveDynamicGroupStateRevision,
+  sendDynamicEvent,
+  uploadUnityAsset
+} from '../services/unityBridge.ts'
 import { syncDynamicGroupToReceiver, type SyncStatus } from '../services/dynamicArtReceiverSync.ts'
 import DynamicItemThumbnail from './DynamicItemThumbnail.tsx'
 
@@ -248,6 +252,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
       const createdItem = nextGroup.items.find((item) => item.order === group.items.length)
         ?? nextGroup.items[nextGroup.items.length - 1]
       if (!createdItem || !isDynamicMediaItem(createdItem)) return
+      const stateRevision = reserveDynamicGroupStateRevision(nextGroup.id, nextGroup.updatedAt)
       uploadUnityAsset({
         ip: wsIp,
         port: dynamicPort,
@@ -258,7 +263,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
           itemId: createdItem.id,
           assetId: createdItem.media.id,
           mediaType: createdItem.media.type,
-          mimeType: createdItem.media.mimeType
+          mimeType: createdItem.media.mimeType,
+          stateRevision
         }
       })
       sendDynamicEvent(wsIp, dynamicPort, 'ItemCreate', {
@@ -267,7 +273,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
         assetId: createdItem.media.id,
         name: createdItem.name,
         order: createdItem.order,
-        gridIndex: createdItem.gridIndex
+        gridIndex: createdItem.gridIndex,
+        stateRevision
       })
       onGroupChange(nextGroup)
       resetCreator()
@@ -289,6 +296,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
 
       const updatedItem = nextGroup.items.find((item) => item.id === editingItem.id)
       if (!updatedItem || !isDynamicMediaItem(updatedItem)) return
+      const stateRevision = reserveDynamicGroupStateRevision(nextGroup.id, nextGroup.updatedAt)
 
       if (editFile) {
         uploadUnityAsset({
@@ -301,7 +309,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
             itemId: updatedItem.id,
             assetId: updatedItem.media.id,
             mediaType: updatedItem.media.type,
-            mimeType: updatedItem.media.mimeType
+            mimeType: updatedItem.media.mimeType,
+            stateRevision
           }
         })
       }
@@ -313,7 +322,8 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
         name: updatedItem.name,
         mediaType: updatedItem.media.type,
         mimeType: updatedItem.media.mimeType,
-        replacedAsset: Boolean(editFile)
+        replacedAsset: Boolean(editFile),
+        stateRevision
       })
       onGroupChange(nextGroup)
       resetEditor()

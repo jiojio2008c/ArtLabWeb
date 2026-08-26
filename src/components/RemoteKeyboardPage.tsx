@@ -35,6 +35,7 @@ import {
   primeRemoteKeyboardAudio,
   type RemoteKnobSize
 } from '../services/remoteKeyboardAudio.ts'
+import BrandLogo from './BrandLogo.tsx'
 
 interface RemoteKeyboardPageProps {
   wsIp: string
@@ -194,7 +195,7 @@ const MechanicalKey: React.FC<{
     <button
       ref={buttonRef}
       type="button"
-      className={`remote-key remote-key-${definition.skin} ${pressed ? 'is-pressed' : ''}`}
+      className={`remote-key remote-key-${definition.skin} ${definition.modeNumber ? 'remote-key-preset' : ''} ${pressed ? 'is-pressed' : ''}`}
       data-ui-feedback="none"
       aria-label={ariaLabel}
       title={ariaLabel}
@@ -412,7 +413,7 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
           <span className="remote-knob-ridges" />
           <span className="remote-knob-metal">
             {brand ? (
-              <span className="remote-knob-brand"><small>Magic</small><strong>FLOOR</strong></span>
+              <BrandLogo className="remote-knob-brand-logo" />
             ) : (
               <span className="remote-knob-indicator" />
             )}
