@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import LoginPage from './components/LoginPage.tsx'
 import EntryPage from './components/EntryPage.tsx'
@@ -14,15 +13,10 @@ import DynamicBackgroundPage from './components/DynamicBackgroundPage.tsx'
 import DynamicGroupsPage from './components/DynamicGroupsPage.tsx'
 import DynamicItemsPage from './components/DynamicItemsPage.tsx'
 import DynamicControlPage from './components/DynamicControlPage.tsx'
-import { getContentAwareThumbnailSource } from './components/ContentAwareThumbnail.tsx'
 import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
-import DynamicArtworkTransition from './components/dynamicTransitions/DynamicArtworkTransition.tsx'
 import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
 import DirectThemeUploadReturnTransition from './components/interactiveTransitions/DirectThemeUploadReturnTransition.tsx'
-import type {
-  DynamicArtworkTransitionRequest,
-  DynamicTransitionOrigin
-} from './components/dynamicTransitions/types.ts'
+import type { DynamicTransitionOrigin } from './components/dynamicTransitions/types.ts'
 import {
   loadNetworkSettings,
   saveNetworkSettings,
@@ -30,7 +24,6 @@ import {
 } from './services/appSettings.ts'
 import { DIRECT_UPLOAD_THEMES, getDirectMasksForTheme, type DirectUploadTheme } from './services/directUploadThemes.ts'
 import {
-  getDynamicItemMedia,
   loadDynamicGroups,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
@@ -70,7 +63,7 @@ type Page =
   | 'directSelect'
   | 'directUpload'
   | 'directComplete'
-type TransitionDirection = 'forward' | 'backward' | 'neutral' | 'portal'
+type TransitionDirection = 'forward' | 'backward' | 'neutral' | 'portal' | 'instant'
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated'
 
 const pageOrder: Record<Page, number> = {
@@ -100,14 +93,12 @@ function App() {
   const [directThemeUploadTransition, setDirectThemeUploadTransition] = useState<DirectThemeUploadTransitionRequest | null>(null)
   const [directThemeUploadReturnTransition, setDirectThemeUploadReturnTransition] = useState(false)
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
-  const [dynamicArchiveGroups, setDynamicArchiveGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
   const [dynamicEditorExperience, setDynamicEditorExperience] = useState<DynamicCreationFlowExperience>('free')
   const [dynamicPortalOrigin, setDynamicPortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
   const [interactivePortalOrigin, setInteractivePortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
-  const [dynamicArtworkTransition, setDynamicArtworkTransition] = useState<DynamicArtworkTransitionRequest | null>(null)
   const [dynamicArchiveReturnActive, setDynamicArchiveReturnActive] = useState(false)
   const [dynamicArchiveReplayId, setDynamicArchiveReplayId] = useState('')
   const [homeReturnScope, setHomeReturnScope] = useState<HomeReturnScope | null>(null)
@@ -126,7 +117,7 @@ function App() {
   const directSelectRootRef = useRef<HTMLElement>(null)
   const directUploadRootRef = useRef<HTMLElement>(null)
 
-  dynamicHomeReturnBlockedRef.current = Boolean(dynamicPortalOrigin || dynamicArtworkTransition)
+  dynamicHomeReturnBlockedRef.current = Boolean(dynamicPortalOrigin)
   interactiveHomeReturnBlockedRef.current = Boolean(
     interactivePortalOrigin
     || directThemeUploadTransition
@@ -134,40 +125,6 @@ function App() {
   )
 
   const selectedDynamicGroup = dynamicGroups.find((group) => group.id === selectedDynamicGroupId)
-
-  const mergeDynamicArchiveGroups = (currentGroups: DynamicGroup[], nextGroups: DynamicGroup[]) => {
-    const currentById = new Map(currentGroups.map((group) => [group.id, group]))
-    const getMediaSignature = (media: DynamicGroup['thumbnail'] | DynamicGroup['background']) => media
-      ? [media.id, media.name, media.type, media.url, media.width ?? 0, media.height ?? 0].join(':')
-      : ''
-    const getGroupSignature = (group: DynamicGroup) => JSON.stringify([
-      group.id,
-      group.name,
-      group.folderId ?? '',
-      group.libraryOrder ?? -1,
-      group.activeBackgroundId ?? '',
-      getMediaSignature(group.thumbnail),
-      getMediaSignature(group.background),
-      (group.backgrounds ?? []).map((background) => getMediaSignature(background)),
-      group.items.map((item) => [
-        item.id,
-        item.name,
-        item.kind,
-        item.kind === 'bubble'
-          ? JSON.stringify(item.bubble)
-          : getMediaSignature(item.media)
-      ])
-    ])
-    const mergedGroups = nextGroups.map((group) => {
-      const currentGroup = currentById.get(group.id)
-      return currentGroup && getGroupSignature(currentGroup) === getGroupSignature(group)
-        ? currentGroup
-        : group
-    })
-    const unchanged = mergedGroups.length === currentGroups.length
-      && mergedGroups.every((group, index) => group === currentGroups[index])
-    return unchanged ? currentGroups : mergedGroups
-  }
 
   const navigateTo = (nextPage: Page) => {
     const nextDirection =
@@ -242,7 +199,6 @@ function App() {
         setInteractivePortalOrigin(null)
         setDirectThemeUploadTransition(null)
         setDirectThemeUploadReturnTransition(false)
-        setDynamicArtworkTransition(null)
         homeReturnRequestRef.current = null
         homeReturnPendingRef.current = false
         if (homeReturnResetTimerRef.current !== null) {
@@ -471,33 +427,21 @@ function App() {
 
   const resolveDynamicEditorExperience = (_experience: DynamicCreationFlowExperience) => 'free' as const
 
-  const beginDynamicArtworkTransition = (
+  const openDynamicGroup = (
     group: DynamicGroup,
-    origin?: DynamicTransitionOrigin,
+    _origin?: DynamicTransitionOrigin,
     experience?: DynamicCreationFlowExperience
   ) => {
     clearDynamicArchiveSyncTimers()
-    setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
     if (experience) setDynamicEditorExperience(resolveDynamicEditorExperience(experience))
-    const preview = group.thumbnail
-      ?? group.background
-      ?? group.items.map(getDynamicItemMedia).find(Boolean)
-    setDynamicArtworkTransition({
-      direction: 'forward',
-      groupId: group.id,
-      groupName: group.name,
-      previewUrl: group.thumbnail?.type === 'image'
-        ? getContentAwareThumbnailSource(group.thumbnail.url)
-        : preview?.url,
-      previewType: preview?.type,
-      origin
-    })
+    setTransitionDirection('instant')
+    setCurrentPage('dynamicControl')
   }
 
   const handleCreateDynamicGroup = (group: DynamicGroup) => {
-    beginDynamicArtworkTransition(group, undefined, 'free')
+    openDynamicGroup(group, undefined, 'free')
   }
 
   const handleDeleteDynamicGroup = (groupId: string) => {
@@ -575,7 +519,7 @@ function App() {
   }, [requestHomeReturn])
 
   const handleSelectDynamicGroup = (group: DynamicGroup, origin?: DynamicTransitionOrigin) => {
-    beginDynamicArtworkTransition(group, origin, 'free')
+    openDynamicGroup(group, origin, 'free')
   }
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
@@ -592,21 +536,16 @@ function App() {
   }
 
   const handleReturnFromDynamicControl = () => {
-    if (!selectedDynamicGroup || dynamicArtworkTransition) return
-    setDynamicArchiveGroups((currentGroups) => mergeDynamicArchiveGroups(currentGroups, dynamicGroups))
-    setDynamicArchiveReplayId(makeDynamicArchiveReplayId())
-    const preview = selectedDynamicGroup.thumbnail
-      ?? selectedDynamicGroup.background
-      ?? selectedDynamicGroup.items.map(getDynamicItemMedia).find(Boolean)
-    setDynamicArtworkTransition({
-      direction: 'backward',
-      groupId: selectedDynamicGroup.id,
-      groupName: selectedDynamicGroup.name,
-      previewUrl: selectedDynamicGroup.thumbnail?.type === 'image'
-        ? getContentAwareThumbnailSource(selectedDynamicGroup.thumbnail.url)
-        : preview?.url,
-      previewType: preview?.type
-    })
+    if (!selectedDynamicGroup) return
+    const replayId = makeDynamicArchiveReplayId()
+    setDynamicArchiveReplayId(replayId)
+    sendDynamicArchiveReturn(
+      networkSettings.wsIp,
+      networkSettings.dynamicPort,
+      replayId
+    )
+    setTransitionDirection('instant')
+    setCurrentPage('dynamicGroups')
   }
 
   const handleAuthenticated = () => {
@@ -619,7 +558,6 @@ function App() {
     setInteractivePortalOrigin(null)
     setDirectThemeUploadTransition(null)
     setDirectThemeUploadReturnTransition(false)
-    setDynamicArtworkTransition(null)
     homeReturnRequestRef.current = null
     homeReturnPendingRef.current = false
     if (homeReturnResetTimerRef.current !== null) {
@@ -642,7 +580,6 @@ function App() {
     setInteractivePortalOrigin(null)
     setDirectThemeUploadTransition(null)
     setDirectThemeUploadReturnTransition(false)
-    setDynamicArtworkTransition(null)
     homeReturnRequestRef.current = null
     homeReturnPendingRef.current = false
     if (homeReturnResetTimerRef.current !== null) {
@@ -679,9 +616,7 @@ function App() {
     )
   }
 
-  const dynamicTransitionClass = dynamicArtworkTransition
-    ? `dynamic-story-route-active dynamic-story-route-${dynamicArtworkTransition.direction}`
-    : dynamicPortalOrigin
+  const dynamicTransitionClass = dynamicPortalOrigin
       ? 'dynamic-portal-route-active'
       : interactivePortalOrigin
         ? 'interactive-magic-route-active'
@@ -691,29 +626,13 @@ function App() {
           ? 'direct-theme-upload-route-active'
         : ''
 
-  const backwardDynamicArtworkTransition = dynamicArtworkTransition?.direction === 'backward'
-  const forwardDynamicArtworkTransition = dynamicArtworkTransition?.direction === 'forward'
   const shouldRenderDynamicGroups = currentPage === 'dynamicGroups'
-    || currentPage === 'dynamicControl'
-    || Boolean(dynamicArtworkTransition)
   const shouldRenderDynamicControl = Boolean(
     selectedDynamicGroup
-    && (currentPage === 'dynamicControl' || Boolean(dynamicArtworkTransition))
+    && currentPage === 'dynamicControl'
   )
-  const dualDynamicArtworkRoute = Boolean(
-    shouldRenderDynamicGroups
-    && shouldRenderDynamicControl
-  )
-  const archiveTransitionPrepared = backwardDynamicArtworkTransition
-    || (currentPage === 'dynamicControl' && !forwardDynamicArtworkTransition)
-  const renderedDynamicArchiveGroups = currentPage === 'dynamicGroups' && !dynamicArtworkTransition
-    ? dynamicGroups
-    : dynamicArchiveGroups.length > 0
-      ? dynamicArchiveGroups
-      : dynamicGroups
   const dynamicArtSurfaceActive = Boolean(
     dynamicPortalOrigin
-    || dynamicArtworkTransition
     || currentPage === 'dynamicGroups'
     || currentPage === 'dynamicBackground'
     || currentPage === 'dynamicItems'
@@ -727,13 +646,13 @@ function App() {
     <div className={`app-shell min-h-screen ${dynamicTransitionClass} ${dynamicArchiveReturnActive ? 'dynamic-archive-return-active' : ''} ${dynamicArtSurfaceActive ? 'dynamic-art-route-surface' : ''} ${magicFloorSurfaceActive ? 'magic-floor-route-surface' : ''}`} onPointerDown={handleGlobalButtonPointerDown}>
       {portraitLock}
 
-      <div className={`page-frame page-${transitionDirection} page-view-${currentPage} ${dualDynamicArtworkRoute ? 'dynamic-story-dual-route' : ''}`}>
+      <div className={`page-frame page-${transitionDirection} page-view-${currentPage}`}>
         {shouldRenderDynamicGroups || shouldRenderDynamicControl ? (
           <>
             {shouldRenderDynamicGroups && (
               <DynamicGroupsPage
                 key="dynamic-groups-route"
-                groups={renderedDynamicArchiveGroups}
+                groups={dynamicGroups}
                 wsIp={networkSettings.wsIp}
                 dynamicPort={networkSettings.dynamicPort}
                 onBack={handleReturnFromDynamicGroups}
@@ -742,7 +661,7 @@ function App() {
                 onDeleteGroup={handleDeleteDynamicGroup}
                 onSelectGroup={handleSelectDynamicGroup}
                 portalArrival={Boolean(dynamicPortalOrigin)}
-                transitionPrepared={Boolean(archiveTransitionPrepared)}
+                transitionPrepared={false}
                 archiveReplayId={dynamicArchiveReplayId}
               />
             )}
@@ -758,7 +677,7 @@ function App() {
                 onGroupChange={updateDynamicGroupState}
                 initialItemId={selectedDynamicItemId}
                 initialExperience={dynamicEditorExperience}
-                transitionPreparing={Boolean(forwardDynamicArtworkTransition)}
+                transitionPreparing={false}
               />
             )}
           </>
@@ -908,31 +827,6 @@ function App() {
             setCurrentPage('directSelect')
           }}
           onComplete={() => setDirectThemeUploadReturnTransition(false)}
-        />
-      )}
-
-      {dynamicArtworkTransition && (
-        <DynamicArtworkTransition
-          request={dynamicArtworkTransition}
-          onSceneSwitch={() => {
-            if (dynamicArtworkTransition.direction === 'backward') {
-              sendDynamicArchiveReturn(
-                networkSettings.wsIp,
-                networkSettings.dynamicPort,
-                dynamicArchiveReplayId
-              )
-            }
-            flushSync(() => {
-              setTransitionDirection(dynamicArtworkTransition.direction === 'forward' ? 'forward' : 'backward')
-              setCurrentPage(dynamicArtworkTransition.direction === 'forward' ? 'dynamicControl' : 'dynamicGroups')
-            })
-          }}
-          onComplete={() => {
-            flushSync(() => {
-              setTransitionDirection('portal')
-              setDynamicArtworkTransition(null)
-            })
-          }}
         />
       )}
 

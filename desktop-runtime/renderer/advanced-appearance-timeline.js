@@ -4,6 +4,7 @@ export const APPEARANCE_FADE_DURATION_MS = 420
 export const APPEARANCE_DROP_DURATION_MS = 620
 export const APPEARANCE_TRACK_SLIDE_DURATION_MS = 560
 export const MAX_LINKED_APPEARANCE_DELAY_MS = 600000
+export const MAX_DYNAMIC_APPEARANCE_TIME_MS = 86400000
 export const DYNAMIC_APPEARANCE_EASING = 'cubic-bezier(0.333333, 0, 0.666667, 1)'
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value))
@@ -42,6 +43,29 @@ export const normalizeDynamicLinkedAppearance = (
     MAX_LINKED_APPEARANCE_DELAY_MS
   )
   return { triggerItemId, mode, delayMs }
+}
+
+export const normalizeDynamicAppearanceTimeMs = (value, fallback = 0) => {
+  const numericValue = Number(value)
+  const numericFallback = Number(fallback)
+  return clamp(
+    Number.isFinite(numericValue)
+      ? Math.round(numericValue)
+      : Number.isFinite(numericFallback)
+        ? Math.round(numericFallback)
+        : 0,
+    0,
+    MAX_DYNAMIC_APPEARANCE_TIME_MS
+  )
+}
+
+const getExplicitAppearanceTimeMs = (item, field) => {
+  const sourceValue = item?.[field]
+  if (sourceValue === null || sourceValue === undefined || sourceValue === '') return null
+  const value = Number(sourceValue)
+  return Number.isFinite(value)
+    ? normalizeDynamicAppearanceTimeMs(value)
+    : null
 }
 
 const getNormalizedLinkMap = (items) => {
@@ -184,12 +208,16 @@ export const buildDynamicAppearanceTimeline = ({
     ? activeItemIds
     : new Set(activeItemIds)
   const validLinkByItemId = getValidNormalizedLinkMap(items)
+  const independentItemIds = new Set(items
+    .filter((item) => getExplicitAppearanceTimeMs(item, 'appearanceDelayMs') !== null)
+    .map(getItemId)
+    .filter(Boolean))
   const normalItemIds = items
     .map(getItemId)
     .filter((itemId) => (
       itemId
       && !alreadyActiveItemIds.has(itemId)
-      && !validLinkByItemId.has(itemId)
+      && (!validLinkByItemId.has(itemId) || independentItemIds.has(itemId))
     ))
   const normalIndexByItemId = new Map(normalItemIds.map((itemId, index) => [itemId, index]))
   const timelineByItemId = new Map()
@@ -201,12 +229,17 @@ export const buildDynamicAppearanceTimeline = ({
     const item = itemById.get(itemId)
     if (!item) return undefined
 
-    const link = validLinkByItemId.get(itemId)
+    const explicitAppearanceDelayMs = getExplicitAppearanceTimeMs(item, 'appearanceDelayMs')
+    const explicitAppearanceHideMs = getExplicitAppearanceTimeMs(item, 'appearanceHideMs')
+    const link = explicitAppearanceDelayMs === null
+      ? validLinkByItemId.get(itemId)
+      : undefined
 
     if (alreadyActiveItemIds.has(itemId) && !link) {
+      const hideStartMs = explicitAppearanceHideMs
       const schedule = {
         itemId,
-        kind: 'normal',
+        kind: hideStartMs === null ? 'normal' : 'hideAfter',
         linked: false,
         triggerItemId: null,
         delayMs: 0,
@@ -215,8 +248,10 @@ export const buildDynamicAppearanceTimeline = ({
         entranceDurationMs: 0,
         appearanceCompleteMs: 0,
         activeStartMs: 0,
-        hideStartMs: null,
-        hideCompleteMs: null,
+        hideStartMs,
+        hideCompleteMs: hideStartMs === null
+          ? null
+          : hideStartMs + APPEARANCE_FADE_DURATION_MS,
         sequenceIndex: -1
       }
       timelineByItemId.set(itemId, schedule)
@@ -269,22 +304,30 @@ export const buildDynamicAppearanceTimeline = ({
     }
 
     const sequenceIndex = normalIndexByItemId.get(itemId) ?? 0
-    const entranceStartMs = appearMode === 'sequence'
-      ? sequenceIndex * normalizedIntervalMs
-      : 0
+    const entranceStartMs = explicitAppearanceDelayMs ?? (
+      appearMode === 'sequence'
+        ? sequenceIndex * normalizedIntervalMs
+        : 0
+    )
+    const hideStartMs = explicitAppearanceHideMs
+    const itemEntranceDurationMs = hideStartMs !== null && entranceStartMs === 0
+      ? 0
+      : entranceDurationMs
     const schedule = {
       itemId,
-      kind: 'normal',
+      kind: hideStartMs === null ? 'normal' : 'hideAfter',
       linked: false,
       triggerItemId: null,
       delayMs: 0,
-      appearAnimation: normalizedAnimation,
+      appearAnimation: itemEntranceDurationMs > 0 ? normalizedAnimation : 'none',
       entranceStartMs,
-      entranceDurationMs,
-      appearanceCompleteMs: entranceStartMs + entranceDurationMs,
+      entranceDurationMs: itemEntranceDurationMs,
+      appearanceCompleteMs: entranceStartMs + itemEntranceDurationMs,
       activeStartMs: entranceStartMs,
-      hideStartMs: null,
-      hideCompleteMs: null,
+      hideStartMs,
+      hideCompleteMs: hideStartMs === null
+        ? null
+        : hideStartMs + APPEARANCE_FADE_DURATION_MS,
       sequenceIndex
     }
     timelineByItemId.set(itemId, schedule)
@@ -293,6 +336,48 @@ export const buildDynamicAppearanceTimeline = ({
 
   items.forEach((item) => resolveSchedule(getItemId(item)))
   return Object.fromEntries(timelineByItemId)
+}
+
+export const convertDynamicLinkedAppearanceToIndependentTiming = ({
+  items = [],
+  appearMode = 'all',
+  intervalMs = 800,
+  appearAnimation = 'none'
+} = {}) => {
+  const synchronizedItems = synchronizeDynamicLinkedBackgrounds(items)
+  const orderedTimelineItems = synchronizedItems
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const leftOrder = Number(left.item?.order)
+      const rightOrder = Number(right.item?.order)
+      const normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0
+      const normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0
+      return normalizedLeftOrder - normalizedRightOrder || left.index - right.index
+    })
+    .map(({ item }) => item)
+  const timeline = buildDynamicAppearanceTimeline({
+    items: orderedTimelineItems,
+    appearMode,
+    intervalMs,
+    appearAnimation
+  })
+
+  return synchronizedItems.map((item) => {
+    const itemId = getItemId(item)
+    const schedule = timeline[itemId]
+    const explicitDelayMs = getExplicitAppearanceTimeMs(item, 'appearanceDelayMs')
+    const explicitHideMs = getExplicitAppearanceTimeMs(item, 'appearanceHideMs')
+    return {
+      ...item,
+      appearanceDelayMs: explicitDelayMs ?? normalizeDynamicAppearanceTimeMs(schedule?.entranceStartMs),
+      appearanceHideMs: explicitHideMs
+        ?? (schedule?.hideStartMs === null || schedule?.hideStartMs === undefined
+          ? undefined
+          : normalizeDynamicAppearanceTimeMs(schedule.hideStartMs)),
+      hideAfterTarget: item?.hideAfterTarget === true,
+      linkedAppearance: undefined
+    }
+  })
 }
 
 const smoothstep = (value) => {
@@ -306,25 +391,17 @@ export const sampleDynamicAppearanceTimeline = (schedule, elapsedMs) => {
   }
 
   const elapsed = Number(elapsedMs) || 0
-  if (schedule.kind === 'hideAfter') {
-    const alpha = schedule.hideStartMs === null
-      ? 1
-      : 1 - smoothstep((elapsed - schedule.hideStartMs) / APPEARANCE_FADE_DURATION_MS)
-    return {
-      alpha,
-      active: elapsed >= 0 && alpha > 0.001,
-      interactive: alpha > 0.04,
-      animationElapsedMs: Math.max(0, elapsed)
-    }
-  }
-
-  const alpha = schedule.entranceDurationMs <= 0
+  const entranceAlpha = schedule.entranceDurationMs <= 0
     ? (elapsed >= schedule.entranceStartMs ? 1 : 0)
     : smoothstep((elapsed - schedule.entranceStartMs) / schedule.entranceDurationMs)
+  const hideAlpha = schedule.hideStartMs === null
+    ? 1
+    : 1 - smoothstep((elapsed - schedule.hideStartMs) / APPEARANCE_FADE_DURATION_MS)
+  const alpha = entranceAlpha * hideAlpha
   return {
     alpha,
-    active: elapsed >= schedule.activeStartMs,
-    interactive: alpha > 0.04,
+    active: elapsed >= schedule.activeStartMs && alpha > 0.001,
+    interactive: elapsed >= schedule.activeStartMs && alpha > 0.04,
     animationElapsedMs: Math.max(0, elapsed - schedule.activeStartMs)
   }
 }
@@ -334,7 +411,10 @@ export const getDynamicAppearanceAnimationSeekMs = (schedule, elapsedMs) => {
 
   const numericElapsed = Number(elapsedMs)
   const elapsed = Number.isFinite(numericElapsed) ? Math.max(0, numericElapsed) : 0
-  if (schedule.kind === 'hideAfter') {
+  if (
+    schedule.hideStartMs !== null
+    && elapsed >= schedule.hideStartMs
+  ) {
     const hideStartMs = Number(schedule.hideStartMs)
     if (!Number.isFinite(hideStartMs)) return 0
     return clamp(elapsed - hideStartMs, 0, APPEARANCE_FADE_DURATION_MS)

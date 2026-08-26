@@ -120,7 +120,30 @@ const normalizeAppearAnimation = (value) => (
   value === 'drop' || value === 'trackSlide' ? value : 'none'
 )
 
-const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 3
+const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 4
+const MAX_DYNAMIC_APPEARANCE_TIME_MS = 86400000
+const APPEARANCE_FADE_DURATION_MS = 420
+
+const normalizeAppearanceTime = (value, fallback = 0) => {
+  const numericValue = Number(value)
+  const numericFallback = Number(fallback)
+  return Math.min(
+    MAX_DYNAMIC_APPEARANCE_TIME_MS,
+    Math.max(0, Math.round(
+      Number.isFinite(numericValue)
+        ? numericValue
+        : Number.isFinite(numericFallback)
+          ? numericFallback
+          : 0
+    ))
+  )
+}
+
+const getAppearanceAnimationDuration = (value) => {
+  if (value === 'drop') return 620
+  if (value === 'trackSlide') return 560
+  return APPEARANCE_FADE_DURATION_MS
+}
 
 const normalizeBackgroundTransition = (value, fallback = 'none') => (
   value === 'curtain' || value === 'cameraFlash' || value === 'shadowPlay' || value === 'none'
@@ -206,44 +229,141 @@ const normalizeGroupItemLinksForModel = (group, items = []) => {
   const modelVersion = Number(group.linkedAppearanceModelVersion)
   if (Number.isFinite(modelVersion) && modelVersion >= DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION) {
     group.linkedAppearanceModelVersion = modelVersion
-    return modelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
-      ? normalizeGroupItemLinks(items)
-      : items
+    return items.map((item) => ({
+      ...item,
+      appearanceDelayMs: item.appearanceDelayMs === null || item.appearanceDelayMs === undefined
+        ? undefined
+        : normalizeAppearanceTime(item.appearanceDelayMs),
+      appearanceHideMs: item.appearanceHideMs === null || item.appearanceHideMs === undefined
+        ? undefined
+        : normalizeAppearanceTime(item.appearanceHideMs),
+      hideAfterTarget: item.hideAfterTarget === true,
+      linkedAppearance: null
+    }))
   }
 
-  const validItemIds = new Set(items.map((item) => item.itemId).filter(Boolean))
-  const migratedItems = items.map((item) => ({ ...item, linkedAppearance: null }))
-  const targetIndexById = new Map(migratedItems.map((item, index) => [item.itemId, index]))
+  let linkedItems = items
+  if (!Number.isFinite(modelVersion) || modelVersion < 3) {
+    const validItemIds = new Set(items.map((item) => item.itemId).filter(Boolean))
+    linkedItems = items.map((item) => ({ ...item, linkedAppearance: null }))
+    const targetIndexById = new Map(linkedItems.map((item, index) => [item.itemId, index]))
 
-  items
-    .map((sourceItem) => ({
-      sourceItem,
-      legacyLink: normalizeLinkedAppearance(
-        sourceItem.linkedAppearance,
-        sourceItem.itemId,
-        validItemIds
-      )
-    }))
-    .filter(({ legacyLink }) => legacyLink)
-    .sort((left, right) => (
-      (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
-      || (left.sourceItem.order ?? 0) - (right.sourceItem.order ?? 0)
-    ))
-    .forEach(({ sourceItem, legacyLink }) => {
-      const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
-      if (targetIndex === undefined || migratedItems[targetIndex].linkedAppearance) return
-      migratedItems[targetIndex] = {
-        ...migratedItems[targetIndex],
-        linkedAppearance: {
-          triggerItemId: sourceItem.itemId,
-          mode: legacyLink.mode,
-          delayMs: legacyLink.delayMs
+    items
+      .map((sourceItem) => ({
+        sourceItem,
+        legacyLink: normalizeLinkedAppearance(
+          sourceItem.linkedAppearance,
+          sourceItem.itemId,
+          validItemIds
+        )
+      }))
+      .filter(({ legacyLink }) => legacyLink)
+      .sort((left, right) => (
+        (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
+        || (left.sourceItem.order ?? 0) - (right.sourceItem.order ?? 0)
+      ))
+      .forEach(({ sourceItem, legacyLink }) => {
+        const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
+        if (targetIndex === undefined || linkedItems[targetIndex].linkedAppearance) return
+        linkedItems[targetIndex] = {
+          ...linkedItems[targetIndex],
+          linkedAppearance: {
+            triggerItemId: sourceItem.itemId,
+            mode: legacyLink.mode,
+            delayMs: legacyLink.delayMs
+          }
+        }
+      })
+  }
+
+  const synchronizedItems = normalizeGroupItemLinks(linkedItems)
+  const itemById = new Map(synchronizedItems.map((item) => [item.itemId, item]))
+  const rootItems = synchronizedItems
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !item.linkedAppearance)
+    .sort((left, right) => {
+      const leftOrder = Number(left.item.order)
+      const rightOrder = Number(right.item.order)
+      const normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0
+      const normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0
+      return normalizedLeftOrder - normalizedRightOrder || left.index - right.index
+    })
+    .map(({ item }) => item)
+  const rootIndexById = new Map(rootItems.map((item, index) => [item.itemId, index]))
+  const numericAppearIntervalMs = Number(group.appearIntervalMs)
+  const normalizedAppearIntervalMs = Math.min(
+    5000,
+    Math.max(
+      100,
+      Number.isFinite(numericAppearIntervalMs)
+        ? Math.round(numericAppearIntervalMs)
+        : 800
+    )
+  )
+  const schedules = new Map()
+  const resolveSchedule = (itemId, visiting = new Set()) => {
+    if (schedules.has(itemId)) return schedules.get(itemId)
+    const item = itemById.get(itemId)
+    if (!item || visiting.has(itemId)) return null
+    const explicitDelay = item.appearanceDelayMs === null || item.appearanceDelayMs === undefined
+      ? null
+      : normalizeAppearanceTime(item.appearanceDelayMs)
+    const explicitHide = item.appearanceHideMs === null || item.appearanceHideMs === undefined
+      ? null
+      : normalizeAppearanceTime(item.appearanceHideMs)
+    const link = explicitDelay === null ? item.linkedAppearance : null
+    let schedule
+    if (link) {
+      const triggerSchedule = resolveSchedule(link.triggerItemId, new Set([...visiting, itemId]))
+      if (triggerSchedule) {
+        const triggerCompleteMs = triggerSchedule.appearanceCompleteMs
+        if (link.mode === 'hideAfter') {
+          schedule = {
+            appearanceDelayMs: 0,
+            appearanceCompleteMs: 0,
+            appearanceHideMs: normalizeAppearanceTime(triggerCompleteMs + link.delayMs)
+          }
+        } else {
+          const appearanceDelayMs = normalizeAppearanceTime(triggerCompleteMs + link.delayMs)
+          schedule = {
+            appearanceDelayMs,
+            appearanceCompleteMs: normalizeAppearanceTime(appearanceDelayMs + APPEARANCE_FADE_DURATION_MS),
+            appearanceHideMs: explicitHide
+          }
         }
       }
-    })
+    }
+    if (!schedule) {
+      const appearanceDelayMs = explicitDelay ?? (
+        group.appearMode === 'sequence'
+          ? (rootIndexById.get(itemId) ?? 0) * normalizedAppearIntervalMs
+          : 0
+      )
+      const entranceDurationMs = explicitHide === null
+        ? getAppearanceAnimationDuration(group.appearAnimation)
+        : 0
+      schedule = {
+        appearanceDelayMs: normalizeAppearanceTime(appearanceDelayMs),
+        appearanceCompleteMs: normalizeAppearanceTime(appearanceDelayMs + entranceDurationMs),
+        appearanceHideMs: explicitHide
+      }
+    }
+    schedules.set(itemId, schedule)
+    return schedule
+  }
 
+  synchronizedItems.forEach((item) => resolveSchedule(item.itemId))
   group.linkedAppearanceModelVersion = DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
-  return normalizeGroupItemLinks(migratedItems)
+  return synchronizedItems.map((item) => {
+    const schedule = schedules.get(item.itemId)
+    return {
+      ...item,
+      appearanceDelayMs: schedule?.appearanceDelayMs ?? 0,
+      appearanceHideMs: schedule?.appearanceHideMs ?? null,
+      hideAfterTarget: item.hideAfterTarget === true,
+      linkedAppearance: null
+    }
+  })
 }
 
 const getLocalAddresses = () => {
@@ -471,6 +591,8 @@ const defaultItem = (payload, order = 0) => {
   const bubble = kind === 'bubble'
     ? { ...(payload.bubble ?? {}), imageAssetId }
     : null
+  const hasAppearanceDelayMs = Object.prototype.hasOwnProperty.call(payload, 'appearanceDelayMs')
+  const hasAppearanceHideMs = Object.prototype.hasOwnProperty.call(payload, 'appearanceHideMs')
   return {
     itemId: payload.itemId,
     kind,
@@ -501,11 +623,22 @@ const defaultItem = (payload, order = 0) => {
     audioId: payload.audioId ?? null,
     audioTrigger: payload.audioTrigger ?? 'appearance',
     audioDelayMs: Math.max(0, Number(payload.audioDelayMs) || 0),
+    appearanceDelayMs: hasAppearanceDelayMs
+      ? normalizeAppearanceTime(payload.appearanceDelayMs)
+      : undefined,
+    appearanceHideMs: hasAppearanceHideMs
+      && payload.appearanceHideMs !== null
+      && Number.isFinite(Number(payload.appearanceHideMs))
+      ? normalizeAppearanceTime(payload.appearanceHideMs)
+      : hasAppearanceHideMs ? null : undefined,
+    hideAfterTarget: payload.hideAfterTarget === true,
     linkedAppearance: normalizeLinkedAppearance(payload.linkedAppearance, payload.itemId),
     backgroundIds: Array.isArray(payload.backgroundIds) ? payload.backgroundIds.filter(Boolean) : [],
     isVisible: payload.isVisible ?? true,
     order: payload.order ?? order,
-    updatedAt: Date.now()
+    updatedAt: Number.isFinite(Number(payload.updatedAt))
+      ? Number(payload.updatedAt)
+      : Date.now()
   }
 }
 
@@ -538,10 +671,17 @@ const findItem = (group, itemId) => {
 
 const upsertAssetMetadata = (metadata) => {
   if (!metadata.assetId) return
-  runtimeState.assets[metadata.assetId] = {
-    ...(runtimeState.assets[metadata.assetId] ?? {}),
-    ...metadata,
-    updatedAt: metadata.updatedAt ?? Date.now()
+  const assetId = metadata.assetId
+  const previous = runtimeState.assets[assetId]
+  const nextMetadata = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined)
+  )
+  runtimeState.assets[assetId] = {
+    ...(previous ?? {}),
+    ...nextMetadata,
+    updatedAt: metadata.updatedAt
+      ?? previous?.updatedAt
+      ?? Date.now()
   }
 }
 
@@ -689,7 +829,9 @@ const applyDynamicEvent = (eventName, payload) => {
     }
   }
 
-  if (selectionAccepted && isValidRevision(payload.selectionRevision)) {
+  const selectionEvent = DYNAMIC_SELECTION_EVENTS.has(eventName)
+    || eventName === 'GroupSelectAndSync'
+  if (selectionEvent && selectionAccepted && isValidRevision(payload.selectionRevision)) {
     runtimeState.selectionRevision = Number(payload.selectionRevision)
   }
 
@@ -814,10 +956,15 @@ const applyDynamicEvent = (eventName, payload) => {
 
     case 'GroupSelectAndSync':
     case 'GroupStateSync': {
-      const group = selectionAccepted
+      const activatesGroup = eventName === 'GroupSelectAndSync' && selectionAccepted
+      const group = activatesGroup
         ? setActiveGroup(payload.groupId, payload.name)
         : ensureGroup(payload.groupId, payload.name)
-      if (selectionAccepted) runtimeState.view.mode = 'stage'
+      if (activatesGroup) {
+        runtimeState.view.mode = 'stage'
+        runtimeState.preview.enabled = false
+        runtimeState.preview.groupId = group.groupId
+      }
       group.name = payload.name ?? group.name
       group.linkedAppearanceModelVersion = Number(payload.linkedAppearanceModelVersion) || 0
       group.advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
@@ -899,7 +1046,13 @@ const applyDynamicEvent = (eventName, payload) => {
         return nextItem
       })
       group.items = normalizeGroupItemLinksForModel(group, incomingItems)
-      group.updatedAt = Date.now()
+      group.updatedAt = Number.isFinite(Number(payload.updatedAt))
+        ? Number(payload.updatedAt)
+        : Date.now()
+      if (isValidRevision(payload.stateRevision)) {
+        group.stateRevision = Math.max(group.stateRevision ?? 0, Number(payload.stateRevision))
+        runtimeState.groupStateRevisions[group.groupId] = group.stateRevision
+      }
       break
     }
 
@@ -1073,6 +1226,17 @@ const applyDynamicEvent = (eventName, payload) => {
         if (Object.prototype.hasOwnProperty.call(payload, 'targetMode')) item.targetMode = payload.targetMode
         if (Object.prototype.hasOwnProperty.call(payload, 'targetLoop')) item.targetLoop = payload.targetLoop === true
         if (Object.prototype.hasOwnProperty.call(payload, 'targetPosition')) item.targetPosition = payload.targetPosition
+        if (Object.prototype.hasOwnProperty.call(payload, 'appearanceDelayMs')) {
+          item.appearanceDelayMs = normalizeAppearanceTime(payload.appearanceDelayMs)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'appearanceHideMs')) {
+          item.appearanceHideMs = payload.appearanceHideMs === null
+            ? null
+            : normalizeAppearanceTime(payload.appearanceHideMs)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'hideAfterTarget')) {
+          item.hideAfterTarget = payload.hideAfterTarget === true
+        }
         item.updatedAt = Date.now()
       }
       break
@@ -1211,6 +1375,33 @@ const readRequestBody = (request) => {
   })
 }
 
+const hashBuffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
+
+const hashFile = (filePath) => {
+  const hash = crypto.createHash('sha256')
+  const descriptor = fs.openSync(filePath, 'r')
+  const chunk = Buffer.allocUnsafe(1024 * 1024)
+  try {
+    let bytesRead = 0
+    do {
+      bytesRead = fs.readSync(descriptor, chunk, 0, chunk.length, null)
+      if (bytesRead > 0) hash.update(chunk.subarray(0, bytesRead))
+    } while (bytesRead > 0)
+  } finally {
+    fs.closeSync(descriptor)
+  }
+  return hash.digest('hex')
+}
+
+const removeSupersededAssetFile = (previousFilePath, nextFilePath) => {
+  if (!previousFilePath || previousFilePath === nextFilePath || !fs.existsSync(previousFilePath)) return
+  try {
+    fs.unlinkSync(previousFilePath)
+  } catch (error) {
+    console.warn('Failed to remove superseded asset file:', error)
+  }
+}
+
 const handleUpload = (buffer, contentType) => {
   const { fields, file } = parseMultipart(buffer, contentType)
   if (!file) throw new Error('Missing multipart file')
@@ -1249,9 +1440,22 @@ const handleUpload = (buffer, contentType) => {
   }
 
   const extension = getExtension(name, mimeType)
-  const filePath = path.join(assetsDir, `${safeSegment(assetId)}${extension}`)
+  const nextFilePath = path.join(assetsDir, `${safeSegment(assetId)}${extension}`)
+  const incomingContentHash = hashBuffer(file.data)
+  const existingFileAvailable = Boolean(
+    existingAsset?.filePath
+    && fs.existsSync(existingAsset.filePath)
+  )
+  const existingContentHash = existingFileAvailable
+    ? existingAsset.contentHash || hashFile(existingAsset.filePath)
+    : ''
+  const bytesChanged = !existingFileAvailable || existingContentHash !== incomingContentHash
+  const filePath = bytesChanged ? nextFilePath : existingAsset.filePath
 
-  fs.writeFileSync(filePath, file.data)
+  if (bytesChanged) {
+    fs.writeFileSync(filePath, file.data)
+    removeSupersededAssetFile(existingAsset?.filePath, filePath)
+  }
 
   const asset = {
     assetId,
@@ -1262,10 +1466,13 @@ const handleUpload = (buffer, contentType) => {
     mediaType,
     mimeType,
     filePath,
+    contentHash: incomingContentHash,
     stateRevision: isValidRevision(fields.stateRevision)
       ? Number(fields.stateRevision)
       : 0,
-    updatedAt: Date.now()
+    updatedAt: bytesChanged
+      ? Math.max(Date.now(), Number(existingAsset?.updatedAt ?? 0) + 1)
+      : existingAsset.updatedAt ?? Date.now()
   }
 
   runtimeState.assets[assetId] = asset

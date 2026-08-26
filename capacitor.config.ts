@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.artlab.web',
+  appId: 'com.magicfloor.artlab.ipadcontrol',
   appName: 'MagicFloor',
   webDir: 'dist',
   plugins: {

@@ -146,6 +146,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const incomingLayerRef = useRef<HTMLDivElement>(null)
   const libraryScreenRef = useRef<HTMLElement>(null)
   const archiveCaptureSequenceRef = useRef(0)
+  const archivePortalArrivalRef = useRef(portalArrival)
+  archivePortalArrivalRef.current = portalArrival
 
   const [folders, setFolders] = useState<DynamicFolder[]>(() => loadDynamicFolders())
   const [currentFolderId, setCurrentFolderId] = useState(initialPreferencesRef.current.currentFolderId ?? '')
@@ -256,7 +258,10 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     // During the home-to-library portal, the target page has finished its own
     // reveal by this point. Sending this frame before the portal exits lets the
     // desktop renderer hand off directly to the iPad image without a gap.
-    initialTimer = window.setTimeout(() => { void captureAndSend() }, portalArrival ? 700 : 140)
+    initialTimer = window.setTimeout(
+      () => { void captureAndSend() },
+      archivePortalArrivalRef.current ? 700 : 140
+    )
     return () => {
       cancelled = true
       window.clearTimeout(initialTimer)
@@ -267,7 +272,6 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     archiveReplayId,
     dynamicPort,
     folderTransitioning,
-    portalArrival,
     transitionPrepared,
     wsIp
   ])

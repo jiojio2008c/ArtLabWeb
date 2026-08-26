@@ -10,7 +10,8 @@ import {
 import { makeDynamicEventMessage } from '../src/services/unityBridge.ts'
 import {
   DYNAMIC_GROUPS_KEY,
-  loadDynamicGroups
+  loadDynamicGroups,
+  updateDynamicGroupAppearMode
 } from '../src/services/dynamicArtStorage.ts'
 
 const now = 1_700_000_000_000
@@ -54,6 +55,9 @@ const item = {
   moveSpeed: 60,
   moveTrack: 'middle',
   targetMode: 'target',
+  appearanceDelayMs: 1350,
+  appearanceHideMs: 4200,
+  hideAfterTarget: true,
   targetPosition: { x: 0.8, y: 0.3 },
   targetLoop: false,
   audioId: 'audio-1',
@@ -133,7 +137,7 @@ const group = {
     durationMs: 3200,
     updatedAt: now
   }],
-  linkedAppearanceModelVersion: 3,
+  linkedAppearanceModelVersion: 4,
   items: [item, bubbleItem],
   createdAt: now,
   updatedAt: now
@@ -198,6 +202,9 @@ const makeRelationItem = (id, name, linkedAppearance, order) => ({
   id,
   name,
   media: { ...media, id: `media-${id}` },
+  appearanceDelayMs: undefined,
+  appearanceHideMs: undefined,
+  hideAfterTarget: false,
   linkedAppearance,
   order
 })
@@ -227,13 +234,10 @@ const currentRelationGroups = [
 storageValues.set(DYNAMIC_GROUPS_KEY, JSON.stringify(currentRelationGroups))
 const loadedCurrentRelationGroups = await loadDynamicGroups()
 loadedCurrentRelationGroups.forEach((loadedGroup) => {
-  assert.equal(loadedGroup.linkedAppearanceModelVersion, 3)
-  assert.equal(loadedGroup.items[0].linkedAppearance, undefined)
-  assert.deepEqual(loadedGroup.items[1].linkedAppearance, {
-    triggerItemId: 'current-source',
-    mode: 'showAfter',
-    delayMs: 300
-  })
+  assert.equal(loadedGroup.linkedAppearanceModelVersion, 4)
+  assert.ok(loadedGroup.items.every((loadedItem) => loadedItem.linkedAppearance === undefined))
+  assert.equal(loadedGroup.items[0].appearanceDelayMs, 0)
+  assert.equal(loadedGroup.items[1].appearanceDelayMs, 860)
 })
 
 const legacyRelationGroup = {
@@ -252,13 +256,10 @@ const legacyRelationGroup = {
 }
 storageValues.set(DYNAMIC_GROUPS_KEY, JSON.stringify([legacyRelationGroup]))
 const [migratedLegacyRelationGroup] = await loadDynamicGroups()
-assert.equal(migratedLegacyRelationGroup.linkedAppearanceModelVersion, 3)
-assert.equal(migratedLegacyRelationGroup.items[0].linkedAppearance, undefined)
-assert.deepEqual(migratedLegacyRelationGroup.items[1].linkedAppearance, {
-  triggerItemId: 'legacy-source',
-  mode: 'hideAfter',
-  delayMs: 450
-})
+assert.equal(migratedLegacyRelationGroup.linkedAppearanceModelVersion, 4)
+assert.ok(migratedLegacyRelationGroup.items.every((loadedItem) => loadedItem.linkedAppearance === undefined))
+assert.equal(migratedLegacyRelationGroup.items[0].appearanceDelayMs, 0)
+assert.equal(migratedLegacyRelationGroup.items[1].appearanceHideMs, 1010)
 
 const futureRelationGroup = {
   ...currentRelationGroup,
@@ -269,6 +270,7 @@ const futureRelationGroup = {
       ? {
           ...nextItem,
           id: 'future-target',
+          appearanceDelayMs: 860,
           linkedAppearance: {
             ...nextItem.linkedAppearance,
             triggerItemId: 'future-source',
@@ -281,11 +283,36 @@ const futureRelationGroup = {
 storageValues.set(DYNAMIC_GROUPS_KEY, JSON.stringify([futureRelationGroup]))
 const [loadedFutureRelationGroup] = await loadDynamicGroups()
 assert.equal(loadedFutureRelationGroup.linkedAppearanceModelVersion, 4)
-assert.equal(loadedFutureRelationGroup.items[1].linkedAppearance?.triggerItemId, 'future-source')
+assert.equal(loadedFutureRelationGroup.items[1].linkedAppearance, undefined)
+assert.equal(loadedFutureRelationGroup.items[1].appearanceDelayMs, 860)
 const [persistedFutureRelationGroup] = JSON.parse(storageValues.get(DYNAMIC_GROUPS_KEY))
 assert.equal(persistedFutureRelationGroup.linkedAppearanceModelVersion, 4)
-assert.equal(persistedFutureRelationGroup.items[1].linkedAppearance.triggerItemId, 'future-source')
-assert.equal(persistedFutureRelationGroup.items[1].linkedAppearance.futureToken, 'preserve-me')
+assert.equal(persistedFutureRelationGroup.items[1].linkedAppearance, undefined)
+
+storageValues.set(DYNAMIC_GROUPS_KEY, JSON.stringify([{
+  ...group,
+  id: 'appearance-mode-group',
+  linkedAppearanceModelVersion: 4,
+  items: [
+    { ...item, id: 'appearance-third', order: 2, appearanceDelayMs: 999 },
+    { ...item, id: 'appearance-first', order: 0, appearanceDelayMs: 999 },
+    { ...item, id: 'appearance-second', order: 1, appearanceDelayMs: 999, appearanceHideMs: 4800 }
+  ]
+}]))
+const sequencedGroup = updateDynamicGroupAppearMode('appearance-mode-group', 'sequence', 650)
+assert.deepEqual(
+  [...sequencedGroup.items]
+    .sort((left, right) => left.order - right.order)
+    .map((nextItem) => nextItem.appearanceDelayMs),
+  [0, 650, 1300]
+)
+assert.equal(
+  sequencedGroup.items.find((nextItem) => nextItem.id === 'appearance-second').appearanceHideMs,
+  4800,
+  'Changing the appearance preset must preserve migrated absolute hide timing.'
+)
+const allAtOnceGroup = updateDynamicGroupAppearMode('appearance-mode-group', 'all')
+assert.ok(allAtOnceGroup.items.every((nextItem) => nextItem.appearanceDelayMs === 0))
 
 const payload = buildGroupSyncPayload(group, false, true)
 assert.equal(payload.advancedFeaturesEnabled, true)
@@ -294,6 +321,9 @@ assert.equal(payload.stateRevision, group.updatedAt)
 assert.ok(payload.selectionRevision > 0)
 assert.equal(payload.items[0].scale, 1)
 assert.deepEqual(payload.items[0].targetPosition, { x: 0.8, y: 0.3 })
+assert.equal(payload.items[0].appearanceDelayMs, 1350)
+assert.equal(payload.items[0].appearanceHideMs, 4200)
+assert.equal(payload.items[0].hideAfterTarget, true)
 assert.equal(
   buildGroupSyncPayload({ ...group, items: [{ ...item, isVisible: false }] }).items[0].isVisible,
   false,
@@ -371,6 +401,14 @@ assert.notEqual(
   }),
   baseSignature,
   'Changing an object scale must trigger a complete receiver sync.'
+)
+assert.notEqual(
+  getGroupSyncSignature({
+    ...group,
+    items: [{ ...item, appearanceDelayMs: 1351 }]
+  }),
+  baseSignature,
+  'Changing an object appearance delay must trigger a receiver state sync.'
 )
 
 const parseEventPayload = (message) => JSON.parse(message.split('|').slice(3).join('|'))

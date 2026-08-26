@@ -56,6 +56,8 @@
 	<string>允許 MagicFloor 將圖片儲存到您的照片圖庫</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要麥克風權限錄製音訊</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>允許 MagicFloor 連接同一區域網路中的舞台播放電腦與互動裝置</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

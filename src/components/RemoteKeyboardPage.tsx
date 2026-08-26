@@ -1,5 +1,7 @@
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Keyboard as KeyboardIcon,
   List,
   Monitor,
@@ -7,6 +9,8 @@ import {
   Radio,
   RotateCcw,
   Undo2,
+  Volume1,
+  Volume2,
   X,
   type LucideIcon
 } from 'lucide-react'
@@ -555,8 +559,8 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
               onTurn={queueTurn}
               onTurnEnd={flushPendingTurn}
             >
-              <span className="remote-scale-minus">−</span>
-              <span className="remote-scale-plus">+</span>
+              <span className="remote-scale-volume remote-scale-volume-low"><Volume1 /></span>
+              <span className="remote-scale-volume remote-scale-volume-high"><Volume2 /></span>
               <span className="remote-scale-arc" />
             </RotaryControl>
 
@@ -569,8 +573,8 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
               onTurn={queueTurn}
               onTurnEnd={flushPendingTurn}
             >
-              <span className="remote-scale-arrow remote-scale-arrow-up">↑</span>
-              <span className="remote-scale-arrow remote-scale-arrow-down">↓</span>
+              <span className="remote-scale-arrow remote-scale-arrow-up"><ArrowUp /></span>
+              <span className="remote-scale-arrow remote-scale-arrow-down"><ArrowDown /></span>
               <span className="remote-scale-ticks" />
             </RotaryControl>
 

@@ -6,6 +6,8 @@ const test = require('node:test')
 const runtimeDir = __dirname
 const mainSource = fs.readFileSync(path.join(runtimeDir, 'main.js'), 'utf8')
 const playerSource = fs.readFileSync(path.join(runtimeDir, 'renderer', 'player.js'), 'utf8')
+const rendererHtml = fs.readFileSync(path.join(runtimeDir, 'renderer', 'index.html'), 'utf8')
+const rendererStyles = fs.readFileSync(path.join(runtimeDir, 'renderer', 'styles.css'), 'utf8')
 
 test('desktop runtime persists group revision tombstones', () => {
   assert.match(mainSource, /groupStateRevisions:\s*\{\}/)
@@ -16,7 +18,63 @@ test('desktop runtime persists group revision tombstones', () => {
 test('stale full-state selections are cached without replacing the active stage', () => {
   assert.match(mainSource, /DYNAMIC_FULL_STATE_EVENTS\.has\(eventName\)\s*&&\s*!selectionAccepted/)
   assert.match(mainSource, /\?\s*'GroupStateCached'\s*:\s*eventName/)
-  assert.match(playerSource, /state\.lastEvent\?\.groupId\s*===\s*state\.activeGroupId/)
+  assert.match(mainSource, /const activatesGroup = eventName === 'GroupSelectAndSync' && selectionAccepted/)
+  assert.match(mainSource, /if \(activatesGroup\) \{[\s\S]*?runtimeState\.view\.mode = 'stage'/)
+})
+
+test('state caching, stage standby, and preview activation remain separate', () => {
+  const fullStateSource = mainSource.slice(
+    mainSource.indexOf("case 'GroupSelectAndSync':"),
+    mainSource.indexOf("case 'GroupAppearMode':")
+  )
+  const previewSource = mainSource.slice(
+    mainSource.indexOf("case 'PreviewMode':"),
+    mainSource.indexOf("case 'BackgroundSet':")
+  )
+
+  assert.match(fullStateSource, /eventName === 'GroupSelectAndSync'/)
+  assert.match(fullStateSource, /runtimeState\.preview\.enabled = false/)
+  assert.doesNotMatch(fullStateSource, /eventName === 'GroupStateSync'[\s\S]*?setActiveGroup/)
+  assert.match(previewSource, /enabled:\s*Boolean\(payload\.enabled\)/)
+  assert.match(playerSource, /const getPreviewPresentationKey = \(\) =>/)
+  assert.match(playerSource, /if \(preview\.enabled !== true \|\| isArchiveView\(\)\) return ''/)
+  assert.match(playerSource, /displayRoot\?\.classList\.toggle\('is-stage-standby', standbyActive\)/)
+  assert.match(rendererHtml, /id="stageStandby"/)
+  assert.match(rendererHtml, /src="\.\/assets\/Right_Logo\.png"/)
+  assert.match(rendererStyles, /\.stage-standby\s*\{[\s\S]*?magic-floor-background\.webp/)
+  assert.match(rendererStyles, /\.stage-standby-logo\s*\{[\s\S]*?object-fit:\s*contain/)
+})
+
+test('metadata-only state syncs preserve asset URL revisions', () => {
+  const metadataSource = mainSource.slice(
+    mainSource.indexOf('const upsertAssetMetadata ='),
+    mainSource.indexOf('const upsertItemAssetMetadata =')
+  )
+  const uploadSource = mainSource.slice(
+    mainSource.indexOf('const handleUpload ='),
+    mainSource.indexOf('const writeCorsHeaders =')
+  )
+
+  assert.match(metadataSource, /updatedAt:\s*metadata\.updatedAt[\s\S]*?previous\?\.updatedAt[\s\S]*?Date\.now\(\)/)
+  assert.match(uploadSource, /const bytesChanged =/)
+  assert.match(uploadSource, /updatedAt:\s*bytesChanged[\s\S]*?Date\.now\(\)[\s\S]*?existingAsset\.updatedAt/)
+})
+
+test('desktop preview applies independent timing and target-arrival hiding', () => {
+  assert.match(mainSource, /appearanceDelayMs:/)
+  assert.match(mainSource, /appearanceHideMs:/)
+  assert.match(mainSource, /hideAfterTarget:/)
+  assert.match(playerSource, /sampleTargetMotionState\(/)
+  assert.match(playerSource, /hideAfterTarget:\s*item\.hideAfterTarget === true/)
+  assert.match(playerSource, /alpha:\s*targetHidden \? 0/)
+  assert.match(playerSource, /interactive:\s*!targetHidden && appearanceSample\.interactive/)
+})
+
+test('desktop background transitions draw the shared MagicFloor logo', () => {
+  assert.match(playerSource, /transitionLogo\.element\.src = '\.\/assets\/Right_Logo\.png'/)
+  assert.match(playerSource, /const drawTransitionLogo = \(renderContext, transition\) =>/)
+  assert.match(playerSource, /if \(transition\.type === 'cameraFlash'\)[\s\S]*?brightness\(0\.18\)/)
+  assert.match(playerSource, /drawTransitionLogo\(renderContext, transition\)/)
 })
 
 test('receiver sync queue only clears its own promise', () => {
@@ -86,18 +144,34 @@ test('stale uploads are rejected before file or runtime mutations', () => {
   assert.ok(ensureIndex > gateIndex)
 })
 
-test('iPad preview starts locally without waiting for receiver sync', () => {
+test('iPad preview starts locally and forwards transient options after sync', () => {
   const controlSource = fs.readFileSync(
     path.join(runtimeDir, '..', 'src', 'components', 'DynamicControlPage.tsx'),
     'utf8'
   )
-  const previewSource = controlSource.slice(
+  const receiverSyncSource = controlSource.slice(
+    controlSource.indexOf('const startPreviewReceiverSync'),
+    controlSource.indexOf('const setPreviewModeEnabled')
+  )
+  const previewEntrySource = controlSource.slice(
     controlSource.indexOf('const setPreviewModeEnabled'),
     controlSource.indexOf('const resolveStageItemIdAtPoint')
   )
-  assert.doesNotMatch(previewSource, /await\s+syncDynamicGroupToReceiver/)
-  assert.match(previewSource, /sendPreviewModeState\(true,\s*\{ replayId \}\)/)
-  assert.match(previewSource, /startPreviewReceiverSync\(requestId, replayId\)/)
+  assert.doesNotMatch(previewEntrySource, /await\s+syncDynamicGroupToReceiver/)
+  assert.doesNotMatch(previewEntrySource, /sendPreviewModeState\(true/)
+  assert.match(
+    previewEntrySource,
+    /startPreviewReceiverSync\(requestId, replayId, options\.backgroundPlayMode\)/
+  )
+  assert.match(
+    receiverSyncSource,
+    /syncDynamicGroupToReceiver\([\s\S]*?\.then\([\s\S]*?sendPreviewModeState\(true,\s*\{ replayId, backgroundPlayMode \}\)/
+  )
+  assert.match(
+    previewEntrySource,
+    /setPreviewModeEnabled\(true,\s*\{\s*backgroundId: selectedBackground\.id,\s*backgroundPlayMode: 'fixed'\s*\}\)/
+  )
+  assert.doesNotMatch(previewEntrySource, /updateDynamicBackgroundPlayback/)
   assert.match(controlSource, /PREVIEW_RECEIVER_SYNC_TIMEOUT_MS/)
 })
 

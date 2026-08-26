@@ -10,7 +10,9 @@ import {
   type DynamicAnimationMode
 } from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
 import {
+  convertDynamicLinkedAppearanceToIndependentTiming,
   normalizeDynamicAppearAnimation,
+  normalizeDynamicAppearanceTimeMs,
   normalizeDynamicLinkedAppearance,
   wouldCreateDynamicLinkedAppearanceCycle
 } from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
@@ -20,7 +22,7 @@ const DYNAMIC_DB_NAME = 'magicfloor_dynamic_media'
 const DYNAMIC_DB_VERSION = 1
 const DYNAMIC_STORE_NAME = 'media'
 const DYNAMIC_DIRECTORY = Directory.Data
-const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 3
+const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 4
 const MAX_DYNAMIC_ITEMS_PER_GROUP = 30
 const GRID_COLUMNS = 16
 const GRID_ROWS = 9
@@ -208,6 +210,9 @@ interface DynamicItemBase {
     x: number
     y: number
   }
+  appearanceDelayMs?: number
+  appearanceHideMs?: number
+  hideAfterTarget?: boolean
   audioId?: string
   audioTrigger?: DynamicItemAudioTrigger
   audioDelayMs?: number
@@ -570,7 +575,7 @@ const normalizeDynamicPosition = (position?: { x: number; y: number }) => {
   }
 }
 
-const normalizeDynamicItemLinks = (items: DynamicItem[]) => {
+const normalizeLegacyDynamicItemLinks = (items: DynamicItem[]) => {
   const validItemIds = new Set(items.map((item) => item.id).filter(Boolean))
   const normalizedItems = items.map((item) => ({
     ...item,
@@ -595,6 +600,18 @@ const normalizeDynamicItemLinks = (items: DynamicItem[]) => {
   return validatedItems
 }
 
+const normalizeDynamicIndependentAppearance = (items: DynamicItem[]) => items.map((item) => ({
+  ...item,
+  appearanceDelayMs: normalizeDynamicAppearanceTimeMs(item.appearanceDelayMs),
+  appearanceHideMs: item.appearanceHideMs !== null
+    && item.appearanceHideMs !== undefined
+    && Number.isFinite(Number(item.appearanceHideMs))
+    ? normalizeDynamicAppearanceTimeMs(item.appearanceHideMs)
+    : undefined,
+  hideAfterTarget: item.hideAfterTarget === true,
+  linkedAppearance: undefined
+}))
+
 const migrateDynamicLinkedAppearanceModel = (group: DynamicGroup): DynamicGroup => {
   const sourceItems = Array.isArray(group.items) ? group.items : []
   const modelVersion = Number(group.linkedAppearanceModelVersion)
@@ -603,51 +620,60 @@ const migrateDynamicLinkedAppearanceModel = (group: DynamicGroup): DynamicGroup 
     return {
       ...group,
       linkedAppearanceModelVersion: modelVersion,
-      items: modelVersion === DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
-        ? normalizeDynamicItemLinks(sourceItems)
-        : sourceItems
+      items: normalizeDynamicIndependentAppearance(sourceItems)
     }
   }
 
-  const validItemIds = new Set(sourceItems.map((item) => item.id).filter(Boolean))
-  const migratedItems: DynamicItem[] = sourceItems.map((item) => ({
-    ...item,
-    linkedAppearance: undefined
-  }))
-  const targetIndexById = new Map(migratedItems.map((item, index) => [item.id, index]))
-
-  sourceItems
-    .map((sourceItem) => ({
-      sourceItem,
-      legacyLink: normalizeDynamicLinkedAppearance(
-        sourceItem.linkedAppearance,
-        sourceItem.id,
-        validItemIds
-      )
+  let legacyItems = sourceItems
+  if (!Number.isFinite(modelVersion) || modelVersion < 3) {
+    const validItemIds = new Set(sourceItems.map((item) => item.id).filter(Boolean))
+    const migratedItems: DynamicItem[] = sourceItems.map((item) => ({
+      ...item,
+      linkedAppearance: undefined
     }))
-    .filter((entry): entry is { sourceItem: DynamicItem; legacyLink: DynamicLinkedAppearance } => Boolean(entry.legacyLink))
-    .sort((left, right) => (
-      (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
-      || left.sourceItem.order - right.sourceItem.order
-    ))
-    .forEach(({ sourceItem, legacyLink }) => {
-      const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
-      if (targetIndex === undefined || migratedItems[targetIndex].linkedAppearance) return
+    const targetIndexById = new Map(migratedItems.map((item, index) => [item.id, index]))
 
-      migratedItems[targetIndex] = {
-        ...migratedItems[targetIndex],
-        linkedAppearance: {
-          triggerItemId: sourceItem.id,
-          mode: legacyLink.mode,
-          delayMs: legacyLink.delayMs
+    sourceItems
+      .map((sourceItem) => ({
+        sourceItem,
+        legacyLink: normalizeDynamicLinkedAppearance(
+          sourceItem.linkedAppearance,
+          sourceItem.id,
+          validItemIds
+        )
+      }))
+      .filter((entry): entry is { sourceItem: DynamicItem; legacyLink: DynamicLinkedAppearance } => Boolean(entry.legacyLink))
+      .sort((left, right) => (
+        (right.sourceItem.updatedAt ?? 0) - (left.sourceItem.updatedAt ?? 0)
+        || left.sourceItem.order - right.sourceItem.order
+      ))
+      .forEach(({ sourceItem, legacyLink }) => {
+        const targetIndex = targetIndexById.get(legacyLink.triggerItemId)
+        if (targetIndex === undefined || migratedItems[targetIndex].linkedAppearance) return
+
+        migratedItems[targetIndex] = {
+          ...migratedItems[targetIndex],
+          linkedAppearance: {
+            triggerItemId: sourceItem.id,
+            mode: legacyLink.mode,
+            delayMs: legacyLink.delayMs
+          }
         }
-      }
-    })
+      })
+    legacyItems = migratedItems
+  }
+
+  const migratedItems = convertDynamicLinkedAppearanceToIndependentTiming({
+    items: normalizeLegacyDynamicItemLinks(legacyItems),
+    appearMode: group.appearMode,
+    intervalMs: group.appearIntervalMs,
+    appearAnimation: group.appearAnimation
+  }) as DynamicItem[]
 
   return {
     ...group,
     linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
-    items: normalizeDynamicItemLinks(migratedItems)
+    items: normalizeDynamicIndependentAppearance(migratedItems)
   }
 }
 
@@ -998,6 +1024,13 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
         targetMode: getDynamicTargetModeFromItem(item),
         targetLoop: item.targetLoop === true,
         targetPosition: normalizeDynamicPosition(item.targetPosition),
+        appearanceDelayMs: normalizeDynamicAppearanceTimeMs(item.appearanceDelayMs),
+        appearanceHideMs: item.appearanceHideMs !== null
+          && item.appearanceHideMs !== undefined
+          && Number.isFinite(Number(item.appearanceHideMs))
+          ? normalizeDynamicAppearanceTimeMs(item.appearanceHideMs)
+          : undefined,
+        hideAfterTarget: item.hideAfterTarget === true,
         audioTrigger: getDynamicAudioTriggerFromItem(item),
         audioDelayMs: Math.max(0, Math.round(Number(item.audioDelayMs) || 0)),
         backgroundIds: Array.isArray(item.backgroundIds)
@@ -1025,7 +1058,7 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
   ])
 
   const backgrounds = resolvedBackgrounds as DynamicBackground[]
-  const items = normalizeDynamicItemLinks(resolvedItems)
+  const items = normalizeDynamicIndependentAppearance(resolvedItems)
 
   const background = getActiveBackground(group, backgrounds)
 
@@ -1350,7 +1383,7 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
     appearAnimation: getDynamicAppearAnimationFromGroup(group),
     backgroundTransition: getDynamicBackgroundTransitionFromGroup(group),
     audioLibrary: group.audioLibrary ?? [],
-    items: normalizeDynamicItemLinks(group.items.map(normalizeDynamicItemKind)),
+    items: normalizeDynamicIndependentAppearance(group.items.map(normalizeDynamicItemKind)),
     linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
     updatedAt: Date.now()
   }, existingGroup)
@@ -1523,6 +1556,8 @@ const addDynamicItem = async (groupId: string, file: File, itemName?: string) =>
     moveTrack: 'middle',
     targetMode: 'loop',
     targetLoop: false,
+    appearanceDelayMs: 0,
+    hideAfterTarget: false,
     audioTrigger: 'appearance',
     audioDelayMs: 0,
     backgroundIds: [],
@@ -1599,6 +1634,8 @@ const createDynamicItemBase = (
   moveTrack: 'middle',
   targetMode: 'loop',
   targetLoop: false,
+  appearanceDelayMs: 0,
+  hideAfterTarget: false,
   audioTrigger: 'appearance',
   audioDelayMs: 0,
   backgroundIds: [],
@@ -1739,7 +1776,7 @@ const updateDynamicItem = (groupId: string, itemId: string, updater: (item: Dyna
   const group = groups.find((item) => item.id === groupId)
   if (!group) return undefined
 
-  group.items = normalizeDynamicItemLinks(group.items.map((item) => (
+  group.items = normalizeDynamicIndependentAppearance(group.items.map((item) => (
     item.id === itemId ? { ...updater(item), updatedAt: Date.now() } : item
   )))
   group.updatedAt = Date.now()
@@ -1811,11 +1848,6 @@ const copyDynamicItemSettings = async (
 
   const fieldSet = new Set(copyFields)
   const sourceTrack = source.moveTrack ?? getDynamicMoveTrackFromPosition(source.position.y)
-  const canCopyLinkage = !source.linkedAppearance || !wouldCreateDynamicLinkedAppearanceCycle(
-    group.items,
-    targetItemId,
-    source.linkedAppearance.triggerItemId
-  )
   group.items = group.items.map((item) => {
     if (item.id !== targetItemId) return item
     const position = fieldSet.has('motion')
@@ -1845,6 +1877,12 @@ const copyDynamicItemSettings = async (
       targetPosition: fieldSet.has('motion')
         ? source.targetPosition ? { ...source.targetPosition } : undefined
         : item.targetPosition,
+      appearanceDelayMs: fieldSet.has('motion')
+        ? normalizeDynamicAppearanceTimeMs(source.appearanceDelayMs)
+        : item.appearanceDelayMs,
+      hideAfterTarget: fieldSet.has('motion')
+        ? source.hideAfterTarget === true
+        : item.hideAfterTarget,
       audioId: fieldSet.has('audio') ? source.audioId : item.audioId,
       audioTrigger: fieldSet.has('audio') ? getDynamicAudioTriggerFromItem(source) : item.audioTrigger,
       audioDelayMs: fieldSet.has('audio')
@@ -1853,13 +1891,11 @@ const copyDynamicItemSettings = async (
       backgroundIds: fieldSet.has('background')
         ? Array.from(new Set(source.backgroundIds ?? []))
         : item.backgroundIds,
-      linkedAppearance: fieldSet.has('linkage') && canCopyLinkage
-        ? source.linkedAppearance ? { ...source.linkedAppearance } : undefined
-        : item.linkedAppearance,
+      linkedAppearance: undefined,
       updatedAt: Date.now()
     }
   })
-  group.items = normalizeDynamicItemLinks(group.items)
+  group.items = normalizeDynamicIndependentAppearance(group.items)
   group.updatedAt = Date.now()
 
   if (groupIndex >= 0) {
@@ -1924,7 +1960,21 @@ const updateDynamicGroupAppearMode = (
     ...group,
     appearIntervalMs: appearIntervalMs ?? group.appearIntervalMs
   })
-  group.updatedAt = Date.now()
+  const now = Date.now()
+  const sequenceIndexById = new Map(
+    [...group.items]
+      .sort((left, right) => left.order - right.order)
+      .map((item, index) => [item.id, index])
+  )
+  group.items = group.items.map((item) => ({
+    ...item,
+    appearanceDelayMs: appearMode === 'sequence'
+      ? (sequenceIndexById.get(item.id) ?? 0) * group.appearIntervalMs
+      : 0,
+    linkedAppearance: undefined,
+    updatedAt: now
+  }))
+  group.updatedAt = now
   saveDynamicGroups(groups)
   return group
 }

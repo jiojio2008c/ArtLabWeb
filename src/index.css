@@ -92,6 +92,11 @@ code {
   animation: page-neutral-in 220ms ease-out both;
 }
 
+.page-instant,
+.page-instant > .apple-container {
+  animation: none !important;
+}
+
 .page-frame.page-portal,
 .page-frame.page-portal > .apple-container {
   animation: none !important;
@@ -11311,6 +11316,18 @@ button.ui-pressed {
 }
 
 /* Final branded surfaces and complete-media thumbnail presentation. */
+.page-frame.page-view-entry {
+  background-color: #69bbd6;
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 28%, transparent 72%, rgba(255, 255, 255, 0.08)),
+    linear-gradient(180deg, rgba(9, 31, 36, 0.08), transparent 34%, rgba(12, 30, 24, 0.12)),
+    linear-gradient(180deg, rgba(12, 34, 38, 0.08) 0%, rgba(255, 255, 255, 0.06) 42%, rgba(15, 39, 31, 0.18) 100%),
+    url("./assets/magic-floor-background.webp");
+  background-position: center, center, center, center bottom;
+  background-repeat: no-repeat;
+  background-size: auto, auto, cover, cover;
+}
+
 .entry-screen {
   background-color: #69bbd6;
   background-image:
@@ -11523,7 +11540,7 @@ button.ui-pressed {
 :is(.entry-screen, .dynamic-library-screen).dynamic-archive-snapshot-capture *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  animation: none !important;
+  animation-play-state: paused !important;
   transition: none !important;
 }
 
@@ -13516,7 +13533,7 @@ button.ui-pressed {
 .remote-key-mode-lines {
   min-width: 0;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 1px;
   font-size: 8px;
   font-weight: 850;
@@ -13735,6 +13752,35 @@ button.ui-pressed {
 .remote-scale-arrow {
   position: absolute;
   z-index: 2;
+}
+
+.remote-scale-volume {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  color: rgba(32, 36, 38, 0.82);
+  pointer-events: none;
+}
+
+.remote-scale-volume svg,
+.remote-scale-arrow svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.4;
+}
+
+.remote-knob-control[data-control="volume"] .remote-scale-volume-low {
+  left: 2%;
+  top: 43%;
+}
+
+.remote-knob-control[data-control="volume"] .remote-scale-volume-high {
+  right: 2%;
+  top: 43%;
 }
 
 .remote-knob-control-small .remote-knob-scale {
@@ -18155,6 +18201,56 @@ button.ui-pressed {
   pointer-events: none;
 }
 
+.dynamic-control-screen .dynamic-background-transition-logo {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  width: clamp(120px, 18%, 270px);
+  height: auto;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.86);
+  filter: brightness(0) invert(1) drop-shadow(0 4px 16px rgba(0, 0, 0, 0.28));
+  pointer-events: none;
+}
+
+.dynamic-control-screen .dynamic-stage-item-motion.is-stage-entering {
+  animation: dynamic-control-stage-item-enter 620ms calc(90ms + var(--stage-entry-delay, 0ms)) cubic-bezier(0.2, 0.82, 0.28, 1.18) both;
+}
+
+@keyframes dynamic-control-stage-item-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -120px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.dynamic-background-transition-layer.is-opening .dynamic-background-transition-logo,
+.dynamic-background-transition-layer.is-closing .dynamic-background-transition-logo {
+  animation: dynamic-transition-logo-in 720ms ease both;
+}
+
+.dynamic-background-transition-layer.is-cameraFlash .dynamic-background-transition-logo {
+  filter: brightness(0) drop-shadow(0 2px 10px rgba(255, 255, 255, 0.55));
+}
+
+@keyframes dynamic-transition-logo-in {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.84); }
+  38% { opacity: 0.92; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-control-screen .dynamic-stage-item-motion.is-stage-entering {
+    animation: none;
+  }
+}
+
 .dynamic-control-screen .dynamic-curtain-panel {
   position: absolute;
   top: -4%;
@@ -19309,6 +19405,33 @@ button.ui-pressed {
   letter-spacing: 6px;
 }
 
+/* Readability pass for the free-edit property and layer panels. */
+.dynamic-control-screen .dynamic-property-tab {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.dynamic-control-screen .dynamic-property-section-heading strong,
+.dynamic-control-screen .dynamic-layer-copy > strong {
+  font-size: 13px;
+}
+
+.dynamic-control-screen .dynamic-property-section-heading span,
+.dynamic-control-screen .dynamic-layer-summary-primary,
+.dynamic-control-screen .dynamic-layer-summary-secondary,
+.dynamic-control-screen .dynamic-property-note {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.dynamic-control-screen .dynamic-layer-summary-primary,
+.dynamic-control-screen .dynamic-layer-summary-secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dynamic-control-screen .dynamic-add-item-menu-anchor {
   position: relative;
   z-index: 90;
@@ -20069,5 +20192,890 @@ button.ui-pressed {
 
   .home-return-confirm-overlay.is-closing .home-return-confirm-dialog {
     animation: home-return-dialog-out 120ms ease-out both !important;
+  }
+}
+
+/* Final free-edit readability overrides. Keep these after responsive rules. */
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-title-copy > .eyebrow {
+  font-size: 11px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel > .dynamic-tool-tabs .dynamic-property-tab {
+  min-height: 44px;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel.is-advanced > .dynamic-tool-tabs {
+  height: 95px;
+  min-height: 95px;
+  grid-template-rows: repeat(2, 44px);
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading > span {
+  font-size: 14px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-property-section-heading > span,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-carousel-meta > span,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-section-heading > small {
+  font-size: 11px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-mode-button,
+.dynamic-control-screen .dynamic-target-mode-segmented > button,
+.dynamic-control-screen .dynamic-audio-trigger-options > button {
+  font-size: 12px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-animation-preview-footer,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-readout-clean small,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child > small,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-live-preview > span {
+  font-size: 11px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper-row > div:first-child > strong,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > strong {
+  font-size: 13px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-click-animation-range-button small,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-transform-stepper > span,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-source-copy > small,
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-copy-feedback {
+  font-size: 11px;
+}
+
+.dynamic-control-screen .dynamic-property-overlay-panel .dynamic-deform-toggle-label > strong,
+.dynamic-control-screen .dynamic-audio-upload-button,
+.dynamic-control-screen .dynamic-audio-select-button strong,
+.dynamic-control-screen .dynamic-audio-option.is-none strong,
+.dynamic-control-screen .dynamic-object-background-card strong {
+  font-size: 12px;
+}
+
+.dynamic-control-screen .dynamic-audio-select-button small,
+.dynamic-control-screen .dynamic-audio-empty,
+.dynamic-control-screen .dynamic-object-background-card small,
+.dynamic-control-screen .dynamic-property-note,
+.dynamic-control-screen .dynamic-appear-animation-options > button {
+  font-size: 11px;
+}
+
+.dynamic-control-screen .dynamic-target-mode-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dynamic-control-screen .dynamic-target-mode-row > .dynamic-target-mode-choice {
+  grid-column: 1 / -1;
+}
+
+.dynamic-control-screen .dynamic-target-loop-toggle {
+  min-height: 44px;
+  padding: 7px 8px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: none;
+  justify-items: start;
+  text-align: start;
+}
+
+.dynamic-control-screen .dynamic-target-loop-toggle > span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.15;
+  text-align: start;
+}
+
+.dynamic-control-screen .dynamic-target-mode-choice strong {
+  font-size: 12px;
+}
+
+.dynamic-control-screen .dynamic-target-mode-choice small {
+  font-size: 11px;
+}
+
+.dynamic-control-screen:not(.dynamic-flow-mode) .dynamic-layer-copy strong {
+  font-size: 14px;
+}
+
+.dynamic-control-screen:not(.dynamic-flow-mode) .dynamic-layer-copy small,
+.dynamic-control-screen .dynamic-layer-summary-primary,
+.dynamic-control-screen .dynamic-layer-summary-secondary {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.dynamic-appearance-modal {
+  width: min(1080px, 100%);
+  max-height: min(760px, 100%);
+}
+
+.dynamic-appearance-editor-layout {
+  grid-template-columns: minmax(430px, 1.08fr) minmax(350px, 0.92fr);
+}
+
+.dynamic-appearance-library-pane {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dynamic-appearance-pane-heading {
+  align-items: center;
+  padding: 0 2px 10px;
+  border-bottom: 1px solid rgba(23, 27, 25, 0.08);
+}
+
+.dynamic-appearance-item-list {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 2px 6px 2px 1px;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dynamic-appearance-item-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 34px 88px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  overflow: visible;
+  border: 1px solid rgba(31, 70, 61, 0.11);
+  border-radius: 10px;
+  color: #1b2520;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(242, 248, 246, 0.74)),
+    rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 8px 18px rgba(30, 68, 59, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dynamic-appearance-item-card:focus-within {
+  z-index: 30;
+  border-color: rgba(18, 143, 133, 0.34);
+  box-shadow:
+    0 10px 24px rgba(23, 101, 91, 0.12),
+    0 0 0 3px rgba(53, 180, 170, 0.08);
+}
+
+.dynamic-appearance-item-order {
+  color: #728078;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.dynamic-appearance-item-thumbnail {
+  box-sizing: border-box;
+  width: 88px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  object-fit: contain;
+  object-position: center;
+  overflow: hidden;
+  border: 1px solid rgba(33, 59, 52, 0.09);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, rgba(234, 241, 239, 0.82) 25%, transparent 25%, transparent 75%, rgba(234, 241, 239, 0.82) 75%),
+    linear-gradient(45deg, rgba(234, 241, 239, 0.82) 25%, rgba(255, 255, 255, 0.82) 25%, rgba(255, 255, 255, 0.82) 75%, rgba(234, 241, 239, 0.82) 75%);
+  background-position: 0 0, 5px 5px;
+  background-size: 10px 10px;
+}
+
+.dynamic-appearance-item-thumbnail.dynamic-item-bubble-thumbnail {
+  padding: 4px;
+}
+
+.dynamic-appearance-item-thumbnail.dynamic-item-bubble-thumbnail .dynamic-bubble-visual {
+  max-width: 100%;
+  max-height: 100%;
+  transform: none;
+}
+
+.dynamic-appearance-item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.dynamic-appearance-item-copy strong,
+.dynamic-appearance-item-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-appearance-item-copy strong {
+  color: #1b2520;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.dynamic-appearance-item-copy small {
+  color: #68766f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.dynamic-appearance-item-wheel {
+  width: 126px;
+  min-width: 126px;
+  height: 42px;
+}
+
+.dynamic-appearance-item-wheel .dynamic-interval-wheel-current {
+  height: 42px;
+  border-color: rgba(24, 125, 117, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.dynamic-appearance-item-wheel .dynamic-interval-wheel-value {
+  padding: 0 11px;
+  color: #145e58;
+  font-size: 17px;
+}
+
+.dynamic-appearance-settings-pane {
+  min-width: 0;
+}
+
+.dynamic-appearance-settings-scroll {
+  gap: 14px;
+}
+
+.dynamic-appearance-settings-section {
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid rgba(31, 70, 61, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.dynamic-appearance-mode-grid,
+.dynamic-appearance-timing-grid,
+.dynamic-appearance-animation-grid {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dynamic-appearance-mode-grid,
+.dynamic-appearance-timing-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dynamic-appearance-mode-grid > button,
+.dynamic-appearance-timing-grid > button,
+.dynamic-appearance-animation-grid > button {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(29, 65, 57, 0.13);
+  border-radius: 9px;
+  color: #3a4d47;
+  background: rgba(248, 251, 250, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.dynamic-appearance-mode-grid > button {
+  min-height: 60px;
+}
+
+.dynamic-appearance-mode-grid > button.active,
+.dynamic-appearance-timing-grid > button.active,
+.dynamic-appearance-animation-grid > button.active {
+  border-color: rgba(11, 139, 128, 0.5);
+  color: #076f68;
+  background: linear-gradient(145deg, rgba(224, 247, 243, 0.96), rgba(242, 252, 250, 0.94));
+  box-shadow:
+    0 0 0 2px rgba(29, 169, 157, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.dynamic-appearance-mode-grid > button:active,
+.dynamic-appearance-timing-grid > button:active,
+.dynamic-appearance-animation-grid > button:active {
+  transform: scale(0.985);
+}
+
+.dynamic-appearance-mode-grid > button:focus-visible,
+.dynamic-appearance-timing-grid > button:focus-visible,
+.dynamic-appearance-animation-grid > button:focus-visible {
+  outline: 3px solid rgba(24, 155, 144, 0.24);
+  outline-offset: 2px;
+}
+
+.dynamic-appearance-interval-field {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(31, 70, 61, 0.09);
+  border-radius: 9px;
+  background: rgba(246, 250, 249, 0.92);
+}
+
+.dynamic-appearance-interval-field > span {
+  min-width: 0;
+  color: #334740;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.dynamic-appearance-interval-wheel {
+  width: 136px;
+  min-width: 0;
+  height: 42px;
+}
+
+.dynamic-appearance-interval-wheel .dynamic-interval-wheel-current {
+  height: 42px;
+  border-color: rgba(24, 125, 117, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.dynamic-appearance-interval-wheel .dynamic-interval-wheel-value {
+  padding: 0 11px;
+  color: #145e58;
+  font-size: 17px;
+}
+
+.dynamic-appearance-animation-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dynamic-appearance-animation-grid > button {
+  min-height: 86px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 6px;
+  font-size: 12px;
+}
+
+.dynamic-appearance-animation-grid > button strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.dynamic-appearance-animation-swatch {
+  position: relative;
+  width: 56px;
+  height: 30px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(28, 91, 83, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(235, 246, 243, 0.96), rgba(216, 235, 231, 0.9));
+}
+
+.dynamic-appearance-animation-swatch::before,
+.dynamic-appearance-animation-swatch::after {
+  content: '';
+  position: absolute;
+  display: block;
+  border-radius: 4px;
+  background: #38a99c;
+}
+
+.dynamic-appearance-animation-swatch.is-none::before {
+  inset: 7px 15px;
+  opacity: 0.52;
+  box-shadow: 0 0 10px rgba(42, 169, 157, 0.42);
+}
+
+.dynamic-appearance-animation-swatch.is-none::after {
+  inset: 10px 19px;
+  opacity: 0.9;
+}
+
+.dynamic-appearance-animation-swatch.is-drop::before {
+  top: 10px;
+  left: 22px;
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 -9px 0 -3px rgba(56, 169, 156, 0.34);
+}
+
+.dynamic-appearance-animation-swatch.is-drop::after {
+  top: 3px;
+  left: 26px;
+  width: 4px;
+  height: 8px;
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 150% 55%, 50% 100%, -50% 55%, 0 55%);
+}
+
+.dynamic-appearance-animation-swatch.is-trackSlide::before {
+  top: 13px;
+  left: 7px;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  opacity: 0.42;
+}
+
+.dynamic-appearance-animation-swatch.is-trackSlide::after {
+  top: 8px;
+  left: 31px;
+  width: 14px;
+  height: 14px;
+  box-shadow: -14px 0 0 -4px rgba(56, 169, 156, 0.34);
+}
+
+.dynamic-appearance-empty-state {
+  min-height: 180px;
+  font-size: 15px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dynamic-appearance-mode-grid > button:hover,
+  .dynamic-appearance-timing-grid > button:hover,
+  .dynamic-appearance-animation-grid > button:hover {
+    border-color: rgba(20, 139, 129, 0.3);
+    background-color: rgba(239, 249, 247, 0.96);
+  }
+
+  .dynamic-appearance-item-card:hover {
+    border-color: rgba(24, 126, 116, 0.22);
+    box-shadow: 0 10px 22px rgba(30, 85, 73, 0.1);
+  }
+}
+
+@media (max-width: 960px), (orientation: portrait) and (max-width: 1100px) {
+  .dynamic-appearance-modal {
+    width: min(720px, 100%);
+    max-height: min(820px, 100%);
+  }
+
+  .dynamic-appearance-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 0.9fr) minmax(300px, 1.1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .dynamic-appearance-modal {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .dynamic-appearance-editor-layout {
+    gap: 10px;
+  }
+
+  .dynamic-appearance-library-pane,
+  .dynamic-appearance-settings-pane {
+    padding: 11px;
+  }
+
+  .dynamic-appearance-item-card {
+    grid-template-columns: 30px 68px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .dynamic-appearance-item-thumbnail {
+    width: 68px;
+    height: 50px;
+  }
+
+  .dynamic-appearance-item-wheel {
+    width: 104px;
+    min-width: 104px;
+  }
+
+  .dynamic-appearance-animation-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dynamic-appearance-animation-grid > button {
+    min-height: 54px;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding-inline: 12px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-appearance-item-card,
+  .dynamic-appearance-mode-grid > button,
+  .dynamic-appearance-timing-grid > button,
+  .dynamic-appearance-animation-grid > button {
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Stage-width background switcher above the editable stage. */
+.dynamic-control-screen .dynamic-stage-shell.has-background-quick-switcher {
+  box-sizing: border-box;
+  max-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 138px auto;
+  align-content: start;
+  justify-items: center;
+  gap: 10px;
+}
+
+.dynamic-control-screen .dynamic-editor-row.right-panel-open .dynamic-stage-shell.has-background-quick-switcher {
+  align-self: start;
+  padding-top: 8px;
+}
+
+.dynamic-control-screen .dynamic-stage-shell.has-background-quick-switcher .dynamic-stage {
+  width: 100%;
+  max-width: max(
+    260px,
+    calc((100dvh - var(--control-topbar-height) - var(--dynamic-bottom-safe) - 132px) * 16 / 9)
+  );
+  justify-self: center;
+}
+
+.dynamic-background-quick-switcher {
+  --dynamic-background-quick-card-width: 174px;
+  box-sizing: border-box;
+  width: min(100%, 930px);
+  max-width: 100%;
+  min-width: 0;
+  height: 138px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 156px;
+  align-items: center;
+  gap: 28px;
+  overflow: hidden;
+  border: 1px solid rgba(38, 67, 62, 0.08);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 10% -20%, rgba(114, 218, 218, 0.14), transparent 42%),
+    linear-gradient(155deg, rgba(249, 252, 251, 0.92), rgba(237, 244, 242, 0.88));
+  box-shadow:
+    0 8px 20px rgba(23, 55, 61, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+.dynamic-background-quick-rail {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 114px;
+  padding: 1px 2px 5px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-color: rgba(43, 116, 112, 0.42) rgba(38, 66, 61, 0.06);
+  scrollbar-width: thin;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dynamic-background-quick-rail::-webkit-scrollbar {
+  height: 4px;
+}
+
+.dynamic-background-quick-rail::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(38, 66, 61, 0.06);
+}
+
+.dynamic-background-quick-rail::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(43, 116, 112, 0.42);
+}
+
+.dynamic-background-quick-list {
+  width: max-content;
+  min-width: 100%;
+  min-height: 105px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dynamic-background-quick-card {
+  box-sizing: border-box;
+  position: relative;
+  width: var(--dynamic-background-quick-card-width);
+  min-width: var(--dynamic-background-quick-card-width);
+  height: auto;
+  aspect-ratio: 5 / 3;
+  flex: 0 0 var(--dynamic-background-quick-card-width);
+  padding: 3px;
+  overflow: hidden;
+  scroll-snap-align: start;
+  border: 1px solid rgba(31, 66, 59, 0.16);
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(232, 241, 239, 0.94);
+  box-shadow:
+    0 5px 12px rgba(27, 58, 53, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dynamic-background-quick-card.active {
+  border-color: #078f89;
+  box-shadow:
+    0 0 0 3px rgba(20, 165, 154, 0.18),
+    0 7px 16px rgba(22, 93, 84, 0.18);
+}
+
+.dynamic-background-quick-card.active::after {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #079891;
+  box-shadow: 0 2px 6px rgba(13, 63, 58, 0.32);
+  pointer-events: none;
+}
+
+.dynamic-background-quick-thumb {
+  position: absolute;
+  inset: 3px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #e2ebe8;
+  pointer-events: none;
+}
+
+.dynamic-background-quick-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 46% 0 0;
+  background: linear-gradient(180deg, transparent, rgba(9, 21, 18, 0.7));
+}
+
+.dynamic-background-quick-thumb > img,
+.dynamic-background-quick-thumb > video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+}
+
+.dynamic-background-quick-name {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  bottom: 6px;
+  left: 8px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dynamic-background-quick-card:focus-visible,
+.dynamic-background-quick-play:focus-visible {
+  outline: 3px solid rgba(10, 140, 151, 0.42);
+  outline-offset: 2px;
+}
+
+.dynamic-background-quick-play {
+  box-sizing: border-box;
+  position: relative;
+  width: 156px;
+  min-width: 156px;
+  min-height: 80px;
+  height: 80px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  overflow: visible;
+  border: 1px solid rgba(7, 24, 21, 0.12);
+  border-radius: 12px;
+  color: #fff;
+  background: #171c19;
+  box-shadow:
+    0 8px 18px rgba(15, 31, 27, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dynamic-background-quick-play::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: -15px;
+  width: 2px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(72, 78, 76, 0.34) 0 6px,
+    transparent 6px 12px
+  );
+  pointer-events: none;
+}
+
+.dynamic-background-quick-play > svg {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  flex: 0 0 20px;
+}
+
+.dynamic-background-quick-play > span {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.dynamic-background-quick-card:active,
+.dynamic-background-quick-play:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dynamic-background-quick-card:hover {
+    border-color: rgba(9, 143, 135, 0.48);
+    box-shadow: 0 8px 18px rgba(22, 93, 84, 0.16);
+  }
+
+  .dynamic-background-quick-play:hover {
+    background: #087f8d;
+    box-shadow: 0 10px 22px rgba(8, 89, 95, 0.24);
+  }
+}
+
+@media (max-width: 1100px), (max-height: 820px) {
+  .dynamic-control-screen .dynamic-stage-shell.has-background-quick-switcher {
+    grid-template-rows: 112px auto;
+    gap: 8px;
+  }
+
+  .dynamic-background-quick-switcher {
+    --dynamic-background-quick-card-width: 140px;
+    height: 112px;
+    padding: 10px;
+    grid-template-columns: minmax(0, 1fr) 128px;
+    gap: 22px;
+    border-radius: 12px;
+  }
+
+  .dynamic-background-quick-rail {
+    height: 92px;
+  }
+
+  .dynamic-background-quick-list {
+    min-height: 84px;
+    gap: 8px;
+  }
+
+  .dynamic-background-quick-card {
+    border-radius: 10px;
+  }
+
+  .dynamic-background-quick-thumb {
+    border-radius: 7px;
+  }
+
+  .dynamic-background-quick-play {
+    width: 128px;
+    min-width: 128px;
+    min-height: 64px;
+    height: 64px;
+    padding-inline: 10px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  .dynamic-background-quick-play::before {
+    top: 8px;
+    bottom: 8px;
+    left: -12px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .dynamic-background-quick-switcher,
+  .dynamic-background-quick-card,
+  .dynamic-background-quick-play {
+    border-width: 2px;
+  }
+
+  .dynamic-background-quick-card.active {
+    outline: 3px solid #007f78;
+    outline-offset: 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-background-quick-rail {
+    scroll-behavior: auto;
+  }
+
+  .dynamic-background-quick-card,
+  .dynamic-background-quick-play {
+    transition-duration: 1ms !important;
   }
 }

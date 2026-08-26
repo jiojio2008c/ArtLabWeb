@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict'
 import {
   TARGET_MOTION_KEYFRAME_SEGMENTS,
+  getTargetMotionDurationMs,
   sampleTargetMotionProgress,
+  sampleTargetMotionState,
   sampleTargetOneWayProgress,
   sampleTargetPingPongProgress
 } from '../renderer/target-motion-core.js'
 import { readFileSync } from 'node:fs'
 
 const oneWayDurationMs = 1000
+
+assert.ok(Math.abs(getTargetMotionDurationMs(50) - 3819) < 1e-9)
+assert.ok(getTargetMotionDurationMs(1) > getTargetMotionDurationMs(100))
 
 assert.equal(sampleTargetPingPongProgress(0, oneWayDurationMs), 0)
 assert.equal(sampleTargetPingPongProgress(oneWayDurationMs / 2, oneWayDurationMs), 0.5)
@@ -23,6 +28,36 @@ assert.equal(sampleTargetOneWayProgress(oneWayDurationMs * 2, oneWayDurationMs),
 
 assert.equal(sampleTargetMotionProgress(oneWayDurationMs * 2, oneWayDurationMs, false), 1)
 assert.equal(sampleTargetMotionProgress(oneWayDurationMs * 2, oneWayDurationMs, true), 0)
+
+assert.deepEqual(
+  sampleTargetMotionState(oneWayDurationMs + 79, oneWayDurationMs, {
+    hideAfterTarget: true,
+    settleMs: 80
+  }),
+  {
+    progress: 1,
+    arrived: false,
+    hidden: false,
+    visible: true,
+    interactive: true,
+    arrivalMs: 1080
+  }
+)
+assert.equal(
+  sampleTargetMotionState(oneWayDurationMs + 80, oneWayDurationMs, {
+    hideAfterTarget: true,
+    settleMs: 80
+  }).hidden,
+  true
+)
+assert.equal(
+  sampleTargetMotionState(oneWayDurationMs * 5, oneWayDurationMs, {
+    loop: true,
+    hideAfterTarget: true
+  }).hidden,
+  false,
+  'Looping target motion must never hide at a final arrival.'
+)
 
 for (const loop of [false, true]) {
   const animationDuration = loop ? oneWayDurationMs * 2 : oneWayDurationMs

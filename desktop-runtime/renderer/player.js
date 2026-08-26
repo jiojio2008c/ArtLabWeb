@@ -39,7 +39,10 @@ import {
   resolveDynamicFixedBackgroundEpoch,
   resolveDynamicBackgroundPlaybackEpoch
 } from './background-playback-core.js'
-import { sampleTargetMotionProgress } from './target-motion-core.js'
+import {
+  getTargetMotionDurationMs,
+  sampleTargetMotionState
+} from './target-motion-core.js'
 import {
   sampleDynamicHorizontalMotion,
   sampleDynamicOrbitMotion,
@@ -89,6 +92,7 @@ const statusPanel = document.getElementById('statusPanel')
 const statusText = document.getElementById('statusText')
 const groupText = document.getElementById('groupText')
 const archiveView = document.getElementById('archiveView')
+const stageStandby = document.getElementById('stageStandby')
 let archiveMirrorImage = document.getElementById('archiveMirrorImage')
 const archiveMirrorFallback = document.getElementById('archiveMirrorFallback')
 const archiveSourceImage = document.getElementById('archiveSourceImage')
@@ -155,7 +159,6 @@ let stageOffsetX = 0
 let stageOffsetY = 0
 let lastPreviewKey = ''
 let previewStartTime = performance.now()
-let activeStageStartedAt = previewStartTime
 let lastDrawnBackgroundAssetId = ''
 let randomBackgroundState = { key: '', indices: [] }
 let backgroundPlaybackScheduleState = { key: '', entries: [], startedAt: 0 }
@@ -171,9 +174,24 @@ let archiveMirrorImageLoadSequence = 0
 let archiveSourceImageFrameKey = ''
 let archiveSourceImageFailedFrameKey = ''
 let archivePortalWorld = null
+let previewPresentationKey = ''
+let previewPresentationReady = false
+let stageSurfaceCleared = false
 
 const imageCache = new Map()
 const videoCache = new Map()
+const transitionLogo = {
+  element: new Image(),
+  loaded: false,
+  failed: false
+}
+transitionLogo.element.onload = () => {
+  transitionLogo.loaded = true
+}
+transitionLogo.element.onerror = () => {
+  transitionLogo.failed = true
+}
+transitionLogo.element.src = './assets/Right_Logo.png'
 const RANDOM_PREVIEW_MOTION_MODES = ['verticalWave', 'left', 'right', 'orbit']
 const UNITY_PREVIEW_DURATION_BY_ID = new Map(
   UNITY_EXTRA_ANIMATION_DEFINITIONS.map((definition) => [definition.id, definition.duration])
@@ -632,6 +650,118 @@ const preloadBackground = (background) => {
   }
 }
 
+const getPreviewPresentationKey = () => {
+  const preview = runtimeState.preview ?? {}
+  if (preview.enabled !== true || isArchiveView()) return ''
+  return `${runtimeState.activeGroupId ?? preview.groupId ?? ''}:${preview.replayId ?? 0}`
+}
+
+const isAssetReadyForPreview = (assetId) => {
+  const asset = getAsset(assetId)
+  if (!asset?.url) return false
+  if (asset.mediaType === 'video') {
+    const video = getVideo(asset)
+    return Boolean(video?.loaded && video.element.readyState >= 2)
+  }
+  return Boolean(getImage(asset)?.loaded)
+}
+
+const arePreviewVisualsReady = (group) => {
+  if (!group) return false
+  const backgrounds = group.backgrounds ?? []
+  const activeBackground = backgrounds.find((background) => (
+    background.assetId === group.activeBackgroundId
+  )) ?? backgrounds[0]
+  if (activeBackground?.assetId && !isAssetReadyForPreview(activeBackground.assetId)) return false
+
+  const visibleItems = getDynamicStageItemsForBackground(
+    getOrderedItems(group),
+    activeBackground
+  )
+  return visibleItems.every((item) => {
+    if (item.isVisible === false) return true
+    if (isBubbleItem(item)) {
+      const bubbleImageAssetId = item.imageAssetId ?? getBubbleAssetId(item)
+      return !bubbleImageAssetId || isAssetReadyForPreview(bubbleImageAssetId)
+    }
+    return !item.assetId || isAssetReadyForPreview(item.assetId)
+  })
+}
+
+const primePreviewAssets = (group) => {
+  if (!group) return
+  const backgrounds = group.backgrounds ?? []
+  const activeBackground = backgrounds.find((background) => (
+    background.assetId === group.activeBackgroundId
+  )) ?? backgrounds[0]
+  if (activeBackground?.assetId) preloadBackground(activeBackground)
+
+  const visibleItems = getDynamicStageItemsForBackground(
+    getOrderedItems(group),
+    activeBackground
+  )
+  visibleItems.forEach((item) => {
+    const assetId = isBubbleItem(item)
+      ? item.imageAssetId ?? getBubbleAssetId(item)
+      : item.assetId
+    const asset = getAsset(assetId)
+    if (!asset?.url) return
+    if (asset.mediaType === 'video') getVideo(asset)
+    else getImage(asset)
+  })
+}
+
+const clearStageSurface = () => {
+  if (stageSurfaceCleared) return
+  const dpr = window.devicePixelRatio || 1
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  backgroundSourceContext.setTransform(1, 0, 0, 1, 0, 0)
+  backgroundSourceContext.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+  backgroundCanvas.getContext('2d')?.clearRect(0, 0, backgroundCanvas.width, backgroundCanvas.height)
+  backgroundCanvas.classList.add('is-hidden')
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  stageSurfaceCleared = true
+}
+
+const activatePreviewPresentation = (key, now) => {
+  previewPresentationKey = key
+  previewPresentationReady = true
+  previewStartTime = now
+  lastPreviewKey = ''
+  stageSurfaceCleared = false
+  ripples = []
+  animationOverrides.clearAll()
+  resetAdvancedPlaybackSession(key)
+  setRuntimeViewMediaState(false)
+}
+
+const updateRuntimePresentation = (now = performance.now()) => {
+  const archiveActive = isArchiveView()
+  const requestedKey = getPreviewPresentationKey()
+
+  if (!requestedKey) {
+    previewPresentationKey = ''
+    previewPresentationReady = false
+  } else if (previewPresentationKey !== requestedKey) {
+    previewPresentationKey = requestedKey
+    previewPresentationReady = false
+  }
+
+  if (!archiveActive && requestedKey && !previewPresentationReady) {
+    primePreviewAssets(getActiveGroup())
+    if (arePreviewVisualsReady(getActiveGroup())) {
+      activatePreviewPresentation(requestedKey, now)
+    }
+  }
+
+  const standbyActive = !archiveActive && !previewPresentationReady
+  displayRoot?.classList.toggle('is-stage-standby', standbyActive)
+  stageStandby?.setAttribute('aria-hidden', standbyActive ? 'false' : 'true')
+  if (standbyActive) clearStageSurface()
+  return { archiveActive, standbyActive, previewActive: !archiveActive && !standbyActive }
+}
+
 const disposeAudioElement = (element) => {
   if (!element) return
   element.pause()
@@ -773,7 +903,7 @@ const getItemAudioTriggerElapsedMs = (item, itemEpoch) => {
   if (trigger === 'targetArrival') {
     if (item.targetMode !== 'target' || !item.targetPosition) return null
     return schedule.activeStartMs
-      + speedToCycleSeconds(item.moveSpeed, 3.8) * 1000
+      + getTargetMotionDurationMs(item.moveSpeed, 3.8)
       + TARGET_ARRIVAL_SETTLE_MS
   }
   return schedule.activeStartMs
@@ -1215,6 +1345,58 @@ const drawShadowPlayTransition = (renderContext, transition) => {
   renderContext.fillRect(clothWidth - 24, -30, 3, STAGE_HEIGHT + 60)
 }
 
+const drawTransitionLogo = (renderContext, transition) => {
+  if (!transitionLogo.loaded || transitionLogo.failed || !transition) return
+  const phaseDuration = transition.phase === 'closing' ? transition.closeMs : transition.openMs
+  const phaseProgress = clamp(transition.phaseElapsedMs / Math.max(1, phaseDuration), 0, 1)
+  const fadeIn = transition.phase === 'closing'
+    ? smoothstep(clamp((phaseProgress - 0.58) / 0.42, 0, 1))
+    : 1
+  const fadeOut = transition.phase === 'opening'
+    ? 1 - smoothstep(clamp(phaseProgress / 0.46, 0, 1))
+    : 1
+  const alpha = clamp(fadeIn * fadeOut, 0, 1)
+  if (alpha <= 0.001) return
+
+  const sourceWidth = transitionLogo.element.naturalWidth || 1372
+  const sourceHeight = transitionLogo.element.naturalHeight || 716
+  const maxWidth = STAGE_WIDTH * 0.42
+  const maxHeight = STAGE_HEIGHT * 0.22
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight)
+  const width = sourceWidth * scale
+  const height = sourceHeight * scale
+  let drawX = (STAGE_WIDTH - width) / 2
+
+  renderContext.save()
+  renderContext.globalAlpha = alpha
+  if (transition.type === 'cameraFlash') {
+    renderContext.globalCompositeOperation = 'multiply'
+    renderContext.filter = 'brightness(0.18) contrast(1.2)'
+  } else if (transition.type === 'shadowPlay') {
+    const easedProgress = easeOutCubic(phaseProgress)
+    const coverage = transition.phase === 'closing' ? easedProgress : 1 - easedProgress
+    const clothWidth = STAGE_WIDTH * 1.04 * coverage
+    renderContext.beginPath()
+    renderContext.rect(-20, -22, Math.max(0, clothWidth), STAGE_HEIGHT + 44)
+    renderContext.clip()
+    drawX = (clothWidth - width) / 2 - 10
+    renderContext.filter = 'brightness(0.34) contrast(1.1)'
+    renderContext.shadowColor = 'rgba(65, 42, 17, 0.34)'
+    renderContext.shadowBlur = 20
+  } else {
+    renderContext.shadowColor = 'rgba(0, 0, 0, 0.35)'
+    renderContext.shadowBlur = 24
+  }
+  renderContext.drawImage(
+    transitionLogo.element,
+    drawX,
+    (STAGE_HEIGHT - height) / 2,
+    width,
+    height
+  )
+  renderContext.restore()
+}
+
 const drawBackgroundTransition = (renderContext, backgroundFrame) => {
   const transition = backgroundFrame?.transition
   if (!transition) return
@@ -1223,6 +1405,7 @@ const drawBackgroundTransition = (renderContext, backgroundFrame) => {
   if (transition.type === 'curtain') drawCurtainTransition(renderContext, transition)
   if (transition.type === 'cameraFlash') drawCameraFlashTransition(renderContext, transition)
   if (transition.type === 'shadowPlay') drawShadowPlayTransition(renderContext, transition)
+  drawTransitionLogo(renderContext, transition)
   renderContext.restore()
 }
 
@@ -1283,13 +1466,16 @@ const getPreviewAppearAlpha = (item, itemIndex, now) => {
   const appearMode = preview.appearMode ?? getActiveGroup()?.appearMode ?? 'all'
   const intervalMs = preview.intervalMs ?? getActiveGroup()?.appearIntervalMs ?? 800
   const fadeMs = 420
+  const explicitDelayMs = Math.max(0, Number(item.appearanceDelayMs) || 0)
 
   if (appearMode === 'sequence') {
-    const delay = itemIndex * intervalMs
+    const delay = Number.isFinite(Number(item.appearanceDelayMs))
+      ? explicitDelayMs
+      : itemIndex * intervalMs
     return smoothstep((elapsed - delay) / fadeMs)
   }
 
-  return smoothstep(elapsed / fadeMs)
+  return smoothstep((elapsed - explicitDelayMs) / fadeMs)
 }
 
 const getVisibleItemsForPlayback = (group, backgroundFrame) => {
@@ -1308,6 +1494,9 @@ const getAppearanceContextSignature = (items, backgroundFrame) => {
   ].join(':')
   const itemSignature = items.map((item) => [
     item.itemId,
+    item.appearanceDelayMs ?? 0,
+    item.appearanceHideMs ?? '',
+    item.hideAfterTarget === true ? 1 : 0,
     item.linkedAppearance?.triggerItemId ?? '',
     item.linkedAppearance?.mode ?? '',
     item.linkedAppearance?.delayMs ?? 0
@@ -1398,7 +1587,11 @@ const getItemAppearanceSample = (item, itemIndex, now) => {
     const alpha = getPreviewAppearAlpha(item, itemIndex, now)
     const preview = runtimeState.preview ?? {}
     const intervalMs = preview.intervalMs ?? getActiveGroup()?.appearIntervalMs ?? 800
-    const delayMs = preview.appearMode === 'sequence' ? itemIndex * intervalMs : 0
+    const delayMs = Number.isFinite(Number(item.appearanceDelayMs))
+      ? Math.max(0, Number(item.appearanceDelayMs))
+      : preview.appearMode === 'sequence'
+        ? itemIndex * intervalMs
+        : 0
     return {
       alpha,
       active: alpha > 0.001,
@@ -1469,16 +1662,22 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
   const targetActive = item.targetMode === 'target' && item.targetPosition
   let targetX = 0
   let targetY = 0
+  let targetHidden = false
   if (targetActive) {
-    const targetDurationMs = speedToCycleSeconds(item.moveSpeed, 3.8) * 1000
+    const targetDurationMs = getTargetMotionDurationMs(item.moveSpeed, 3.8)
     const targetElapsedMs = appearanceSample.animationElapsedMs
-    const targetProgress = sampleTargetMotionProgress(
+    const targetState = sampleTargetMotionState(
       targetElapsedMs,
       targetDurationMs,
-      item.targetLoop === true
+      {
+        loop: item.targetLoop === true,
+        hideAfterTarget: item.hideAfterTarget === true,
+        settleMs: TARGET_ARRIVAL_SETTLE_MS
+      }
     )
-    targetX = (Number(item.targetPosition.x) - positionX) * STAGE_WIDTH * targetProgress
-    targetY = (Number(item.targetPosition.y) - positionY) * STAGE_HEIGHT * targetProgress
+    targetX = (Number(item.targetPosition.x) - positionX) * STAGE_WIDTH * targetState.progress
+    targetY = (Number(item.targetPosition.y) - positionY) * STAGE_HEIGHT * targetState.progress
+    targetHidden = targetState.hidden
   }
 
   const transition = backgroundFrame?.transition
@@ -1504,8 +1703,8 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
   return {
     x: appearanceX + targetX + transitionX,
     y: appearanceY + targetY,
-    alpha: clamp(appearanceSample.alpha, 0, 1),
-    interactive: appearanceSample.interactive,
+    alpha: targetHidden ? 0 : clamp(appearanceSample.alpha, 0, 1),
+    interactive: !targetHidden && appearanceSample.interactive,
     animationElapsedMs: appearanceSample.animationElapsedMs,
     silhouette,
     targetActive: Boolean(targetActive)
@@ -1924,7 +2123,7 @@ const findTopmostItemAtPoint = (group, now, stagePoint, backgroundFrame) => {
 }
 
 const handleStagePointerDown = (event) => {
-  if (isArchiveView()) return
+  if (isArchiveView() || !previewPresentationReady) return
   if (event.button !== 0 || event.isPrimary === false) return
   if (event.pointerType && event.pointerType !== 'mouse') return
 
@@ -1955,7 +2154,8 @@ const handleStagePointerDown = (event) => {
 }
 
 const drawFrame = (now) => {
-  if (isArchiveView()) {
+  const presentation = updateRuntimePresentation(now)
+  if (!presentation.previewActive) {
     if (
       advancedPlaybackState.currentBgm
       || advancedPlaybackState.fadingBgms.size > 0
@@ -1976,6 +2176,7 @@ const drawFrame = (now) => {
   backgroundSourceContext.setTransform(1, 0, 0, 1, 0, 0)
   backgroundSourceContext.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
   const backgroundRender = drawBackground(backgroundSourceContext, playbackFrame.background, now)
+  stageSurfaceCleared = false
   ripples = ripples.filter((ripple) => now - ripple.startedAt < RIPPLE_DURATION_MS)
 
   const backgroundRendered = waterRippleRenderer.render({
@@ -2058,11 +2259,6 @@ const applyStateEventToInteractions = (state) => {
 
   lastStateEventSequence = sequence
   switch (event.eventName) {
-    case 'GroupSelectAndSync':
-    case 'GroupStateSync':
-      animationOverrides.clearGroup(event.groupId)
-      break
-
     case 'PreviewMode':
       if (event.enabled) animationOverrides.clearAll()
       break
@@ -2100,10 +2296,6 @@ const receiveState = (state) => {
       }
     ])
   )
-  const stateEventSequence = Number(state.lastEvent?.sequence ?? 0)
-  const stageStateSynced = stateEventSequence > lastStateEventSequence
-    && (state.lastEvent?.eventName === 'GroupSelectAndSync' || state.lastEvent?.eventName === 'GroupStateSync')
-    && state.lastEvent?.groupId === state.activeGroupId
   const activeGroupChanged = previousState.activeGroupId !== state.activeGroupId
   const previewRestarted = Boolean(nextPreview.enabled) && (
     !previousPreview.enabled
@@ -2125,7 +2317,6 @@ const receiveState = (state) => {
     preview: nextPreview,
     watermarkEnabled
   }
-  if (activeGroupChanged || archiveModeChanged || stageStateSynced) activeStageStartedAt = performance.now()
   if (advancedSessionChanged) {
     resetAdvancedPlaybackSession(advancedSessionKey)
   } else if (previousAdvancedPreview && !nextAdvancedPreview) {
@@ -2137,7 +2328,10 @@ const receiveState = (state) => {
   animationOverrides.reconcile(runtimeState)
   clearUnusedMedia()
   renderArchiveMirror()
-  if (archiveModeChanged) setRuntimeViewMediaState(isArchiveView())
+  updateRuntimePresentation()
+  if (archiveModeChanged || previousPreview.enabled !== nextPreview.enabled) {
+    setRuntimeViewMediaState(isArchiveView() || !previewPresentationReady)
+  }
 
   const preview = runtimeState.preview ?? {}
   const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${preview.appearMode}:${preview.intervalMs}:${preview.appearAnimation}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}:${preview.backgroundTransition}:${preview.advancedFeaturesEnabled}`

@@ -140,7 +140,9 @@ for (const [locale, resource] of localizedFlowCopy) {
   for (const key of [
     'control.clearAllBackgroundMusic',
     'control.clearAllBackgroundMusicHint',
-    'control.clearedAllBackgroundMusic'
+    'control.clearedAllBackgroundMusic',
+    'control.quickBackgroundSwitch',
+    'control.playSelectedBackground'
   ]) {
     assert.equal(
       typeof resource[key] === 'string' && resource[key].trim().length > 0,
@@ -149,6 +151,67 @@ for (const [locale, resource] of localizedFlowCopy) {
     )
   }
 }
+
+const localizedAppearanceEditorResources = [
+  ['zh-Hans', zhHans],
+  ['zh-Hant', zhHant],
+  ['en', en],
+  ['pt-PT', ptPT],
+  ['pl-PL', plPL]
+]
+const appearanceEditorKeys = [
+  'control.appearanceSettings',
+  'control.closeAppearanceSettings',
+  'control.appearanceMode',
+  'control.appearanceObjects',
+  'control.appearanceObjectCount',
+  'control.appearanceTimingMode',
+  'control.appearanceTimingUniform',
+  'control.appearanceTimingIndividual',
+  'control.appearanceInterval',
+  'control.appearanceImmediate',
+  'control.appearanceEmpty',
+  'control.appearanceObjectTime',
+  'control.appearanceTimeSummary',
+  'control.appearAll',
+  'control.appearSequence',
+  'control.appearAnimation',
+  'control.appearAnimationNone',
+  'control.appearAnimationDrop',
+  'control.appearAnimationTrackSlide'
+]
+
+for (const [locale, resource] of localizedAppearanceEditorResources) {
+  for (const key of appearanceEditorKeys) {
+    assert.equal(
+      typeof resource[key] === 'string' && resource[key].trim().length > 0,
+      true,
+      `${locale} must provide user-facing appearance-editor copy for ${key}.`
+    )
+  }
+  assert.deepEqual(
+    getTranslationPlaceholders(resource['control.appearanceObjectCount']),
+    ['count'],
+    `${locale} appearance object count must preserve the count placeholder.`
+  )
+  assert.deepEqual(
+    getTranslationPlaceholders(resource['control.appearanceObjectTime']),
+    ['name'],
+    `${locale} appearance wheel label must identify the object by name.`
+  )
+  assert.deepEqual(
+    getTranslationPlaceholders(resource['control.appearanceTimeSummary']),
+    ['value'],
+    `${locale} appearance card summary must preserve the time value.`
+  )
+}
+
+assert.equal(zhHans['control.appearanceSettings'], '出场设定')
+assert.equal(zhHans['control.appearAll'], '全部出场')
+assert.equal(zhHans['control.appearSequence'], '逐个出场')
+assert.equal(zhHant['control.appearanceSettings'], '出場設定')
+assert.equal(zhHant['control.appearAll'], '全部出場')
+assert.equal(zhHant['control.appearSequence'], '逐個出場')
 
 const localizedLinkageEditorCopy = [
   ['zh-Hans', zhHans, {
@@ -712,6 +775,36 @@ assert.match(
   'The artwork-transition handoff must not restart the control workspace entrance animation.'
 )
 assert.match(
+  indexCss,
+  /\.page-frame\.page-view-entry\s*{(?=[^}]*background-color:\s*#69bbd6;)(?=[^}]*background-image:[\s\S]*?url\("\.\/assets\/magic-floor-background\.webp"\);)(?=[^}]*background-position:\s*center, center, center, center bottom;)(?=[^}]*background-size:\s*auto, auto, cover, cover;)[^}]*}/,
+  'The homepage frame must retain the branded backdrop while the visible entry screen is made transparent for EXE capture.'
+)
+assert.match(
+  indexCss,
+  /:is\(\.entry-screen, \.dynamic-library-screen\)\.dynamic-archive-snapshot-capture\s*{(?=[^}]*background:\s*transparent !important;)(?=[^}]*background-image:\s*none !important;)[^}]*}/,
+  'EXE archive captures must remain transparent even though the visible homepage now has a branded fallback layer.'
+)
+assert.match(
+  indexCss,
+  /:is\(\.entry-screen, \.dynamic-library-screen\)\.dynamic-archive-snapshot-capture,[\s\S]*?\.dynamic-archive-snapshot-capture \*::after\s*{(?=[^}]*animation-play-state:\s*paused !important;)(?=[^}]*transition:\s*none !important;)[^}]*}/,
+  'Archive capture must pause the live animation timeline instead of destroying and replaying completed entrance animations.'
+)
+assert.doesNotMatch(
+  indexCss,
+  /:is\(\.entry-screen, \.dynamic-library-screen\)\.dynamic-archive-snapshot-capture,[\s\S]*?\.dynamic-archive-snapshot-capture \*::after\s*{[^}]*animation:\s*none !important;/,
+  'Archive capture must not reset live homepage or library animations with animation: none.'
+)
+assert.match(
+  dynamicGroupsSource,
+  /const archivePortalArrivalRef = useRef\(portalArrival\)[\s\S]*?archivePortalArrivalRef\.current = portalArrival/,
+  'The archive mirror must read portal arrival through a ref so the completed portal does not schedule a duplicate capture.'
+)
+assert.match(
+  dynamicGroupsSource,
+  /initialTimer = window\.setTimeout\([\s\S]*?archivePortalArrivalRef\.current \? 700 : 140[\s\S]*?\}, \[[\s\S]*?folderTransitioning,\s*transitionPrepared,/,
+  'The library must capture once during portal arrival without rerunning solely when portalArrival clears.'
+)
+assert.match(
   dynamicControlSource,
   /if \(video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\)\s*{\s*video\.load\(\)\s*}\s*else\s*{\s*playVideo\(\)\s*}/,
   'A ready stage video must resume without resetting its visible frame.'
@@ -729,8 +822,163 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const layerRelationTree: DynamicAppearanceRelationTreeNode\[\] = advancedFeaturesEnabled[\s\S]*?buildVisibleLayerRelationTree/,
-  'Free editing must retain the parent-child layer tree.'
+  /const renderLayerItem = \(item: DynamicItem\): React\.ReactNode => \{[\s\S]*?<li key=\{item\.id\} className="dynamic-layer-node is-root">/,
+  'Free editing must render a flat layer list with one root card per object.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /buildVisibleLayerRelationTree|layerRelationTree\s*:/,
+  'The editor must not build a parent-child layer tree after independent appearance timing is enabled.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /dynamic-appearance-delay-field|dynamic-appearance-delay-wheel/,
+  'Object properties must not duplicate timing controls from the dedicated appearance editor.'
+)
+assert.doesNotMatch(
+  indexCss,
+  /dynamic-appearance-delay-(?:field|wheel)/,
+  'Removed object-property appearance controls must not retain dead styling.'
+)
+assert.match(
+  dynamicControlSource,
+  /className=\{`ipad-button secondary-button control-action-button appear-action[^`]*`\}[\s\S]*?onClick=\{\(\) => appearancePanelOpen \? closeAppearanceEditor\(\) : openAppearanceEditor\(\)\}[\s\S]*?\{t\('control\.appearanceSettings'\)\}/,
+  'Free editing must restore the top-right appearance settings action.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-background-modal dynamic-appearance-modal is-advanced"[\s\S]*?className="dynamic-background-editor-layout dynamic-appearance-editor-layout"/,
+  'Appearance settings must use the same full modal container and two-pane structure as the background editor.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-appearance-item-list"[\s\S]*?className="dynamic-appearance-item-card"[\s\S]*?<DynamicItemThumbnail[\s\S]*?className="dynamic-appearance-item-thumbnail"/,
+  'The appearance editor must render every object as a visual card.'
+)
+assert.match(
+  dynamicControlSource,
+  /if \(appearMode === 'all'\) \{\s*commitAppearanceTiming\('all', intervalMs, \(\) => 0\)/,
+  'The all-at-once shortcut must make every object enter immediately.'
+)
+assert.match(
+  dynamicControlSource,
+  /const showIndividualWheel = appearanceEditorMode === 'sequence'[\s\S]*?&& appearanceSequenceTimingMode === 'individual'[\s\S]*?\{showIndividualWheel && \([\s\S]*?className="dynamic-appearance-item-wheel"/,
+  'Per-object timing wheels must only appear for custom one-by-one timing.'
+)
+assert.match(
+  dynamicControlSource,
+  /appearanceEditorMode === 'all'[\s\S]*?t\('control\.appearanceImmediate'\)[\s\S]*?appearanceEditorMode === 'sequence'[\s\S]*?className="dynamic-appearance-timing-grid"/,
+  'All-at-once mode must remain immediate while one-by-one mode exposes timing choices.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /dynamic-appearance-immediate-status/,
+  'All-at-once mode must not render a redundant immediate-status bar.'
+)
+assert.doesNotMatch(
+  indexCss,
+  /\.dynamic-appearance-immediate-status/,
+  'The removed all-at-once status bar must not retain dead styling.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-appearance-animation-grid"[\s\S]*?appearanceAnimationOptions\.map[\s\S]*?setAppearAnimation\(option\.id\)/,
+  'The appearance modal must preserve the existing entrance-animation choices.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-appearance-item-list\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?overflow-y:\s*auto;/,
+  'Appearance object cards must use one readable, independently scrollable column.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-appearance-item-card\s*{(?=[^}]*min-height:\s*82px;)(?=[^}]*grid-template-columns:\s*34px 88px minmax\(0, 1fr\) auto;)[^}]*}/,
+  'Each appearance card must reserve clear regions for order, thumbnail, name, and optional timing.'
+)
+assert.match(
+  indexCss,
+  /@media \(max-width: 960px\), \(orientation: portrait\) and \(max-width: 1100px\)\s*{[\s\S]*?\.dynamic-appearance-editor-layout\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+  'The appearance modal must collapse to one column on portrait and narrower displays.'
+)
+assert.match(
+  dynamicControlSource,
+  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length >= 2/,
+  'The stage background switcher must stay hidden for zero or one background and while previewing.'
+)
+assert.match(
+  dynamicControlSource,
+  /className=\{`dynamic-stage-shell \$\{showBackgroundQuickSwitcher \? 'has-background-quick-switcher' : ''\}`\}[\s\S]*?\{showBackgroundQuickSwitcher && \([\s\S]*?className="dynamic-background-quick-switcher"/,
+  'Two or more backgrounds must render the compact switcher above the editable stage.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-background-quick-rail"[\s\S]*?backgrounds\.map\(\(background\) =>[\s\S]*?className=\{`dynamic-background-quick-card \$\{active \? 'active' : ''\}`\}[\s\S]*?aria-pressed=\{active\}/,
+  'The quick switcher must expose every background as a clearly selectable card.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="ipad-button dynamic-background-quick-play"[\s\S]*?onClick=\{handleSelectedBackgroundPreview\}[\s\S]*?aria-label=\{t\('control\.playSelectedBackground'\)\}/,
+  'The quick switcher must reserve an accessible action for playing the selected background.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-background-quick-switcher\s*{(?=[^}]*--dynamic-background-quick-card-width:\s*174px;)(?=[^}]*width:\s*min\(100%, 930px\);)(?=[^}]*max-width:\s*100%;)(?=[^}]*height:\s*138px;)(?=[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 156px;)(?=[^}]*overflow:\s*hidden;)[^}]*}/,
+  'The large-screen switcher must remain centered over the stage with the measured rail and play-area geometry.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen \.dynamic-editor-row\.right-panel-open \.dynamic-stage-shell\.has-background-quick-switcher\s*{(?=[^}]*align-self:\s*start;)(?=[^}]*padding-top:\s*8px;)[^}]*}/,
+  'The background switcher shell must override the centered stage rule and align near the top of the open side panel.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen \.dynamic-stage-shell\.has-background-quick-switcher\s*{(?=[^}]*grid-template-rows:\s*138px auto;)(?=[^}]*gap:\s*10px;)[^}]*}/,
+  'The large-screen switcher must reserve its measured height and a ten-pixel stage gap.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-background-quick-rail\s*{(?=[^}]*min-width:\s*0;)(?=[^}]*overflow-x:\s*scroll;)(?=[^}]*overflow-y:\s*hidden;)(?=[^}]*touch-action:\s*pan-x;)[^}]*}/,
+  'The background-card rail must scroll horizontally without leaking vertical or page overflow.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-background-quick-card\s*{(?=[^}]*width:\s*var\(--dynamic-background-quick-card-width\);)(?=[^}]*min-width:\s*var\(--dynamic-background-quick-card-width\);)(?=[^}]*aspect-ratio:\s*5 \/ 3;)(?=[^}]*scroll-snap-align:\s*start;)(?=[^}]*border-radius:\s*12px;)[^}]*}/,
+  'Background shortcuts must use uniform, touch-friendly 5:3 rounded thumbnail cards.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-background-quick-thumb > img,[\s\S]*?\.dynamic-background-quick-thumb > video\s*{(?=[^}]*object-fit:\s*contain;)(?=[^}]*object-position:\s*center;)[^}]*}/,
+  'Every quick background thumbnail must remain fully visible and centered inside its widescreen card.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-background-quick-play::before\s*{(?=[^}]*left:\s*-15px;)(?=[^}]*background:\s*repeating-linear-gradient\([\s\S]*?rgba\(72, 78, 76, 0\.34\))[^}]*}/,
+  'The selected-background play area must be separated from the thumbnail rail by a vertical dashed divider.'
+)
+assert.match(
+  indexCss,
+  /@media \(max-width: 1100px\), \(max-height: 820px\)\s*{[\s\S]*?\.dynamic-control-screen \.dynamic-stage-shell\.has-background-quick-switcher\s*{(?=[^}]*grid-template-rows:\s*112px auto;)(?=[^}]*gap:\s*8px;)[^}]*}[\s\S]*?\.dynamic-background-quick-switcher\s*{(?=[^}]*--dynamic-background-quick-card-width:\s*140px;)(?=[^}]*height:\s*112px;)(?=[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 128px;)[^}]*}[\s\S]*?\.dynamic-background-quick-play\s*{(?=[^}]*width:\s*128px;)(?=[^}]*height:\s*64px;)[^}]*}/,
+  'The iPad Air layout must use the measured compact bar, card, play-button, and stage-gap dimensions.'
+)
+assert.match(
+  indexCss,
+  /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.dynamic-background-quick-rail\s*{\s*scroll-behavior:\s*auto;[\s\S]*?\.dynamic-background-quick-card,[\s\S]*?\.dynamic-background-quick-play\s*{\s*transition-duration:\s*1ms !important;/,
+  'The quick background controls must respect reduced-motion preferences.'
+)
+assert.match(
+  dynamicControlSource,
+  /hideAfterTarget=\{targetEditingItemId === item\.id[\s\S]*?item\.hideAfterTarget === true/,
+  'The target editor must pass the hide-after-arrival choice to the stage preview.'
+)
+assert.match(
+  dynamicControlSource,
+  /hideAfterTarget:\s*!targetDraftLoop && targetDraftHideAfterTarget/,
+  'Saving a target must persist the hide-after-arrival choice and disable it for loops.'
+)
+assert.match(
+  dynamicControlSource,
+  /appearanceDelayMs:\s*item\.appearanceDelayMs \?\? 0[\s\S]*appearanceHideMs:\s*item\.appearanceHideMs \?\? null[\s\S]*hideAfterTarget:\s*item\.hideAfterTarget === true/,
+  'Item motion payloads must include independent appearance and target-visibility settings.'
 )
 assert.doesNotMatch(
   dynamicControlSource,
@@ -883,50 +1131,20 @@ assert.match(
   /title={t\('control\.clearAllBackgroundMusicHint'\)}[\s\S]*{t\('control\.clearAllBackgroundMusic'\)}/,
   'The clear-all BGM button must provide a concise visible label and an explanatory accessible hint.'
 )
-assert.match(
-  dynamicControlSource,
-  /const selectedItemHasIncomingLink = Boolean\(selectedItem\?\.linkedAppearance\?\.triggerItemId\)[\s\S]*id !== 'background' \|\| !selectedItemHasIncomingLink/,
-  'A linked child object must not expose the inherited background property tab.'
-)
-assert.match(
-  dynamicControlSource,
-  /type LinkageEditorMode = 'immediate' \| Exclude<DynamicLinkedAppearanceMode, 'none'>/,
-  'The editor must separate the immediate UI choice from the persisted linkage modes.'
-)
-assert.match(
-  dynamicControlSource,
-  /!linkedAppearance \|\| \(linkedAppearance\.mode === 'showAfter' && linkedAppearance\.delayMs === 0\)[\s\S]*\? 'immediate'[\s\S]*: linkedAppearance\.mode/,
-  'A stored zero-delay appearance must reopen as the immediate option.'
-)
-assert.match(
-  dynamicControlSource,
-  /const persistedMode:[\s\S]*pendingLinkedAppearanceMode === 'hideAfter'[\s\S]*\? 'hideAfter'[\s\S]*: 'showAfter'[\s\S]*const delayMs = pendingLinkedAppearanceMode === 'immediate'[\s\S]*\? 0/,
-  'The immediate option must persist as showAfter with a zero-millisecond delay.'
-)
-assert.match(
-  dynamicControlSource,
-  /\['immediate', 'control\.linkageImmediate'\],[\s\S]*\['showAfter', 'control\.linkageShowAfter'\],[\s\S]*\['hideAfter', 'control\.linkageHideAfter'\]/,
-  'The linkage editor must offer immediate, timed entrance, and timed hide choices in that order.'
-)
 assert.doesNotMatch(
   dynamicControlSource,
-  /\['none', 'control\.linkageNone'\]/,
-  'Removing an order must remain a dedicated action instead of a misleading mode choice.'
+  /className="dynamic-object-linkage-card"(?![^>]*hidden)/,
+  'The object properties must not expose a visible binding card.'
 )
 assert.match(
   dynamicControlSource,
-  /pendingLinkedAppearanceMode !== 'immediate'[\s\S]*className="dynamic-linkage-delay-field"/,
-  'The immediate option must not ask the user for an irrelevant delay.'
+  /const handleAppearanceItemTimeChange = \(itemId: string, value: number\) => \{[\s\S]*appearanceDelayMs[\s\S]*commitAppearanceTiming/,
+  'Independent appearance time changes must persist through the dedicated appearance editor.'
 )
 assert.match(
   dynamicControlSource,
-  /<strong>{t\('control\.linkageSourceAlias'\)}<\/strong>[\s\S]*pendingLinkTargetItem \? t\('control\.linkageTargetAlias'\)/,
-  'The relationship diagram must use Object A and Object B aliases without renaming stored objects.'
-)
-assert.match(
-  dynamicControlSource,
-  /const removeEditedLink = \(\) => {[\s\S]*persistLinkedAppearanceRelation\([\s\S]*'none',[\s\S]*0/,
-  'The dedicated remove-from-order action must continue to clear the stored relationship.'
+  /const getLayerSummary = \(item: DynamicItem\) => \{[\s\S]*item\.appearanceDelayMs[\s\S]*control\.layerAppearanceTime/,
+  'Layer cards must show each object\'s independent appearance time.'
 )
 const stageHitResolverStart = dynamicControlSource.indexOf('const resolveStageItemIdAtPoint = (clientPoint: Point) => {')
 const stageHitResolverEnd = dynamicControlSource.indexOf('const handleStagePointerDown', stageHitResolverStart)
@@ -946,28 +1164,8 @@ assert.doesNotMatch(
 )
 assert.match(
   dynamicControlSource,
-  /const dynamicItemsShareEffectiveBackground = \([\s\S]*availableBackgroundIds\.size === 0\) return true[\s\S]*getDynamicEffectiveBackgroundIds\(items, sourceItemId\)[\s\S]*getDynamicEffectiveBackgroundIds\(items, targetItemId\)[\s\S]*sourceBackgroundIds\.length === 0 \|\| targetBackgroundIds\.length === 0\) return true[\s\S]*availableBackgroundIds\.has\(backgroundId\) && targetBackgroundIdSet\.has\(backgroundId\)/,
-  'Link candidates must share a real effective background, while all-background and no-background projects remain compatible.'
-)
-assert.match(
-  dynamicControlSource,
-  /const eligibleLinkTargetItems = selectedItem[\s\S]*cycleSafeLinkTargetItems\.filter\(\(item\) => dynamicItemsShareEffectiveBackground\([\s\S]*selectedItem\.id,[\s\S]*item\.id/,
-  'The following-object list must combine cycle prevention with effective-background overlap.'
-)
-assert.equal(
-  [...dynamicControlSource.matchAll(/= getDynamicLinkTargetValidationError\(/g)].length,
-  2,
-  'Background and cycle eligibility must be rechecked both when selecting and when saving a following object.'
-)
-assert.match(
-  dynamicControlSource,
-  /eligibleLinkTargetItems\.length === 0 \? linkageTargetEmptyStateKey[\s\S]*t\(linkageTargetEmptyStateKey\)/,
-  'An empty candidate list must explain when no object shares the current background.'
-)
-assert.match(
-  dynamicControlSource,
-  /visibleActiveTab === 'background' && advancedFeaturesEnabled && !selectedItemHasIncomingLink/,
-  'A linked child object must not render the inherited background property content.'
+  /visibleActiveTab === 'background' && advancedFeaturesEnabled/,
+  'Every independent object must retain access to its own background property content.'
 )
 assert.doesNotMatch(
   dynamicStorageSource,

@@ -3754,3 +3754,176 @@ dist/assets/web-3ui0Ni4Z.js
 ```
 
 - 本轮只修改 iPad/Web 编辑界面文案与编译资源，没有改变气泡数据结构、图片选择方式、舞台渲染、同步协议或 EXE 播放逻辑，因此标准版与翻转版 EXE 无需重新打包。
+
+## 50. 2026-08-26 独立出场时间、目标到达隐藏与 EXE 待机同步
+
+### 可回退节点与编辑模型
+
+- 执行前已将 `chore: checkpoint before independent appearance timing` 推送到 `origin/main`；提交为 `07a845e7db631981c6c4855e7bf05cd132e963f3`，可作为本轮修改前的完整回退节点。
+- 创作流程继续雪藏，进阶功能固定开启且不显示开关；自由编辑顶部旧“出场排序”入口、全局出场面板、物件绑定弹窗、父子图层结构和绑定编辑 handler 已全部移除。图层恢复为平级列表，历史 `linkedAppearance` 字段只保留读取与迁移兼容，不再由新界面写入。
+- 绑定模型升级为版本 `4`。旧作品的 `showAfter`／`hideAfter` 会在加载时转换为物件自己的绝对 `appearanceDelayMs`／`appearanceHideMs`，先固化原有继承背景，再清除绑定；逐个出场迁移严格按 `item.order` 计算，不受存储数组乱序影响，间隔统一限制在 `100–5000ms`。
+- 每个物件的“出场时间”位于动画属性页，使用既有上下滑动时间轮，范围 `0–600` 秒、步进 `0.1` 秒。图层卡片直接显示出场、实际单轮移动、音源延时等秒数，不再以“基础移动”这类抽象模式作为主要摘要。
+- 目标点编辑新增“到达后隐藏”；循环移动与到达隐藏互斥，完成目标编辑后会立即发送完整 `ItemMotion`。iPad 与 EXE 共用目标移动采样，到达后同时将物件设为不可见、不可点击。
+- 自由编辑属性页原有大量 `7–9px` 文字已适度放大；六个属性选项、标题、状态标签、动画、复制、音源、背景与图层摘要均提高可读性。目标点选项改为“移动到目标点”独占一行，循环与到达隐藏并排显示，避免三个按钮挤在错误网格位置。
+
+### 页面、转场与键盘
+
+- 作品档案进入舞台、舞台返回作品档案改为直接切页，不再运行作品门户过场；进入控制页后原有物件上下进场表现继续保留。
+- iPad 与 EXE 的帘幕、相机闪光、影幕背景转场均会在合理阶段显示共享首页 `Right_Logo.png`，随转场淡入淡出。
+- 键盘控制页第一个小旋钮的 `−／+` 改为低／高音量图标，第二个小旋钮的字符箭头改为正式上／下方向图标；原有信号映射、旋钮手势与按键值未改变。
+
+### EXE 待机、预览与防闪帧
+
+- `GroupStateSync` 现在只缓存编辑数据，不再替换当前舞台；只有显式 `GroupSelectAndSync` 选择作品。进入控制页但尚未点击预览时，EXE 固定显示与首页一致的 `magic-floor-background.webp` 加居中 `Right_Logo.png`，不会提前展示全部物件或播放动画。
+- 点击预览后 iPad 本地立即播放；receiver 完整同步结束后才向 EXE 发送 `PreviewMode(true)`。即使素材已经全部缓存、同步函数返回“无需上传”，也会正常启动 EXE 预览。EXE 会先预载当前背景和可见物件，准备完成后再原子切换真实 Canvas，避免蓝色占位、旧物件和半套数据闪现。
+- 素材上传增加 SHA-256 内容比较；文件字节没有变化时不重写文件、不更新时间戳、不改变素材 URL revision。属性、秒数等微调只更新状态，不会反复解码相同图片或令 EXE 整体刷新。
+- 标准版与上下翻转版继续共用同一套自由编辑、独立出场时间、目标到达隐藏、背景转场和待机逻辑；EXE 继续不绘制水印。
+
+### 构建、同步与产物
+
+- 已通过：`npm run build`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、`test:target-motion`、`test:presentation`（37/37）、`test:item-copy`、`test:motion`、`test:transition-audio`、`test:background-order`、`node --check desktop-runtime/main.js` 与 `git diff --check`。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-lHlgmTml.js`、`index-Cf-oISyk.css`、`web-BmHIMzP7.js`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `0A98D6E088B2FF7A17573C16E19673A448AE481D96E924C2A9E68ADBB6EEE56A`。
+- 已执行 `npm --prefix desktop-runtime run pack:all`，打包前自动删除两个旧 release 目录；当前仅保留 `release` 与 `release-vertical-flip`。
+- 标准版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,321,716` bytes，SHA-256 `6F702B9E0DDF0FB08698C0620916FB8BB443C36CABD0EE42A776F1C50CF7386A`。
+- 上下翻转版：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,309,373` bytes，SHA-256 `2543AFD4CEB2EC095AE2A2E23C99AC1386817ED323C633973932A27A7D47A20E`。
+- 两套 unpacked `app.asar` 均已核对，包含最新 `main.js`／`main.vertical-flip.js`、`renderer/player.js`、`renderer/styles.css`、`Right_Logo.png` 与 `magic-floor-background.webp`。
+- `npm run lint` 仍无法启动，原因是仓库没有 ESLint 配置文件；这是既有工具链缺口，不是本轮新增 lint 报错。Vite 仅报告主 bundle 超过 `500kB` 的既有非阻塞警告。
+
+## 51. 2026-08-26 出场设定恢复、双栏编辑器与公司 iOS 私有上架标识
+
+### 出场设定与数据规则
+
+- 自由编辑控制页右上角已恢复“出场设定”按钮；不恢复旧物件绑定、父子链或随后物件编辑，物件继续使用版本 `4` 的独立绝对 `appearanceDelayMs`。
+- 新弹窗复用“编辑背景”的大型左右双栏容器。左侧物件固定一行一卡，显示图层顺序、完整居中的缩略图、物件名称与实际出场秒数；右侧集中设置出场方式、计时方式与原有出场动画。
+- “全部出场”是立即出场快捷方式：所有物件 `appearanceDelayMs` 固定写为 `0`，界面隐藏统一间隔和单件时间轮，避免让用户误以为全部出场仍可延迟。
+- “逐个出场”才显示计时方式。“统一间隔”用一个上下滑动时间轮，严格按 `item.order` 写入 `0 / N / 2N / ...`；“自定义时间”在每张物件卡片中提供 `0–600` 秒时间轮，只修改对应物件。
+- 原有三种出场动画保持不变：淡入、上方掉落、左右进场。写入继续沿用 `GroupAppearMode`、`GroupStateSync` 与单件 `ItemMotion`，iPad、receiver 和 EXE 无需新增协定事件。
+- 打开旧作品时会根据现有秒数判断为“统一间隔”或“自定义时间”；仅打开弹窗不会覆盖原数据。切换为全部出场或统一间隔属于明确编辑操作，会按上述规则重写秒数。
+
+### UI、响应式与五语
+
+- 弹窗在 iPad Air `1024 × 768` 与 iPad Pro 12.9 `1366 × 1024` 横屏下均为左右双栏，完整位于视口内，未产生横向溢出；左侧卡片始终单列，右侧按钮触控高度不低于约 `48px`。
+- 物件自定义时间轮带物件名称无障碍标签；出场方式、计时方式和动画均使用 `radiogroup/radio` 语义，选择态、键盘焦点、触控按压态及 `prefers-reduced-motion` 均有对应样式。
+- `zh-Hans`、`zh-Hant`、`en`、`pt-PT`、`pl-PL` 已同步补齐文案。简中统一使用“出场设定／全部出场／逐个出场”，繁中对应“出場設定／全部出場／逐個出場”；时间摘要使用 `{{value}}`，时间轮辅助名称使用 `{{name}}`，静态测试会锁定占位符。
+
+### iOS 公司标识与私有发行
+
+- Capacitor 与 Xcode Debug／Release 的 Bundle ID 已由 `com.artlab.web` 改为 `com.magicfloor.artlab.ipadcontrol`；全仓库已确认没有旧 Bundle ID 残留。
+- Xcode 项目已移除私人账号 Team ID `J9P74M9AGJ`，保留自动签名；在 Mac 打包机上须于 Signing & Capabilities 选择公司 Apple Developer Team。
+- `TARGETED_DEVICE_FAMILY = 2`，当前二进制为 iPad-only。应用显示名称继续为 `MagicFloor`，版本号继续从 `1.0 (1)` 起步。
+- `Info.plist` 已加入 `NSLocalNetworkUsageDescription`：允许 MagicFloor 连接同一局域网中的舞台播放电脑与互动装置；原有 `NSAllowsLocalNetworking = true` 保留。
+- 公司后台应注册 `App IDs > App > Explicit Bundle ID`，不要选择 App Clip；App Store Connect 新建 `iOS` App，建议主分类 `Utilities`、副分类 `Business`，SKU 可用 `MAGICFLOOR-IPAD-CONTROL-001`。
+- 私有上架选择 `Private — Available as a custom app on Apple Business Manager or Apple School Manager`，填写接收方 Apple Business Manager Organization ID；不要选择 Public、Unlisted、Enterprise、Ad Hoc 或 Development。私有 Custom App 仍需 App Review，审核备注应提供测试账号、同网段 Windows／Unity／EXE 连接说明与演示视频或可复现步骤。
+- 新 Bundle ID 会被 iOS 与 App Store Connect 视为全新 App，不能覆盖私人账号下旧 Bundle ID 的安装与本地数据；两个版本可并存。Bundle ID 最终是否可注册须由公司 Apple Developer 后台确认，若已被占用，应改用公司真实域名反写的唯一标识。
+
+### 验证与同步
+
+- 已通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run build`、桌面 `test:appearance`、`test:target-motion`、`test:presentation`（37/37）、`test:item-copy`、`test:motion`、`test:transition-audio`、`test:background-order`、`node --check desktop-runtime/main.js`、`node --check desktop-runtime/renderer/player.js` 与 `git diff --check`。
+- Chromium 真实交互检查确认：全部出场写入 `[0,0,0,0]`；统一间隔 `0.9` 秒按顺序写入 `[0,900,1800,2700]`；切换自定义后只将第二个物件改为 `1000ms`；动画可正常改为 `drop`。
+- 已执行 `npm run sync:ios`；原生 `capacitor.config.json` 的 `appId` 为 `com.magicfloor.artlab.ipadcontrol`。当前 Web/iOS 资源为 `index-Bo--6qI7.js`、`index-Dr-zve_A.css`、`web-MEyoKZEh.js`，`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `8F43551F1C88E86D3AA7583B246FB7DC4C46B937A69825CDB03272AF4B572602`。
+- 本轮没有修改桌面播放协议或 EXE 资源，因此没有重新打包 EXE；继续使用第 50 节记录的标准版与上下翻转版。`npm run lint` 仍因仓库没有 ESLint 配置而无法启动，属于既有工具链缺口。
+
+## 52. 2026-08-26 出场设定去重与属性入口收敛
+
+### 最新交互规则
+
+- “全部出场”选中后，右侧不再额外显示带勾选图标的“立即出场”状态条；按钮本身已经完整表达当前模式，移除重复状态可避免用户误以为还需要点击或设置。左侧物件卡片仍保留“立即出场”只读摘要，用于说明每个物件当前结果。
+- 物件属性的“动画”选项卡已移除“出场时间”字段与时间轮。出场时间现在只有一个编辑入口：控制页右上角“出场设定”；图层卡片仍可显示只读秒数摘要，但不能从属性页编辑。
+- 旧属性页专用 `handleAppearanceDelayChange`、`dynamic-appearance-delay-field`、`dynamic-appearance-delay-wheel` 及全部出场状态条 `dynamic-appearance-immediate-status` 的 JSX／CSS 已全部删除，没有保留无引用死代码。
+- 数据模型、`appearanceDelayMs`、全部／逐个出场规则、统一间隔、自定义时间、三种出场动画及 iPad／EXE 同步协议均未改变。
+
+### 验证与同步
+
+- 静态回归会明确拒绝属性动画页重新出现出场时间控件，也会拒绝全部出场模式重新加入额外“立即出场”状态条；同时继续验证专用弹窗的卡片、时间轮与同步 handler。
+- Chromium 在 iPad Air `1024 × 768` 与 iPad Pro 12.9 `1366 × 1024` 下均已实际检查：全部出场右侧仅保留模式按钮和出场动画；动画属性页不再出现出场时间字段；弹窗尺寸和现有计时写入保持正常。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、生产构建与 `git diff --check`。
+- 已执行 `npm run sync:ios`；当前资源为 `index-DiyeLm9q.js`、`index-BxSvjLu0.css`、`web-BcAipFgx.js`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `F0B34D1AD2DCDA5F7841AB999BA1E6942A2AE43DBFAFDCA6997B76F439DDCEA0`，原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- 本轮只收敛 iPad/Web 编辑入口，没有修改 EXE 播放代码或资源，因此无需重新打包标准版与上下翻转版 EXE。
+
+## 53. 2026-08-26 背景快捷切换、单景播放与互动上传音效替换
+
+### 背景快捷切换入口
+
+- 动态艺术控制页在舞台上方新增背景快捷条；只有作品包含两个或以上背景、且当前不在预览模式时才显示。零个或一个背景不会占用舞台空间。
+- 快捷条最大宽度固定为 `920px`，背景轨道使用 `overflow-x: scroll`、iOS 惯性滚动与横向触控隔离；页面本身不会产生横向滚动。背景以 `58 × 58px` 圆角方卡显示，低高度紧凑布局为 `52 × 52px`，图片与视频缩略图统一 `object-fit: contain`、完整居中。
+- 当前背景使用青绿色描边、外光与状态点明确标识；卡片具备触控按压、键盘焦点、高对比与 reduced-motion 状态。五语文案已补齐 `control.quickBackgroundSwitch` 与 `control.playSelectedBackground`。
+- 点击卡片继续复用正式背景选择流程：写入 `activeBackgroundId`、立即更新 iPad 舞台与背景范围物件，并发送既有 `BackgroundSet` 给 EXE；不打开“编辑背景”弹窗，也不改变背景原有顺序、随机或固定播放设定。
+
+### 只播放选中背景
+
+- 快捷条右侧新增独立“播放选中背景”按钮。点击后进入完整预览，但本次会临时以 `PreviewMode.backgroundPlayMode = fixed` 播放当前背景；用户保存的 `backgroundPlayMode` 不会被改写，停止预览后普通“预览”仍按原来的固定／随机／顺序模式运行。
+- iPad 本地与 EXE 使用同一个临时 fixed 语义，不新增 Unity／EXE 协议事件。完整 receiver 同步结束后才发送带临时模式的 `PreviewMode`；EXE 现有接收端已经支持该字段，因此无需更新或重新打包标准版与上下翻转版。
+- 单景预览继续通过 `getDynamicPlaybackItemsForBackground` 过滤物件：只播放属于当前背景的物件，以及 `backgroundIds` 为空、适用于全部背景的通用物件；其他背景专属物件不会出现在舞台、图层、动画或音源时间轴中。当前背景 BGM、物件出场、移动、目标点、动画与音源逻辑保持原样。
+
+### 互动艺术上传火箭音效
+
+- 互动艺术直接上传的火箭发射动画已改用项目根目录 `466.mp3`，旧的 Web Audio 振荡器合成音效已移除；`UploadPage` 原有动画触发、失败返回、反向动画、重复播放与组件卸载清理时机均未改变。
+- 默认音量／增益为 `1.3`。主播放链为 `HTMLAudioElement → MediaElementAudioSourceNode → GainNode(1.3) → DynamicsCompressorNode → destination`，既能实现大于 HTMLAudioElement 上限的实际增益，也通过 limiter 降低削波失真。Web Audio 不可用或启动失败时回退到合法的 `HTMLAudioElement.volume = 1`。
+- 音频通过 Vite URL 管线进入 Web 与 iOS 包，生产资源为 `dist/assets/466-DTcHxBId.mp3`，`135,462` bytes，SHA-256 `2AA21DD90D682B1705704A492FEE0DD3EAA629F90A73F16DC993210D90218D86`。
+
+### 验证、构建与同步
+
+- 已通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`node --no-warnings scripts/verify-artwork-launch-audio.mjs`、桌面 `test:appearance`、`test:target-motion`、`test:presentation`（37/37）、`test:item-copy`、`test:motion`、`test:transition-audio`、`test:background-order`、`node --check desktop-runtime/main.js` 与 `node --check desktop-runtime/renderer/player.js`。
+- Chromium 真实触控回归已覆盖 iPad Air `1024 × 768` 与 iPad Pro 12.9 `1366 × 1024`：单背景快捷条隐藏；18 张背景时卡片全部为方形，轨道 `scrollWidth = 1184px`，两视口 `clientWidth` 分别为 `511px` 与 `775px`；document/body 均无横向溢出，快捷条位于舞台上方且不覆盖右侧图层。
+- 真实交互选择第 18 张背景后，舞台只保留通用物件与第 18 张背景物件；点击单景播放后捕获到 EXE `PreviewMode(enabled=true, backgroundPlayMode=fixed)`，停止后本地存储仍为原测试设定 `sequence`。零／单背景、选中态、物件过滤、EXE 临时模式与恢复行为均通过。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-CvCfc3Rr.js`、`index-dWiyBRcl.css`、`web-wvxkFAWn.js` 与 `466-DTcHxBId.mp3`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `885F2D5D5104A0870B3443915F6ECF605CFD7D76C3186039921B8A8EBC04DBC9`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- 本轮不需要重新打包 EXE；继续使用第 50 节记录的标准版与上下翻转版。Vite 仍仅报告主 bundle 超过 `500kB` 的既有非阻塞警告。
+
+## 54. 2026-08-26 背景快捷切换条参考图样式重做
+
+### 布局与视觉规格
+
+- 本轮只重做动态艺术控制页舞台上方背景快捷条的样式，背景选择、选中态、横向滚动、单景播放、物件过滤、EXE 消息和显示条件均保持第 53 节的既有逻辑。
+- 快捷条与舞台改为靠工作区顶部排列，不再将“快捷条＋舞台”整体垂直居中；快捷条顶部比右侧图层面板顶部低 `8px`，下方紧邻舞台。舞台自身尺寸没有修改。
+- iPad Pro 12.9 `1366 × 1024` 下，快捷条为 `930 × 138px`，水平居中于 `943.53 × 530.73px` 舞台；背景卡为 `174px` 宽、`5:3` 横向圆角卡，播放按钮固定为 `156 × 80px`，快捷条与舞台间距为 `10px`。
+- iPad Air `1024 × 768` 下启用紧凑档：快捷条与舞台同为 `656px` 宽，快捷条高 `112px`，背景卡为 `140 × 84px`，播放按钮固定为 `128 × 64px`，快捷条与舞台间距为 `8px`；舞台继续保持 `656 × 369px`。
+- 背景轨道与右侧播放按钮成为两个清楚的固定分区：卡片区域继续单排横向触控滚动，播放按钮始终固定在最右侧；两区之间使用中性灰绿色竖向虚线分隔。参考图中的红框仅作为位置标注，没有被做成实际红色边框。
+- 缩略图继续使用 `object-fit: contain` 与 `object-position: center`，不同尺寸的图片和视频都会在卡片中完整居中；当前背景继续使用青绿色描边、外光和状态点，不通过改变尺寸表达选中状态。
+
+### 浏览器回归、构建与同步
+
+- Chromium 真实触控回归覆盖 iPad Air `1024 × 768` 与 iPad Pro 12.9 `1366 × 1024`。两尺寸下快捷条与舞台水平中心误差均小于 `1px`，顶部偏移均为 `8px`，舞台与右栏没有重叠，document/body 均没有横向溢出。
+- 18 张背景时，Air 轨道 `clientWidth = 484px`、`scrollWidth = 2660px`；Pro 轨道 `clientWidth = 720px`、`scrollWidth = 3306px`。卡片保持固定宽度并可横向滚动，播放按钮不会被轨道挤压；单背景仍不渲染快捷条。
+- 真实交互继续确认：选择第 18 张背景后只显示通用物件与第 18 张背景专属物件；单景播放发送 `PreviewMode(enabled=true, backgroundPlayMode=fixed)`，停止后保存的 `sequence` 模式不被覆盖。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`node --no-warnings .codex-build/verify-background-quick.mjs`、生产构建与 `git diff --check`。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-BVFmZ9vD.js`、`index-DjMXCWLl.css`、`web-H7Aa8m_s.js` 与 `466-DTcHxBId.mp3`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `EFED020D32253DAFB477E87003D45AAEDA0C9A581A2214F5C188E2AC65CF6C9A`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- 本轮没有修改桌面播放端代码或协议，不需要重新打包标准版与上下翻转版 EXE；Vite 仍只报告主 bundle 超过 `500kB` 的既有非阻塞警告。
+
+## 55. 2026-08-26 首页进入动态艺术前白帧修复
+
+### 根因与修复
+
+- 白帧不是 WebGL、开场动画资源或路由目标页加载造成的。点击首页“动态艺术”后，应用会先截取首页前景并发送给 EXE；截图期间，可见的 `.entry-screen` 会临时加入 `dynamic-archive-snapshot-capture`，把背景色、背景图和伪元素清成透明，而开场动画 Portal 要等截图结束后才挂载，因此中间会短暂露出 `.page-frame` 原来的 `#f6f7f2` 浅色底。
+- 已为首页专属外层 `.page-frame.page-view-entry` 增加与 `.entry-screen` 完全相同的品牌底图：`#69bbd6`、三层渐变、`magic-floor-background.webp`、`center bottom / cover`。正常状态下该底层被首页覆盖；截图期间首页变透明时，外层会无缝托住同一画面，不再出现白色首帧。
+- EXE 前景截图规则没有改动：`dynamic-archive-snapshot-capture` 仍会清空首页自身背景，发送的 `ArchiveEnter.source.dataUrl` 仍为透明 PNG；新增底层只负责 iPad／Web 可见页面的连续性，不会被烘焙进 EXE 前景快照。
+- 开场动画、WebGL 渲染、互动艺术入口、页面路由时序、Unity／EXE 消息与桌面播放端代码均未修改。本轮不需要重新打包标准版或上下翻转版 EXE，继续使用第 50 节记录的两套安装包。
+
+### 回归、构建与同步
+
+- 静态回归已锁定首页外层必须具备品牌蓝底、背景资源、固定定位和完整尺寸，同时锁定截图态必须继续保持透明，避免未来为消除白帧而破坏 EXE 前景图协议。
+- Chromium 使用 `4× CPU throttling` 精确捕捉“截图类已启用、开场动画 Portal 尚未挂载”的原问题时段；在 `1024 × 768`、`1180 × 820`、`1366 × 1024` 三种尺寸下，点击前与截图期间三个无遮挡背景采样点 RGB 完全一致，未检测到白色或近白色全屏帧。
+- 慢速时序确认修复覆盖真实空档：`1180 × 820` 截图阶段为 `552.5–1753.9ms`、Portal 于 `2523.1ms` 挂载；`1366 × 1024` 截图阶段为 `446.4–1447.2ms`、Portal 于 `2091.4ms` 挂载。截图结束到动画挂载仍有约 `644–769ms`，期间始终由同图外层托底。
+- 已额外通过 `prefers-reduced-motion` 与 WebGL 初始化失败回退路径；互动艺术入口不会误触发动态艺术截图，也没有白底状态。EXE PNG 在两种独立尺寸下四角 Alpha 均为 `0`，证明透明前景语义保持不变。
+- 已通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、真实浏览器白帧回归与生产构建。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-Bl3WpzVL.js`、`index-BMt1bJGx.css`、`web-DPsoDYp4.js` 与 `466-DTcHxBId.mp3`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `CFF80ECAF9A2F38887F491020B1E798F71FD5F18BF24F76DB6D2077787BB567A`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- Vite 仍只报告主 bundle 超过 `500kB` 的既有非阻塞警告；本轮没有新增构建错误。
+
+## 56. 2026-08-26 首页与作品档案重复进场动画修复
+
+### 根因与修复
+
+- 重复播放不是 React 重复挂载，也不是第 55 节新增的首页同图托底。`captureDynamicArchiveSnapshot()` 会在当前可见首页／作品档案页添加 `dynamic-archive-snapshot-capture`；旧规则对根节点、全部后代和伪元素使用 `animation: none !important`，添加截图类时会销毁现有 `CSSAnimation`，移除时浏览器便把同名进场动画当成新动画从头创建。
+- 首页因此会在截图结束后重播根页面 `app-fade-in` 和两张入口卡片的 `entry-choice-in`；互动艺术卡片原有 `70ms` 延迟令两张卡看起来像依次重新加载。作品档案页在 Portal 到达后约 `700ms` 截图，移除截图类时又会重播 `dynamic-portal-library-reveal`，所以开场动画内已经出现过的档案页会在动画结束附近再加载一次。
+- 截图态现改为 `animation-play-state: paused !important`：只暂停现有时间轴，不删除 `animation-name`，截图结束后继续原进度，不会重新从零播放。透明背景、关闭 `backdrop-filter` 与关闭 transition 的 EXE 截图兼容规则均保留，避免重新引入投影电脑曾出现的错误色块。
+- 作品档案截图 effect 现在通过 `archivePortalArrivalRef` 读取 Portal 到达状态，不再因为 `portalArrival` 从 `true` 变成 `false` 而重新执行。每次从首页进入作品档案只截取并发送一次档案画面，Portal 完成后不会再做第二次相同截图或切换一次玻璃滤镜。
+- 开场动画、首页和档案页原本应有的首次进场动画、`ArchiveEnter`／`ArchiveSnapshot` 协议、Unity／EXE 消息与桌面播放端均未改变。
+
+### 实机回归、构建与同步
+
+- Edge 真实时序回归覆盖 `1024 × 768` 与 `1180 × 820`。两种尺寸下，点击动态艺术后的首页 `entry-choice-in` 新增启动次数均为 `0`；作品档案顶栏和内容区的 `dynamic-portal-library-reveal` 均只启动并完成 `1` 次，没有第二次 start 或 cancel。
+- `1180 × 820` 去重时序：Portal 为点击后 `+813–3024ms`；档案顶栏 Reveal 为 `+1977–2499ms`，内容区 Reveal 为 `+2098–2692ms`；档案截图仅一次，为 `+2620–2728ms`。Portal 与截图类最终均无残留。
+- 网络侧仍收到一次有效 `ArchiveEnter` 和一次有效 `ArchiveSnapshot`；档案快照为 `version: 2`、`1180 × 820`、有效 `data:image/png;base64,...`。首页和档案透明 PNG 均已人工检查，前景按钮、标题、卡片及工具栏完整，背景透明语义没有改变。
+- `4× CPU throttling` 下上一轮白帧回归继续通过：截图期间首页三个背景采样点逐通道一致，EXE 首页前景 PNG 左上角仍为 `[0,0,0,0]`，Portal 正常完成。
+- 已通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、两档真实浏览器回归、生产构建与相关 `git diff --check`。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-CmWONPiQ.js`、`index-B62fdCoR.css`、`web-B1e8Zp6-.js` 与 `466-DTcHxBId.mp3`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `A810145C90E24DC0BA8F5B464F60072B8D9DCEDE385DF50F580BF127C0B45DCC`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- 本轮没有修改桌面播放端代码或协议，无需重新打包标准版与上下翻转版 EXE；Vite 仍只报告主 bundle 超过 `500kB` 的既有非阻塞警告。

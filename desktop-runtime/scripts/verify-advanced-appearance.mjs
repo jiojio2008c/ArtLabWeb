@@ -14,6 +14,7 @@ import {
   getDynamicAppearanceAnimationSeekMs,
   getDynamicPlaybackItemsForBackground,
   normalizeDynamicLinkedAppearance,
+  convertDynamicLinkedAppearanceToIndependentTiming,
   sampleDynamicAppearanceTimeline,
   synchronizeDynamicLinkedBackgrounds,
   wouldCreateDynamicLinkedAppearanceCycle
@@ -62,6 +63,89 @@ assert.equal(
   linkedTimeline['linked-hide'].hideStartMs,
   linkedTimeline['linked-show'].appearanceCompleteMs + 500
 )
+
+const migratedIndependentItems = convertDynamicLinkedAppearanceToIndependentTiming({
+  items: [
+    { itemId: 'legacy-root', backgroundIds: ['forest'] },
+    {
+      itemId: 'legacy-show',
+      backgroundIds: ['ocean'],
+      linkedAppearance: {
+        triggerItemId: 'legacy-root',
+        mode: 'showAfter',
+        delayMs: 300
+      }
+    },
+    {
+      itemId: 'legacy-hide',
+      backgroundIds: ['city'],
+      linkedAppearance: {
+        triggerItemId: 'legacy-show',
+        mode: 'hideAfter',
+        delayMs: 450
+      }
+    }
+  ],
+  appearMode: 'sequence',
+  intervalMs: 800,
+  appearAnimation: 'drop'
+})
+const migratedIndependentById = Object.fromEntries(
+  migratedIndependentItems.map((item) => [item.itemId, item])
+)
+assert.equal(migratedIndependentById['legacy-root'].appearanceDelayMs, 0)
+assert.equal(
+  migratedIndependentById['legacy-show'].appearanceDelayMs,
+  APPEARANCE_DROP_DURATION_MS + 300
+)
+assert.equal(migratedIndependentById['legacy-hide'].appearanceDelayMs, 0)
+assert.equal(
+  migratedIndependentById['legacy-hide'].appearanceHideMs,
+  APPEARANCE_DROP_DURATION_MS + 300 + APPEARANCE_FADE_DURATION_MS + 450
+)
+assert.ok(migratedIndependentItems.every((item) => item.linkedAppearance === undefined))
+assert.deepEqual(
+  migratedIndependentItems.map((item) => item.backgroundIds),
+  [['forest'], ['forest'], ['forest']],
+  'Migration must freeze inherited background assignments before removing links.'
+)
+
+const reorderedSequenceMigration = convertDynamicLinkedAppearanceToIndependentTiming({
+  items: [
+    { itemId: 'sequence-third', order: 2 },
+    { itemId: 'sequence-first', order: 0 },
+    { itemId: 'sequence-second', order: 1 }
+  ],
+  appearMode: 'sequence',
+  intervalMs: 650,
+  appearAnimation: 'none'
+})
+const reorderedSequenceById = Object.fromEntries(
+  reorderedSequenceMigration.map((item) => [item.itemId, item])
+)
+assert.equal(reorderedSequenceById['sequence-first'].appearanceDelayMs, 0)
+assert.equal(reorderedSequenceById['sequence-second'].appearanceDelayMs, 650)
+assert.equal(reorderedSequenceById['sequence-third'].appearanceDelayMs, 1300)
+assert.deepEqual(
+  reorderedSequenceMigration.map((item) => item.itemId),
+  ['sequence-third', 'sequence-first', 'sequence-second'],
+  'Migration must preserve the caller\'s storage order while calculating timing by item.order.'
+)
+
+const independentHideTimeline = buildDynamicAppearanceTimeline({
+  items: [{
+    itemId: 'independent-hide',
+    appearanceDelayMs: 1200,
+    appearanceHideMs: 2400
+  }],
+  appearAnimation: 'none'
+})
+const independentHideSchedule = independentHideTimeline['independent-hide']
+assert.equal(sampleDynamicAppearanceTimeline(independentHideSchedule, 1199).alpha, 0)
+assert.equal(sampleDynamicAppearanceTimeline(independentHideSchedule, 1199).interactive, false)
+assert.equal(sampleDynamicAppearanceTimeline(independentHideSchedule, 1800).alpha, 1)
+assert.equal(sampleDynamicAppearanceTimeline(independentHideSchedule, 2821).alpha, 0)
+assert.equal(sampleDynamicAppearanceTimeline(independentHideSchedule, 2821).interactive, false)
 
 const immediateTimeline = buildDynamicAppearanceTimeline({
   items: [

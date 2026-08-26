@@ -11,6 +11,9 @@ export interface DynamicAppearanceItem {
   id?: string
   itemId?: string
   linkedAppearance?: DynamicLinkedAppearance
+  appearanceDelayMs?: number
+  appearanceHideMs?: number
+  hideAfterTarget?: boolean
   backgroundIds?: string[]
 }
 
@@ -35,6 +38,7 @@ export const APPEARANCE_FADE_DURATION_MS: number
 export const APPEARANCE_DROP_DURATION_MS: number
 export const APPEARANCE_TRACK_SLIDE_DURATION_MS: number
 export const MAX_LINKED_APPEARANCE_DELAY_MS: number
+export const MAX_DYNAMIC_APPEARANCE_TIME_MS: number
 export const DYNAMIC_APPEARANCE_EASING: string
 
 export function normalizeDynamicAppearAnimation(value: unknown): DynamicAppearAnimation
@@ -44,6 +48,7 @@ export function normalizeDynamicLinkedAppearance(
   itemId?: string,
   validItemIds?: Set<string>
 ): DynamicLinkedAppearance | undefined
+export function normalizeDynamicAppearanceTimeMs(value: unknown, fallback?: number): number
 export function wouldCreateDynamicLinkedAppearanceCycle(
   items: DynamicAppearanceItem[],
   itemId: string,
@@ -71,6 +76,17 @@ export function buildDynamicAppearanceTimeline(options?: {
   appearAnimation?: DynamicAppearAnimation
   activeItemIds?: string[] | Set<string>
 }): Record<string, DynamicAppearanceSchedule>
+export function convertDynamicLinkedAppearanceToIndependentTiming<T extends DynamicAppearanceItem>(options?: {
+  items?: T[]
+  appearMode?: 'sequence' | 'all'
+  intervalMs?: number
+  appearAnimation?: DynamicAppearAnimation
+}): Array<T & {
+  appearanceDelayMs: number
+  appearanceHideMs?: number
+  hideAfterTarget: boolean
+  linkedAppearance?: undefined
+}>
 export function sampleDynamicAppearanceTimeline(
   schedule: DynamicAppearanceSchedule | undefined,
   elapsedMs: number
