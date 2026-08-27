@@ -139,6 +139,75 @@ const normalizeAppearanceTime = (value, fallback = 0) => {
   )
 }
 
+const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
+
+const normalizeAppearanceTiming = (value) => {
+  if (typeof value === 'number' || typeof value === 'string') {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue)
+      ? { appearanceDelayMs: normalizeAppearanceTime(numericValue) }
+      : undefined
+  }
+  if (!isRecord(value)) return undefined
+
+  const timing = {}
+  if (hasOwn(value, 'appearanceDelayMs')) {
+    timing.appearanceDelayMs = normalizeAppearanceTime(value.appearanceDelayMs)
+  }
+  if (hasOwn(value, 'appearanceHideMs')) {
+    timing.appearanceHideMs = value.appearanceHideMs === null
+      ? null
+      : normalizeAppearanceTime(value.appearanceHideMs)
+  }
+  return Object.keys(timing).length > 0 ? timing : undefined
+}
+
+const normalizeAppearanceByBackground = (value) => {
+  if (!isRecord(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([backgroundId, timing]) => [
+        String(backgroundId ?? '').trim(),
+        normalizeAppearanceTiming(timing)
+      ])
+      .filter(([backgroundId, timing]) => Boolean(backgroundId) && Boolean(timing))
+  )
+}
+
+const normalizeBackgroundAppearance = (value, group) => {
+  const source = isRecord(value) ? value : {}
+  const sourceMode = source.appearMode ?? source.mode
+  const sourceInterval = source.appearIntervalMs ?? source.intervalMs
+  const sourceAnimation = source.appearAnimation ?? source.animation
+  const fallbackMode = group?.appearMode === 'sequence' ? 'sequence' : 'all'
+  const fallbackInterval = Number(group?.appearIntervalMs)
+  const fallbackAnimation = normalizeAppearAnimation(group?.appearAnimation)
+  const numericInterval = Number(sourceInterval)
+  return {
+    appearMode: sourceMode === 'sequence' || sourceMode === 'all'
+      ? sourceMode
+      : fallbackMode,
+    appearIntervalMs: Math.min(
+      5000,
+      Math.max(
+        100,
+        Math.round(
+          Number.isFinite(numericInterval)
+            ? numericInterval
+            : Number.isFinite(fallbackInterval)
+              ? fallbackInterval
+              : 800
+        )
+      )
+    ),
+    appearAnimation: sourceAnimation === undefined
+      ? fallbackAnimation
+      : normalizeAppearAnimation(sourceAnimation)
+  }
+}
+
 const getAppearanceAnimationDuration = (value) => {
   if (value === 'drop') return 620
   if (value === 'trackSlide') return 560
@@ -150,6 +219,29 @@ const normalizeBackgroundTransition = (value, fallback = 'none') => (
     ? value
     : fallback
 )
+
+const resolveActiveBackgroundId = (group, backgrounds = group?.backgrounds ?? []) => {
+  const activeBackgroundId = String(group?.activeBackgroundId ?? '').trim()
+  if (activeBackgroundId && backgrounds.some((background) => background?.assetId === activeBackgroundId)) {
+    return activeBackgroundId
+  }
+
+  const legacyBackgroundId = String(group?.background?.assetId ?? '').trim()
+  if (legacyBackgroundId && backgrounds.some((background) => background?.assetId === legacyBackgroundId)) {
+    return legacyBackgroundId
+  }
+
+  return backgrounds.find((background) => background?.assetId)?.assetId ?? null
+}
+
+const syncActiveBackground = (group) => {
+  const backgrounds = Array.isArray(group?.backgrounds) ? group.backgrounds : []
+  const activeBackgroundId = resolveActiveBackgroundId(group, backgrounds)
+  group.activeBackgroundId = activeBackgroundId
+  group.background = backgrounds.find((background) => background.assetId === activeBackgroundId)
+    ?? backgrounds[0]
+  return group.background
+}
 
 const normalizeLinkedAppearance = (value, itemId, validItemIds) => {
   if (!value || typeof value !== 'object') return null
@@ -237,6 +329,7 @@ const normalizeGroupItemLinksForModel = (group, items = []) => {
       appearanceHideMs: item.appearanceHideMs === null || item.appearanceHideMs === undefined
         ? undefined
         : normalizeAppearanceTime(item.appearanceHideMs),
+      appearanceByBackground: normalizeAppearanceByBackground(item.appearanceByBackground),
       hideAfterTarget: item.hideAfterTarget === true,
       linkedAppearance: null
     }))
@@ -360,6 +453,7 @@ const normalizeGroupItemLinksForModel = (group, items = []) => {
       ...item,
       appearanceDelayMs: schedule?.appearanceDelayMs ?? 0,
       appearanceHideMs: schedule?.appearanceHideMs ?? null,
+      appearanceByBackground: normalizeAppearanceByBackground(item.appearanceByBackground),
       hideAfterTarget: item.hideAfterTarget === true,
       linkedAppearance: null
     }
@@ -631,6 +725,7 @@ const defaultItem = (payload, order = 0) => {
       && Number.isFinite(Number(payload.appearanceHideMs))
       ? normalizeAppearanceTime(payload.appearanceHideMs)
       : hasAppearanceHideMs ? null : undefined,
+    appearanceByBackground: normalizeAppearanceByBackground(payload.appearanceByBackground),
     hideAfterTarget: payload.hideAfterTarget === true,
     linkedAppearance: normalizeLinkedAppearance(payload.linkedAppearance, payload.itemId),
     backgroundIds: Array.isArray(payload.backgroundIds) ? payload.backgroundIds.filter(Boolean) : [],
@@ -653,11 +748,21 @@ const normalizeStoredRuntimeState = () => {
     group.appearAnimation = normalizeAppearAnimation(group.appearAnimation)
     group.backgroundTransition = normalizeBackgroundTransition(group.backgroundTransition)
     group.audioLibrary = Array.isArray(group.audioLibrary) ? group.audioLibrary : []
-    group.backgrounds = (group.backgrounds ?? []).map((background) => ({
+    const storedBackgrounds = Array.isArray(group.backgrounds) && group.backgrounds.length > 0
+      ? group.backgrounds
+      : group.background
+        ? [group.background]
+        : []
+    group.backgrounds = storedBackgrounds.map((background) => ({
       ...background,
-      backgroundTransition: group.backgroundTransition,
+      backgroundTransition: normalizeBackgroundTransition(
+        background.backgroundTransition,
+        group.backgroundTransition
+      ),
+      appearance: normalizeBackgroundAppearance(background.appearance, group),
       appearAnimation: undefined
     }))
+    syncActiveBackground(group)
     group.items = normalizeGroupItemLinksForModel(
       group,
       (group.items ?? []).map((item, index) => defaultItem(item, item.order ?? index))
@@ -715,6 +820,9 @@ const upsertItemAssetMetadata = (group, item) => {
 
 const upsertBackground = (group, payload) => {
   if (!payload?.assetId) return
+  const existingBackground = (group.backgrounds ?? [])
+    .find((item) => item.assetId === payload.assetId)
+  const hasAppearance = Object.prototype.hasOwnProperty.call(payload, 'appearance')
   const background = {
     assetId: payload.assetId,
     name: payload.name ?? payload.assetId,
@@ -724,14 +832,18 @@ const upsertBackground = (group, payload) => {
     backgroundTransition: normalizeBackgroundTransition(
       payload.backgroundTransition,
       group.backgroundTransition
-    )
+    ),
+    appearance: hasAppearance
+      ? normalizeBackgroundAppearance(payload.appearance, group)
+      : existingBackground?.appearance ?? normalizeBackgroundAppearance(undefined, group)
   }
 
   group.backgrounds = [
     background,
-    ...group.backgrounds.filter((item) => item.assetId !== background.assetId)
+    ...(group.backgrounds ?? []).filter((item) => item.assetId !== background.assetId)
   ]
   group.activeBackgroundId = payload.activeBackgroundId ?? background.assetId
+  syncActiveBackground(group)
 
   upsertAssetMetadata({
     assetId: background.assetId,
@@ -741,6 +853,19 @@ const upsertBackground = (group, payload) => {
     mediaType: background.mediaType,
     mimeType: background.mimeType
   })
+}
+
+const updateGroupBackgroundAppearance = (group, backgroundId, patch = {}) => {
+  const normalizedBackgroundId = String(backgroundId ?? '').trim()
+  if (!normalizedBackgroundId) return false
+  const background = (group.backgrounds ?? [])
+    .find((item) => item.assetId === normalizedBackgroundId)
+  if (!background) return false
+  background.appearance = normalizeBackgroundAppearance({
+    ...(background.appearance ?? {}),
+    ...patch
+  }, group)
+  return true
 }
 
 const parseDynamicMessage = (message) => {
@@ -988,6 +1113,7 @@ const applyDynamicEvent = (eventName, payload) => {
       group.backgrounds = backgrounds
         .filter((background) => background?.assetId)
         .map((background) => {
+          const existingBackground = (group.backgrounds ?? []).find((item) => item.assetId === background.assetId)
           upsertAssetMetadata({
             assetId: background.assetId,
             role: 'background',
@@ -1002,7 +1128,13 @@ const applyDynamicEvent = (eventName, payload) => {
             mediaType: background.mediaType ?? background.type ?? 'image',
             mimeType: background.mimeType ?? '',
             bgmAudioId: background.bgmAudioId ?? null,
-            backgroundTransition: group.backgroundTransition
+            backgroundTransition: normalizeBackgroundTransition(
+              background.backgroundTransition,
+              group.backgroundTransition
+            ),
+            appearance: Object.prototype.hasOwnProperty.call(background, 'appearance')
+              ? normalizeBackgroundAppearance(background.appearance, group)
+              : existingBackground?.appearance ?? normalizeBackgroundAppearance(undefined, group)
           }
         })
 
@@ -1026,9 +1158,7 @@ const applyDynamicEvent = (eventName, payload) => {
           }
         })
 
-      if (!group.activeBackgroundId && group.backgrounds[0]) {
-        group.activeBackgroundId = group.backgrounds[0].assetId
-      }
+      syncActiveBackground(group)
 
       const existingItems = new Map(group.items.map((item) => [item.itemId, item]))
       const incomingItems = (payload.items ?? []).map((itemPayload, index) => {
@@ -1058,8 +1188,23 @@ const applyDynamicEvent = (eventName, payload) => {
 
     case 'GroupAppearMode': {
       const group = ensureGroup(payload.groupId)
-      group.appearMode = payload.mode ?? payload.appearMode ?? group.appearMode
-      group.appearIntervalMs = payload.intervalMs ?? payload.appearIntervalMs ?? group.appearIntervalMs
+      const nextMode = payload.mode ?? payload.appearMode
+      const nextInterval = payload.intervalMs ?? payload.appearIntervalMs
+      const nextAnimation = payload.appearAnimation ?? payload.animation
+      const backgroundId = payload.backgroundId ?? payload.assetId
+      const backgroundPatch = isRecord(payload.appearance)
+        ? payload.appearance
+        : {
+            ...(nextMode !== undefined ? { appearMode: nextMode } : {}),
+            ...(nextInterval !== undefined ? { appearIntervalMs: nextInterval } : {}),
+            ...(nextAnimation !== undefined ? { appearAnimation: nextAnimation } : {})
+          }
+      if (backgroundId) {
+        updateGroupBackgroundAppearance(group, backgroundId, backgroundPatch)
+      }
+      if (nextMode !== undefined) group.appearMode = nextMode
+      if (nextInterval !== undefined) group.appearIntervalMs = nextInterval
+      if (nextAnimation !== undefined) group.appearAnimation = normalizeAppearAnimation(nextAnimation)
       group.updatedAt = Date.now()
       break
     }
@@ -1100,9 +1245,14 @@ const applyDynamicEvent = (eventName, payload) => {
         ...item,
         backgroundIds: Array.isArray(item.backgroundIds)
           ? item.backgroundIds.filter((backgroundId) => !deleteIds.has(backgroundId))
-          : []
+          : [],
+        appearanceByBackground: Object.fromEntries(
+          Object.entries(normalizeAppearanceByBackground(item.appearanceByBackground))
+            .filter(([backgroundId]) => !deleteIds.has(backgroundId))
+        )
       }))
-      group.activeBackgroundId = payload.nextActiveAssetId ?? group.backgrounds[0]?.assetId ?? null
+      group.activeBackgroundId = payload.nextActiveAssetId ?? group.activeBackgroundId
+      syncActiveBackground(group)
       group.updatedAt = Date.now()
       break
     }
@@ -1226,13 +1376,43 @@ const applyDynamicEvent = (eventName, payload) => {
         if (Object.prototype.hasOwnProperty.call(payload, 'targetMode')) item.targetMode = payload.targetMode
         if (Object.prototype.hasOwnProperty.call(payload, 'targetLoop')) item.targetLoop = payload.targetLoop === true
         if (Object.prototype.hasOwnProperty.call(payload, 'targetPosition')) item.targetPosition = payload.targetPosition
-        if (Object.prototype.hasOwnProperty.call(payload, 'appearanceDelayMs')) {
-          item.appearanceDelayMs = normalizeAppearanceTime(payload.appearanceDelayMs)
+        const appearanceBackgroundId = String(payload.backgroundId ?? '').trim()
+        const hasAppearanceByBackground = Object.prototype.hasOwnProperty.call(payload, 'appearanceByBackground')
+        if (hasAppearanceByBackground) {
+          item.appearanceByBackground = normalizeAppearanceByBackground(payload.appearanceByBackground)
         }
-        if (Object.prototype.hasOwnProperty.call(payload, 'appearanceHideMs')) {
-          item.appearanceHideMs = payload.appearanceHideMs === null
-            ? null
-            : normalizeAppearanceTime(payload.appearanceHideMs)
+        if (appearanceBackgroundId) {
+          const hasBackgroundTiming = Boolean(
+            item.appearanceByBackground
+            && Object.prototype.hasOwnProperty.call(item.appearanceByBackground, appearanceBackgroundId)
+          )
+          if (!hasAppearanceByBackground || !hasBackgroundTiming) {
+            const currentTiming = item.appearanceByBackground?.[appearanceBackgroundId] ?? {}
+            const nextTiming = { ...currentTiming }
+            if (Object.prototype.hasOwnProperty.call(payload, 'appearanceDelayMs')) {
+              nextTiming.appearanceDelayMs = normalizeAppearanceTime(payload.appearanceDelayMs)
+            }
+            if (Object.prototype.hasOwnProperty.call(payload, 'appearanceHideMs')) {
+              nextTiming.appearanceHideMs = payload.appearanceHideMs === null
+                ? null
+                : normalizeAppearanceTime(payload.appearanceHideMs)
+            }
+            if (Object.keys(nextTiming).length > 0) {
+              item.appearanceByBackground = {
+                ...(item.appearanceByBackground ?? {}),
+                [appearanceBackgroundId]: nextTiming
+              }
+            }
+          }
+        } else {
+          if (Object.prototype.hasOwnProperty.call(payload, 'appearanceDelayMs')) {
+            item.appearanceDelayMs = normalizeAppearanceTime(payload.appearanceDelayMs)
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'appearanceHideMs')) {
+            item.appearanceHideMs = payload.appearanceHideMs === null
+              ? null
+              : normalizeAppearanceTime(payload.appearanceHideMs)
+          }
         }
         if (Object.prototype.hasOwnProperty.call(payload, 'hideAfterTarget')) {
           item.hideAfterTarget = payload.hideAfterTarget === true

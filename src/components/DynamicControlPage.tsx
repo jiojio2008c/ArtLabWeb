@@ -60,9 +60,7 @@ import {
   setDynamicBackground,
   setDynamicBackgroundTransition,
   setDynamicBackgroundBgm,
-  updateDynamicAdvancedPlayback,
   updateDynamicBackgroundPlayback,
-  updateDynamicGroupAppearMode,
   updateDynamicItemMeta,
   updateDynamicBubble,
   updateDynamicItem,
@@ -71,6 +69,7 @@ import {
   type DynamicAppearMode,
   type DynamicAudioMedia,
   type DynamicBackground,
+  type DynamicBackgroundAppearance,
   type DynamicBackgroundPlayMode,
   type DynamicBackgroundTransition,
   type DynamicBubbleInput,
@@ -143,6 +142,8 @@ import {
   buildDynamicAppearanceTimeline,
   DYNAMIC_APPEARANCE_EASING,
   getContinuableDynamicAppearanceItemIds,
+  getDynamicAppearanceTimingForBackground,
+  getDynamicBackgroundAppearanceForGroup,
   getDynamicPlaybackItemsForBackground,
   getDynamicAppearanceAnimationSeekMs,
   sampleDynamicAppearanceTimeline,
@@ -160,7 +161,7 @@ import DynamicBubbleEditor, {
 } from './DynamicBubbleEditor.tsx'
 import DynamicBubbleVisual from './DynamicBubbleVisual.tsx'
 import DynamicItemThumbnail, { toDynamicBubbleDraft } from './DynamicItemThumbnail.tsx'
-import BrandLogo from './BrandLogo.tsx'
+import BrandLogo, { RIGHT_LOGO_URL } from './BrandLogo.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'audio' | 'background' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
@@ -377,6 +378,87 @@ const getBackgrounds = (nextGroup: DynamicGroup) => {
   return nextGroup.background ? [nextGroup.background] : []
 }
 
+interface ResolvedAppearanceTiming {
+  appearanceDelayMs: number
+  appearanceHideMs?: number | null
+}
+
+const getResolvedAppearanceTiming = (
+  item: DynamicItem,
+  backgroundId = ''
+): ResolvedAppearanceTiming => {
+  const override = getDynamicAppearanceTimingForBackground(item, backgroundId)
+  const hasOverrideHide = Boolean(
+    override && Object.prototype.hasOwnProperty.call(override, 'appearanceHideMs')
+  )
+  const delayValue = override?.appearanceDelayMs ?? item.appearanceDelayMs ?? 0
+  const delayMs = Number(delayValue)
+
+  return {
+    appearanceDelayMs: Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0,
+    appearanceHideMs: hasOverrideHide
+      ? override?.appearanceHideMs
+      : item.appearanceHideMs
+  }
+}
+
+const overlayAppearanceTimingForBackground = (
+  item: DynamicItem,
+  backgroundId: string
+): DynamicItem => {
+  const timing = getResolvedAppearanceTiming(item, backgroundId)
+  const nextItem: DynamicItem = {
+    ...item,
+    appearanceDelayMs: timing.appearanceDelayMs,
+  }
+  if (timing.appearanceHideMs === null) {
+    nextItem.appearanceHideMs = undefined
+  } else if (timing.appearanceHideMs !== undefined) {
+    nextItem.appearanceHideMs = timing.appearanceHideMs
+  }
+  return nextItem
+}
+
+const getActiveBackgroundForGroup = (nextGroup: DynamicGroup) => {
+  const nextBackgrounds = getBackgrounds(nextGroup)
+  const activeBackgroundId = String(nextGroup.activeBackgroundId ?? '').trim()
+  return nextBackgrounds.find((background) => background.id === activeBackgroundId)
+    ?? nextBackgrounds.find((background) => background.id === nextGroup.background?.id)
+    ?? nextBackgrounds[0]
+}
+
+const updateGroupBackgroundAppearance = (
+  nextGroup: DynamicGroup,
+  backgroundId: string,
+  patch: Partial<NonNullable<DynamicBackground['appearance']>>
+): DynamicGroup => {
+  const nextBackgrounds = getBackgrounds(nextGroup)
+  const targetBackground = nextBackgrounds.find((background) => background.id === backgroundId)
+    ?? getActiveBackgroundForGroup(nextGroup)
+  if (!targetBackground) return nextGroup
+
+  const currentAppearance = getDynamicBackgroundAppearanceForGroup(nextGroup, targetBackground)
+  const nextAppearance = {
+    ...currentAppearance,
+    ...patch
+  }
+  const backgrounds = nextBackgrounds.map((background) => (
+    background.id === targetBackground.id
+      ? { ...background, appearance: nextAppearance }
+      : background
+  ))
+
+  return {
+    ...nextGroup,
+    background: backgrounds.find((background) => background.id === targetBackground.id) ?? targetBackground,
+    backgrounds,
+    activeBackgroundId: getActiveBackgroundForGroup({
+      ...nextGroup,
+      backgrounds
+    })?.id ?? targetBackground.id
+  }
+}
+
 const toBackgroundPayload = (background?: DynamicBackground) => (
   background
     ? {
@@ -385,7 +467,8 @@ const toBackgroundPayload = (background?: DynamicBackground) => (
         mediaType: background.type,
         mimeType: background.mimeType,
         bgmAudioId: background.bgmAudioId,
-        backgroundTransition: background.backgroundTransition ?? 'none'
+        backgroundTransition: background.backgroundTransition ?? 'none',
+        appearance: background.appearance
       }
     : null
 )
@@ -1438,7 +1521,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [previewMode, setPreviewMode] = useState(false)
   const [stageEntryActive, setStageEntryActive] = useState(true)
   const [previewReplayId, setPreviewReplayId] = useState(0)
-  const [previewBackgroundId, setPreviewBackgroundId] = useState(group.background?.id ?? '')
+  const [previewBackgroundId, setPreviewBackgroundId] = useState(() => (
+    getActiveBackgroundForGroup(group)?.id ?? ''
+  ))
   const [previewSelectedBackgroundOnly, setPreviewSelectedBackgroundOnly] = useState(false)
   const [animationCursor, setAnimationCursor] = useState(FIRST_SELECTABLE_ANIMATION_ID)
   const [animationPreviewSessionId, setAnimationPreviewSessionId] = useState(0)
@@ -1506,10 +1591,25 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const copySourceItem = sortedItems.find((item) => item.id === copiedSourceItemId)
   const backgrounds = getBackgrounds(group)
   const backgroundIdsKey = backgrounds.map((background) => background.id).join('|')
+  const activeBackground = getActiveBackgroundForGroup(group)
+  const activeBackgroundId = activeBackground?.id ?? ''
   const displayedBackground = previewMode
-    ? backgrounds.find((background) => background.id === previewBackgroundId) ?? group.background
-    : group.background
+    ? backgrounds.find((background) => background.id === previewBackgroundId) ?? activeBackground
+    : activeBackground
   const displayedBackgroundId = displayedBackground?.id ?? ''
+  const displayedBackgroundAppearance = getDynamicBackgroundAppearanceForGroup(
+    group,
+    displayedBackground
+  )
+  const displayedAppearMode = displayedBackgroundAppearance.appearMode
+  const displayedAppearAnimation = advancedFeaturesEnabled
+    ? displayedBackgroundAppearance.appearAnimation
+    : 'none'
+  const appearIntervalMs = clamp(
+    displayedBackgroundAppearance.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+    MIN_DYNAMIC_APPEAR_INTERVAL_MS,
+    MAX_DYNAMIC_APPEAR_INTERVAL_MS
+  )
   const backgroundScopeActive = (advancedFeaturesEnabled || previewSelectedBackgroundOnly)
     && Boolean(displayedBackgroundId)
   const flowStageShowsAllItems = editorExperience === 'flow'
@@ -1522,6 +1622,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const displayedItems = backgroundScopeActive && !flowStageShowsAllItems
     ? getDynamicPlaybackItemsForBackground(sortedItems, displayedBackgroundId)
     : sortedItems
+  const appearanceItems = displayedBackgroundId
+    ? getDynamicPlaybackItemsForBackground(sortedItems, displayedBackgroundId)
+    : sortedItems
+  const displayedAppearanceItems = displayedItems.map((item) => (
+    overlayAppearanceTimingForBackground(item, displayedBackgroundId)
+  ))
   const displayedItemIdsKey = displayedItems.map((item) => item.id).join('|')
   const layerItems = [...displayedItems].reverse()
   const selectableItems = editorExperience === 'flow' && !previewMode
@@ -1542,13 +1648,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   ].join(':')).join('|')
   const displayedItemsTimelineKey = displayedItems.map((item) => [
     item.id,
-    item.appearanceDelayMs ?? 0,
-    item.appearanceHideMs ?? '',
+    getResolvedAppearanceTiming(item, displayedBackgroundId).appearanceDelayMs,
+    getResolvedAppearanceTiming(item, displayedBackgroundId).appearanceHideMs ?? '',
     item.hideAfterTarget === true ? 1 : 0
   ].join(':')).join('|')
-  const displayedAppearAnimation = advancedFeaturesEnabled
-    ? group.appearAnimation ?? 'none'
-    : 'none'
   const activeTrack = selectedItem ? getItemTrack(selectedItem) : 'middle'
   const selectedTargetActive = Boolean(
     selectedItem?.targetMode === 'target' && selectedItem.targetPosition
@@ -1558,17 +1661,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   )
   const selectedTargetForControls = selectedTargetActive || targetEditorOpen
   const selectedMoveSpeed = selectedItem ? getItemMoveSpeed(selectedItem) : DEFAULT_MOVE_SPEED
-  const appearIntervalMs = clamp(
-    group.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
-    MIN_DYNAMIC_APPEAR_INTERVAL_MS,
-    MAX_DYNAMIC_APPEAR_INTERVAL_MS
-  )
   const baseAppearanceTimeline = useMemo(() => buildDynamicAppearanceTimeline({
-    items: displayedItems,
-    appearMode: group.appearMode,
+    items: displayedAppearanceItems,
+    appearMode: displayedAppearMode,
     intervalMs: appearIntervalMs,
-    appearAnimation: displayedAppearAnimation
-  }), [appearIntervalMs, displayedAppearAnimation, displayedItemsTimelineKey, group.appearMode])
+    appearAnimation: displayedAppearAnimation,
+    backgroundId: displayedBackgroundId
+  }), [appearIntervalMs, displayedAppearAnimation, displayedAppearanceItems, displayedBackgroundId, displayedItemsTimelineKey, displayedAppearMode])
   const backgroundIntervalMs = clamp(
     group.backgroundIntervalMs ?? DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
     MIN_DYNAMIC_BACKGROUND_INTERVAL_MS,
@@ -2043,7 +2142,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setIsSavingItemName(false)
     setSelectedLayerItemIds([])
     setSelectedBackgroundIds([])
-    setPreviewBackgroundId(group.background?.id ?? '')
+    setPreviewBackgroundId(getActiveBackgroundForGroup(group)?.id ?? '')
     setPreviewSelectedBackgroundOnly(false)
     clearTargetEditing()
   }, [advancedFeaturesEnabled, clearPreviewPlayback, clearTargetEditing, group.id, initialExperience, initialItemId, stopAudioPreview])
@@ -2120,7 +2219,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       sessionKey,
       displayedBackgroundId,
       displayedAppearAnimation,
-      group.appearMode,
+      displayedAppearMode,
       appearIntervalMs,
       displayedItemsTimelineKey
     ].join('|')
@@ -2144,14 +2243,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
 
     const timeline = buildDynamicAppearanceTimeline({
-      items: displayedItems,
-      appearMode: group.appearMode,
+      items: displayedAppearanceItems,
+      appearMode: displayedAppearMode,
       intervalMs: appearIntervalMs,
       appearAnimation: displayedAppearAnimation,
+      backgroundId: displayedBackgroundId,
       activeItemIds
     })
     const continuableItemIds = getContinuableDynamicAppearanceItemIds({
-      items: displayedItems,
+      items: displayedAppearanceItems,
       previousEpochs,
       timeline,
       activeItemIds,
@@ -2186,7 +2286,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     itemPlaybackContextRef.current = contextKey
     itemPlaybackEpochsRef.current = nextEpochs
     setItemPlaybackEpochs(nextEpochs)
-  }, [advancedFeaturesEnabled, appearIntervalMs, baseAppearanceTimeline, displayedAppearAnimation, displayedBackgroundId, displayedItems, displayedItemsTimelineKey, group.appearMode, group.id, previewMode, previewReplayId])
+  }, [advancedFeaturesEnabled, appearIntervalMs, baseAppearanceTimeline, displayedAppearAnimation, displayedAppearanceItems, displayedAppearMode, displayedBackgroundId, displayedItems, displayedItemsTimelineKey, group.id, previewMode, previewReplayId])
 
   useEffect(() => {
     if (!isEditingItemName) return undefined
@@ -2285,7 +2385,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [displayedBackground?.id, displayedBackground?.type, displayedBackground?.url, transitionPreparing])
 
   useEffect(() => {
-    const activeId = group.background?.id ?? backgrounds[0]?.id ?? ''
+    const activeId = activeBackgroundId || backgrounds[0]?.id || ''
     const playbackStartIndex = getDynamicBackgroundPlaybackStartIndex(
       backgrounds,
       activeId,
@@ -2331,7 +2431,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     scheduleNext()
 
     return clearBackgroundTransitionPlayback
-  }, [backgroundIdsKey, backgroundIntervalMs, clearBackgroundTransitionPlayback, group.background?.id, group.id, previewBackgroundPlayMode, previewMode, previewReplayId, transitionToPreviewBackground])
+  }, [activeBackgroundId, backgroundIdsKey, backgroundIntervalMs, clearBackgroundTransitionPlayback, group.background?.id, group.id, previewBackgroundPlayMode, previewMode, previewReplayId, transitionToPreviewBackground])
 
   useEffect(() => {
     if (!previewMode || !advancedFeaturesEnabled) {
@@ -2726,9 +2826,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       enabled,
       advancedFeaturesEnabled: true,
       watermarkEnabled,
-      appearMode: options.appearMode ?? previewGroup.appearMode,
+      appearMode: options.appearMode ?? displayedAppearMode,
       intervalMs: options.intervalMs ?? appearIntervalMs,
-      appearAnimation: previewGroup.appearAnimation ?? 'none',
+      appearAnimation: displayedAppearAnimation,
       backgroundPlayMode: options.backgroundPlayMode ?? previewGroup.backgroundPlayMode,
       backgroundIntervalMs: options.backgroundIntervalMs ?? backgroundIntervalMs,
       backgroundTransition: previewGroup.backgroundTransition ?? 'none',
@@ -2737,7 +2837,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     })
   }
 
-  const restartPreviewPlayback = (appearMode = group.appearMode, intervalMs = appearIntervalMs) => {
+  const restartPreviewPlayback = (appearMode = displayedAppearMode, intervalMs = appearIntervalMs) => {
     clearPreviewPlayback(false)
     const replayId = nextPreviewReplayId()
     sendPreviewModeState(true, {
@@ -2850,7 +2950,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       setPreviewSelectedBackgroundOnly(options.backgroundPlayMode === 'fixed' && Boolean(options.backgroundId))
       setPreviewBackgroundId(
         options.backgroundId
-          ?? latestGroupRef.current.background?.id
+          ?? getActiveBackgroundForGroup(latestGroupRef.current)?.id
           ?? getBackgrounds(latestGroupRef.current)[0]?.id
           ?? ''
       )
@@ -3115,108 +3215,156 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   const setAppearMode = (appearMode: DynamicAppearMode) => {
     const currentGroup = latestGroupRef.current
-    const updatedGroup = updateDynamicGroupAppearMode(
-      currentGroup.id,
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
+    const nextGroup = commitAppearanceTiming(
       appearMode,
-      currentGroup.appearIntervalMs
+      currentAppearance.appearIntervalMs,
+      () => 0,
+      currentGroup
     )
-    if (!updatedGroup) return
-
-    const nextGroup = {
-      ...currentGroup,
-      appearMode,
-      appearIntervalMs: updatedGroup.appearIntervalMs,
-      items: updatedGroup.items,
-      updatedAt: updatedGroup.updatedAt
-    }
-    latestGroupRef.current = nextGroup
-    onGroupChange(nextGroup)
-    sendDynamicEvent(wsIp, dynamicPort, 'GroupAppearMode', {
-      groupId: currentGroup.id,
-      mode: appearMode,
-      intervalMs: updatedGroup.appearIntervalMs
-    })
-    sendGroupStateSync(nextGroup)
+    if (!nextGroup) return
 
     if (previewMode) {
-      restartPreviewPlayback(appearMode, updatedGroup.appearIntervalMs)
+      restartPreviewPlayback(appearMode, nextGroup.appearIntervalMs)
     }
   }
 
   const setAppearInterval = (value: number) => {
     const nextInterval = clamp(value, MIN_DYNAMIC_APPEAR_INTERVAL_MS, MAX_DYNAMIC_APPEAR_INTERVAL_MS)
     const currentGroup = latestGroupRef.current
-    const updatedGroup = updateDynamicGroupAppearMode(currentGroup.id, currentGroup.appearMode, nextInterval)
-    if (!updatedGroup) return
-
-    const nextGroup = {
-      ...currentGroup,
-      appearIntervalMs: updatedGroup.appearIntervalMs,
-      items: updatedGroup.items,
-      updatedAt: updatedGroup.updatedAt
-    }
-    latestGroupRef.current = nextGroup
-    onGroupChange(nextGroup)
-    sendDynamicEvent(wsIp, dynamicPort, 'GroupAppearMode', {
-      groupId: currentGroup.id,
-      mode: currentGroup.appearMode,
-      intervalMs: updatedGroup.appearIntervalMs
-    })
-    sendGroupStateSync(nextGroup)
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
+    const nextGroup = commitAppearanceTiming(
+      currentAppearance.appearMode,
+      nextInterval,
+      (_item, sequenceIndex) => sequenceIndex * nextInterval,
+      currentGroup
+    )
+    if (!nextGroup) return
   }
 
   const commitAppearanceTiming = (
     appearMode: DynamicAppearMode,
     intervalMs: number,
-    resolveDelayMs: (item: DynamicItem, sequenceIndex: number) => number
+    resolveDelayMs: (item: DynamicItem, sequenceIndex: number) => number,
+    sourceGroup = latestGroupRef.current
   ) => {
-    const currentGroup = latestGroupRef.current
     const nextIntervalMs = clamp(
       Math.round(intervalMs),
       MIN_DYNAMIC_APPEAR_INTERVAL_MS,
       MAX_DYNAMIC_APPEAR_INTERVAL_MS
     )
     const now = Date.now()
-    const sequenceIndexById = new Map(
-      [...currentGroup.items]
+    const activeBackground = getActiveBackgroundForGroup(sourceGroup)
+    const activeBackgroundId = activeBackground?.id ?? ''
+    const orderedItems = [...sourceGroup.items]
         .sort((left, right) => left.order - right.order)
-        .map((item, index) => [item.id, index])
-    )
-    const nextGroup: DynamicGroup = {
-      ...currentGroup,
-      appearMode,
-      appearIntervalMs: nextIntervalMs,
-      items: currentGroup.items.map((item) => ({
+    const scopedItems = activeBackgroundId
+      ? getDynamicPlaybackItemsForBackground(orderedItems, activeBackgroundId)
+      : orderedItems
+    const scopedItemIds = new Set(scopedItems.map((item) => item.id))
+    const sequenceIndexById = new Map(scopedItems.map((item, index) => [item.id, index]))
+    const nextItems = sourceGroup.items.map((item) => {
+      if (!scopedItemIds.has(item.id)) return item
+
+      const sequenceIndex = sequenceIndexById.get(item.id) ?? 0
+      const appearanceTiming = getResolvedAppearanceTiming(item, activeBackgroundId)
+      const appearanceDelayMs = clamp(
+        Math.round(resolveDelayMs(item, sequenceIndex)),
+        0,
+        600000
+      )
+      const existingTiming = activeBackgroundId
+        ? getDynamicAppearanceTimingForBackground(item, activeBackgroundId)
+        : undefined
+      const nextTiming: NonNullable<DynamicItem['appearanceByBackground']>[string] = {
+        ...(existingTiming ?? {}),
+        appearanceDelayMs
+      }
+      if (appearanceTiming.appearanceHideMs === undefined) {
+        delete nextTiming.appearanceHideMs
+      } else {
+        nextTiming.appearanceHideMs = appearanceTiming.appearanceHideMs
+      }
+
+      return {
         ...item,
-        appearanceDelayMs: clamp(
-          Math.round(resolveDelayMs(item, sequenceIndexById.get(item.id) ?? 0)),
-          0,
-          600000
-        ),
+        ...(activeBackgroundId
+          ? {
+              appearanceByBackground: {
+                ...(item.appearanceByBackground ?? {}),
+                [activeBackgroundId]: nextTiming
+              }
+            }
+          : {
+              appearanceDelayMs,
+              appearanceHideMs: appearanceTiming.appearanceHideMs === null
+                ? undefined
+                : appearanceTiming.appearanceHideMs
+            }),
         linkedAppearance: undefined,
         updatedAt: now
-      })),
+      }
+    })
+    const nextBackgroundAppearance = activeBackground
+      ? getDynamicBackgroundAppearanceForGroup(sourceGroup, activeBackground)
+      : undefined
+    const nextBackgrounds: DynamicBackground[] = activeBackground
+      ? getBackgrounds(sourceGroup).map((background): DynamicBackground => {
+          if (background.id !== activeBackground.id) return background
+          const nextAppearance: DynamicBackgroundAppearance = {
+            appearMode,
+            appearIntervalMs: nextIntervalMs,
+            appearAnimation: nextBackgroundAppearance?.appearAnimation ?? 'none'
+          }
+          return {
+            ...background,
+            appearance: nextAppearance
+          }
+        })
+      : getBackgrounds(sourceGroup)
+    const nextActiveBackground = activeBackground
+      ? nextBackgrounds.find((background) => background.id === activeBackground.id)
+      : undefined
+    const nextGroup: DynamicGroup = {
+      ...sourceGroup,
+      ...(activeBackground
+        ? {
+            background: nextActiveBackground ?? activeBackground,
+            backgrounds: nextBackgrounds,
+            activeBackgroundId: activeBackground.id
+          }
+        : {}),
+      appearMode,
+      appearIntervalMs: nextIntervalMs,
+      items: nextItems,
       updatedAt: now
     }
-
-    latestGroupRef.current = nextGroup
-    onGroupChange(nextGroup)
-    upsertDynamicGroup(nextGroup)
+    const persistedGroup = upsertDynamicGroup(nextGroup)
+    const resolvedGroup = persistedGroup ?? nextGroup
+    latestGroupRef.current = resolvedGroup
+    onGroupChange(resolvedGroup)
+    const resolvedBackground = getActiveBackgroundForGroup(resolvedGroup)
     sendDynamicEvent(wsIp, dynamicPort, 'GroupAppearMode', {
-      groupId: nextGroup.id,
+      groupId: resolvedGroup.id,
       mode: appearMode,
-      intervalMs: nextIntervalMs
+      intervalMs: resolvedGroup.appearIntervalMs,
+      backgroundId: resolvedBackground?.id,
+      appearance: resolvedBackground?.appearance
     })
-    sendGroupStateSync(nextGroup)
-    return nextGroup
+    sendGroupStateSync(resolvedGroup)
+    return resolvedGroup
   }
 
   const handleAppearanceEditorModeChange = (appearMode: DynamicAppearMode) => {
     if (appearMode === appearanceEditorMode) return
 
     const currentGroup = latestGroupRef.current
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
     const intervalMs = clamp(
-      currentGroup.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+      currentAppearance.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
       MIN_DYNAMIC_APPEAR_INTERVAL_MS,
       MAX_DYNAMIC_APPEAR_INTERVAL_MS
     )
@@ -3237,8 +3385,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (timingMode !== 'uniform') return
 
     const currentGroup = latestGroupRef.current
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
     const intervalMs = clamp(
-      currentGroup.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+      currentAppearance.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
       MIN_DYNAMIC_APPEAR_INTERVAL_MS,
       MAX_DYNAMIC_APPEAR_INTERVAL_MS
     )
@@ -3257,33 +3407,40 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const handleAppearanceItemTimeChange = (itemId: string, value: number) => {
     const appearanceDelayMs = clamp(Math.round(value * 1000), 0, 600000)
     const currentGroup = latestGroupRef.current
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
     const intervalMs = clamp(
-      currentGroup.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+      currentAppearance.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
       MIN_DYNAMIC_APPEAR_INTERVAL_MS,
       MAX_DYNAMIC_APPEAR_INTERVAL_MS
     )
     const nextGroup = commitAppearanceTiming(
       'sequence',
       intervalMs,
-      (item) => item.id === itemId ? appearanceDelayMs : item.appearanceDelayMs ?? 0
+      (item) => item.id === itemId
+        ? appearanceDelayMs
+        : getResolvedAppearanceTiming(item, activeBackground?.id ?? '').appearanceDelayMs
     )
     const changedItem = nextGroup.items.find((item) => item.id === itemId)
     if (changedItem) sendItemMotionState(changedItem)
   }
 
   const setAppearAnimation = (appearAnimation: DynamicAppearAnimation) => {
-    const updatedGroup = updateDynamicAdvancedPlayback(group.id, { appearAnimation })
-    if (!updatedGroup) return
-
-    const resolvedAnimation = updatedGroup.appearAnimation ?? 'none'
-    const nextGroup: DynamicGroup = {
-      ...latestGroupRef.current,
+    const currentGroup = latestGroupRef.current
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const resolvedAnimation: DynamicAppearAnimation = appearAnimation
+    const nextGroup = {
+      ...updateGroupBackgroundAppearance(currentGroup, activeBackground?.id ?? '', {
+        appearAnimation: resolvedAnimation
+      }),
       appearAnimation: resolvedAnimation,
-      updatedAt: updatedGroup.updatedAt
+      updatedAt: Date.now()
     }
-    latestGroupRef.current = nextGroup
-    onGroupChange(nextGroup)
-    sendGroupStateSync(nextGroup)
+    const persistedGroup = upsertDynamicGroup(nextGroup)
+    const resolvedGroup = persistedGroup ?? nextGroup
+    latestGroupRef.current = resolvedGroup
+    onGroupChange(resolvedGroup)
+    sendGroupStateSync(resolvedGroup)
   }
 
   const handleBackgroundChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -3315,6 +3472,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       name: nextGroup.background.name,
       mediaType: nextGroup.background.type,
       mimeType: nextGroup.background.mimeType,
+      appearance: nextGroup.background.appearance,
       stateRevision
     })
     onGroupChange(nextGroup)
@@ -3533,16 +3691,24 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     stopAudioPreview()
     const currentGroup = latestGroupRef.current
     const orderedItems = [...currentGroup.items].sort((left, right) => left.order - right.order)
+    const activeBackground = getActiveBackgroundForGroup(currentGroup)
+    const activeBackgroundId = activeBackground?.id ?? ''
+    const scopedItems = activeBackgroundId
+      ? getDynamicPlaybackItemsForBackground(orderedItems, activeBackgroundId)
+      : orderedItems
+    const currentAppearance = getDynamicBackgroundAppearanceForGroup(currentGroup, activeBackground)
     const intervalMs = clamp(
-      currentGroup.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+      currentAppearance.appearIntervalMs ?? DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
       MIN_DYNAMIC_APPEAR_INTERVAL_MS,
       MAX_DYNAMIC_APPEAR_INTERVAL_MS
     )
-    const allItemsAppearImmediately = orderedItems.every((item) => (item.appearanceDelayMs ?? 0) === 0)
-    const usesUniformSequence = orderedItems.every((item, index) => (
-      (item.appearanceDelayMs ?? 0) === index * intervalMs
+    const allItemsAppearImmediately = scopedItems.every((item) => (
+      getResolvedAppearanceTiming(item, activeBackgroundId).appearanceDelayMs === 0
     ))
-    const editorMode: DynamicAppearMode = currentGroup.appearMode === 'all' && allItemsAppearImmediately
+    const usesUniformSequence = scopedItems.every((item, index) => (
+      getResolvedAppearanceTiming(item, activeBackgroundId).appearanceDelayMs === index * intervalMs
+    ))
+    const editorMode: DynamicAppearMode = currentAppearance.appearMode === 'all' && allItemsAppearImmediately
       ? 'all'
       : 'sequence'
 
@@ -3587,7 +3753,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const confirmed = window.confirm(t('control.confirmDeleteBackgrounds'))
     if (!confirmed) return
 
-    const previousActiveId = group.background?.id
+    const previousActiveId = getActiveBackgroundForGroup(group)?.id
     const nextGroup = await deleteDynamicBackgrounds(group.id, selectedBackgroundIds)
     if (!nextGroup) return
 
@@ -3596,11 +3762,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     sendDynamicEvent(wsIp, dynamicPort, 'BackgroundDelete', {
       groupId: group.id,
       assetIds: selectedBackgroundIds,
-      nextActiveAssetId: nextGroup.background?.id ?? null
+      nextActiveAssetId: getActiveBackgroundForGroup(nextGroup)?.id ?? null
     })
 
-    if (previousActiveId !== nextGroup.background?.id && nextGroup.background) {
-      const backgroundPayload = toBackgroundPayload(nextGroup.background)
+    const nextActiveBackground = getActiveBackgroundForGroup(nextGroup)
+    if (previousActiveId !== nextActiveBackground?.id && nextActiveBackground) {
+      const backgroundPayload = toBackgroundPayload(nextActiveBackground)
       if (backgroundPayload) {
         sendDynamicEvent(wsIp, dynamicPort, 'BackgroundSet', {
           groupId: group.id,
@@ -3923,6 +4090,24 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const sendItemMotionState = (item: DynamicItem) => {
+    const activeBackground = getActiveBackgroundForGroup(latestGroupRef.current)
+    const activeBackgroundId = activeBackground?.id ?? ''
+    const activeAppearanceTiming = activeBackgroundId
+      ? getDynamicAppearanceTimingForBackground(item, activeBackgroundId)
+      : undefined
+    const appearanceByBackground = item.appearanceByBackground
+    const hasAppearanceByBackground = Boolean(
+      appearanceByBackground && Object.keys(appearanceByBackground).length > 0
+    )
+    const appearancePayload = !activeBackgroundId || activeAppearanceTiming
+      ? {
+          appearanceDelayMs: activeAppearanceTiming?.appearanceDelayMs ?? item.appearanceDelayMs ?? 0,
+          appearanceHideMs: activeAppearanceTiming
+            && Object.prototype.hasOwnProperty.call(activeAppearanceTiming, 'appearanceHideMs')
+            ? activeAppearanceTiming.appearanceHideMs
+            : item.appearanceHideMs ?? null
+        }
+      : {}
     sendDynamicEvent(wsIp, dynamicPort, 'ItemMotion', {
       groupId: latestGroupRef.current.id,
       itemId: item.id,
@@ -3933,8 +4118,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       targetMode: item.targetMode ?? 'loop',
       targetLoop: item.targetLoop === true,
       targetPosition: item.targetPosition ?? null,
-      appearanceDelayMs: item.appearanceDelayMs ?? 0,
-      appearanceHideMs: item.appearanceHideMs ?? null,
+      backgroundId: activeBackgroundId,
+      ...(hasAppearanceByBackground ? { appearanceByBackground } : {}),
+      ...appearancePayload,
       hideAfterTarget: item.hideAfterTarget === true
     })
   }
@@ -4426,6 +4612,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           'targetPosition',
           'appearanceDelayMs',
           'appearanceHideMs',
+          'appearanceByBackground',
           'hideAfterTarget'
         ]
         if (field === 'animation') return ['animationMode', 'animationId', 'clickAnimationIds']
@@ -5544,7 +5731,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const flowNextDisabled = sortedItems.length === 0
 
   const getLayerSummary = (item: DynamicItem) => {
-    const appearanceSeconds = Number(((item.appearanceDelayMs ?? 0) / 1000).toFixed(1))
+    const appearanceSeconds = Number((
+      getResolvedAppearanceTiming(item, displayedBackgroundId).appearanceDelayMs / 1000
+    ).toFixed(1))
     const primary = [t('control.layerAppearanceTime', { value: appearanceSeconds })]
     if (item.targetMode === 'target' && item.targetPosition) {
       primary.push(t('control.layerMoveTime', {
@@ -5614,7 +5803,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               }
             }}
           >
-            <span className="dynamic-layer-order">{String(item.order + 1).padStart(2, '0')}</span>
             <DynamicItemThumbnail item={item} />
             <span className="dynamic-layer-copy">
               <strong>{item.name}</strong>
@@ -5851,7 +6039,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 <div className="dynamic-background-quick-rail">
                   <div className="dynamic-background-quick-list">
                     {backgrounds.map((background) => {
-                      const active = group.background?.id === background.id
+                      const active = activeBackgroundId === background.id
                       return (
                         <button
                           key={background.id}
@@ -6080,6 +6268,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
             {displayedItems.map((item, index) => {
               if (previewMode && item.isVisible === false) return null
+              const appearanceTiming = getResolvedAppearanceTiming(item, displayedBackgroundId)
               const isManipulating = manipulatingItemId === item.id
               const resolvedMoveMode = resolvePreviewMotionMode(item, group.id, previewReplayId)
               const resolvedAnimationId = previewMode
@@ -6091,8 +6280,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 && Boolean(item.targetPosition)
               const shouldPlayMotion = previewMode && !isManipulating && !isAmplitudeStatic && !targetEnabled
               const motionMode = shouldPlayMotion ? resolvedMoveMode : 'none'
-              const appearDelayMs = item.appearanceDelayMs ?? (
-                previewMode && group.appearMode === 'sequence' ? index * appearIntervalMs : 0
+              const appearDelayMs = appearanceTiming.appearanceDelayMs ?? (
+                previewMode && displayedAppearMode === 'sequence' ? index * appearIntervalMs : 0
               )
               const playbackEpoch = advancedFeaturesEnabled && previewMode
                 ? itemPlaybackEpochs[item.id]
@@ -6288,6 +6477,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       rx="52"
                       fill="black"
                     />
+                    <line
+                      className="dynamic-stage-watermark-upper-right-mask-notch"
+                      x1="1082.021"
+                      y1="471.363"
+                      x2="1173.333"
+                      y2="420"
+                      stroke="white"
+                      strokeWidth="64"
+                      strokeLinecap="butt"
+                    />
                   </mask>
                 </defs>
                 <g className="dynamic-stage-watermark-mark">
@@ -6299,26 +6498,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <line x1="160" y1="90" x2="1760" y2="990" />
                     <line x1="160" y1="990" x2="1760" y2="90" />
                   </g>
-                  <g className="dynamic-stage-watermark-copy" transform="translate(960 540)">
-                    <text
-                      x="0"
-                      y="-18"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      className="dynamic-stage-watermark-text dynamic-stage-watermark-title"
-                    >
-                      MagicFloor
-                    </text>
-                    <text
-                      x="0"
-                      y="42"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      className="dynamic-stage-watermark-text dynamic-stage-watermark-subtitle"
-                    >
-                      preview
-                    </text>
-                  </g>
+                  <image
+                    className="dynamic-stage-watermark-logo"
+                    href={RIGHT_LOGO_URL}
+                    x="660"
+                    y="420"
+                    width="600"
+                    height="240"
+                    preserveAspectRatio="xMidYMid meet"
+                  />
                 </g>
               </svg>
             )}
@@ -6341,7 +6529,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             advancedFeaturesEnabled={advancedFeaturesEnabled}
             isAddingAudio={isAddingAudio}
             previewingAudioId={previewingAudioId}
-            appearMode={group.appearMode}
+            appearMode={displayedAppearMode}
             appearIntervalMs={appearIntervalMs}
             appearAnimation={displayedAppearAnimation}
             appearanceTree={flowSummary.relationTree}
@@ -7347,7 +7535,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               <div>
                 <h2 id="appearance-editor-title">
                   {t('control.appearanceSettings')}
-                  <span>{t('control.appearanceObjectCount', { count: sortedItems.length })}</span>
+                  <span>{t('control.appearanceObjectCount', { count: appearanceItems.length })}</span>
                 </h2>
               </div>
               <button
@@ -7370,14 +7558,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <div>
                     <h3 id="appearance-objects-title">
                       {t('control.appearanceObjects')}
-                      <span>{t('control.appearanceObjectCount', { count: sortedItems.length })}</span>
+                      <span>{t('control.appearanceObjectCount', { count: appearanceItems.length })}</span>
                     </h3>
                   </div>
                 </div>
 
                 <div className="dynamic-appearance-item-list">
-                  {sortedItems.map((item, index) => {
-                    const appearanceSeconds = Number(((item.appearanceDelayMs ?? 0) / 1000).toFixed(1))
+                  {appearanceItems.map((item, index) => {
+                    const appearanceTiming = getResolvedAppearanceTiming(item, displayedBackgroundId)
+                    const appearanceSeconds = Number((appearanceTiming.appearanceDelayMs / 1000).toFixed(1))
                     const showIndividualWheel = appearanceEditorMode === 'sequence'
                       && appearanceSequenceTimingMode === 'individual'
                     return (
@@ -7414,7 +7603,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       </article>
                     )
                   })}
-                  {sortedItems.length === 0 && (
+                  {appearanceItems.length === 0 && (
                     <div className="background-empty-state dynamic-appearance-empty-state">
                       {t('control.appearanceEmpty')}
                     </div>
@@ -7617,7 +7806,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 <article
                   key={background.id}
                   data-background-id={background.id}
-                  className={`background-library-card ${group.background?.id === background.id ? 'active' : ''} ${selectedBackgroundIds.includes(background.id) ? 'is-checked' : ''} ${pressedBackgroundId === background.id ? 'is-pressed' : ''} ${draggedBackgroundId === background.id ? 'dragging' : ''} ${backgroundDropHint?.backgroundId === background.id ? `drop-${backgroundDropHint.placement}` : ''}`}
+                  className={`background-library-card ${activeBackgroundId === background.id ? 'active' : ''} ${selectedBackgroundIds.includes(background.id) ? 'is-checked' : ''} ${pressedBackgroundId === background.id ? 'is-pressed' : ''} ${draggedBackgroundId === background.id ? 'dragging' : ''} ${backgroundDropHint?.backgroundId === background.id ? `drop-${backgroundDropHint.placement}` : ''}`}
                   onPointerDown={(event) => handleBackgroundCardPointerDown(event, background.id)}
                   onClickCapture={handleBackgroundCardClickCapture}
                   onContextMenu={(event) => event.preventDefault()}

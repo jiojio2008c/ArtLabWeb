@@ -11,6 +11,8 @@ import {
   canContinueDynamicAppearanceEpoch,
   getContinuableDynamicAppearanceItemIds,
   getDynamicEffectiveBackgroundIds,
+  getDynamicAppearanceTimingForBackground,
+  getDynamicBackgroundAppearanceForGroup,
   getDynamicAppearanceAnimationSeekMs,
   getDynamicPlaybackItemsForBackground,
   normalizeDynamicLinkedAppearance,
@@ -360,6 +362,84 @@ const oceanTimeline = buildDynamicAppearanceTimeline({
 assert.equal(oceanTimeline.unrelated.kind, 'normal')
 assert.equal(oceanTimeline.unrelated.appearAnimation, 'drop')
 assert.equal(oceanTimeline['temporary-target'], undefined)
+
+const backgroundAppearanceGroup = {
+  appearMode: 'sequence',
+  appearIntervalMs: 900,
+  appearAnimation: 'drop'
+}
+const forestBackground = {
+  assetId: 'forest',
+  appearance: {
+    appearMode: 'all',
+    appearIntervalMs: 1300,
+    appearAnimation: 'trackSlide'
+  }
+}
+assert.deepEqual(
+  getDynamicBackgroundAppearanceForGroup(backgroundAppearanceGroup, forestBackground),
+  {
+    appearMode: 'all',
+    appearIntervalMs: 1300,
+    appearAnimation: 'trackSlide'
+  },
+  'A background must override the legacy group appearance settings.'
+)
+assert.deepEqual(
+  getDynamicBackgroundAppearanceForGroup(backgroundAppearanceGroup, { assetId: 'ocean' }),
+  backgroundAppearanceGroup,
+  'A background without appearance settings must fall back to the group settings.'
+)
+
+const backgroundTimingItem = {
+  itemId: 'background-timed',
+  appearanceDelayMs: 200,
+  appearanceHideMs: 3000,
+  appearanceByBackground: {
+    forest: { appearanceDelayMs: 1500, appearanceHideMs: null },
+    ocean: { appearanceDelayMs: 700 }
+  }
+}
+assert.deepEqual(
+  getDynamicAppearanceTimingForBackground(backgroundTimingItem, 'forest'),
+  { appearanceDelayMs: 1500, appearanceHideMs: null },
+  'The active background must read its independent item timing, including an explicit hide reset.'
+)
+assert.deepEqual(
+  getDynamicAppearanceTimingForBackground(backgroundTimingItem, 'ocean'),
+  { appearanceDelayMs: 700 },
+  'An item timing override may change only the delay and retain the legacy hide value.'
+)
+assert.equal(
+  getDynamicAppearanceTimingForBackground(backgroundTimingItem, 'city'),
+  undefined,
+  'Missing background timing must not leak an override into another scene.'
+)
+const backgroundTimeline = buildDynamicAppearanceTimeline({
+  items: [
+    backgroundTimingItem,
+    { itemId: 'background-second' }
+  ],
+  backgroundId: 'forest',
+  appearMode: 'sequence',
+  intervalMs: 800,
+  appearAnimation: 'drop'
+})
+assert.equal(
+  backgroundTimeline['background-timed'].entranceStartMs,
+  1500,
+  'The desktop timeline must use the active background item delay.'
+)
+assert.equal(
+  backgroundTimeline['background-timed'].hideStartMs,
+  null,
+  'An explicit null background hide override must disable the legacy hide time.'
+)
+assert.equal(
+  backgroundTimeline['background-second'].entranceStartMs,
+  800,
+  'Sequence fallback must index only the items in the active background.'
+)
 
 const globalLinkedItems = [
   { itemId: 'global-source', backgroundIds: [] },

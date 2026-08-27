@@ -70,6 +70,16 @@ test('desktop preview applies independent timing and target-arrival hiding', () 
   assert.match(playerSource, /interactive:\s*!targetHidden && appearanceSample\.interactive/)
 })
 
+test('item motion keeps explicit active-background timing over legacy fields', () => {
+  const motionSource = mainSource.slice(
+    mainSource.indexOf("case 'ItemMotion':"),
+    mainSource.indexOf("case 'ItemSettingsCopy':")
+  )
+  assert.match(motionSource, /const hasAppearanceByBackground = Object\.prototype\.hasOwnProperty\.call\(payload, 'appearanceByBackground'\)/)
+  assert.match(motionSource, /const hasBackgroundTiming = Boolean\([\s\S]*?hasOwnProperty\.call\(item\.appearanceByBackground, appearanceBackgroundId\)/)
+  assert.match(motionSource, /if \(!hasAppearanceByBackground \|\| !hasBackgroundTiming\) \{/)
+})
+
 test('desktop background transitions draw the shared MagicFloor logo', () => {
   assert.match(playerSource, /transitionLogo\.element\.src = '\.\/assets\/Right_Logo\.png'/)
   assert.match(playerSource, /const drawTransitionLogo = \(renderContext, transition\) =>/)

@@ -12,9 +12,35 @@ export interface DynamicAppearanceItem {
   itemId?: string
   linkedAppearance?: DynamicLinkedAppearance
   appearanceDelayMs?: number
-  appearanceHideMs?: number
+  appearanceHideMs?: number | null
   hideAfterTarget?: boolean
   backgroundIds?: string[]
+  appearanceByBackground?: Record<string, DynamicAppearanceTiming>
+}
+
+export interface DynamicAppearanceTiming {
+  appearanceDelayMs?: number
+  appearanceHideMs?: number | null
+}
+
+export interface DynamicBackgroundAppearance {
+  appearMode: 'sequence' | 'all'
+  appearIntervalMs: number
+  appearAnimation: DynamicAppearAnimation
+}
+
+export interface DynamicAppearanceGroup {
+  appearMode?: 'sequence' | 'all'
+  appearIntervalMs?: number
+  appearAnimation?: DynamicAppearAnimation
+}
+
+export interface DynamicAppearanceBackground {
+  appearance?: Partial<DynamicBackgroundAppearance> & {
+    mode?: 'sequence' | 'all'
+    intervalMs?: number
+    animation?: DynamicAppearAnimation
+  }
 }
 
 export interface DynamicAppearanceSchedule {
@@ -49,6 +75,22 @@ export function normalizeDynamicLinkedAppearance(
   validItemIds?: Set<string>
 ): DynamicLinkedAppearance | undefined
 export function normalizeDynamicAppearanceTimeMs(value: unknown, fallback?: number): number
+export function getDynamicAppearanceTimingForBackground(
+  item: DynamicAppearanceItem,
+  backgroundId?: string
+): DynamicAppearanceTiming | undefined
+export function resolveDynamicItemAppearanceForBackground<T extends DynamicAppearanceItem>(
+  item: T,
+  backgroundId?: string
+): T
+export function getDynamicBackgroundAppearanceForGroup(
+  group?: DynamicAppearanceGroup,
+  background?: DynamicAppearanceBackground
+): DynamicBackgroundAppearance
+export function getDynamicAppearanceConfigForBackground(
+  background?: DynamicAppearanceBackground,
+  fallback?: DynamicAppearanceGroup
+): DynamicBackgroundAppearance
 export function wouldCreateDynamicLinkedAppearanceCycle(
   items: DynamicAppearanceItem[],
   itemId: string,
@@ -75,6 +117,7 @@ export function buildDynamicAppearanceTimeline(options?: {
   intervalMs?: number
   appearAnimation?: DynamicAppearAnimation
   activeItemIds?: string[] | Set<string>
+  backgroundId?: string
 }): Record<string, DynamicAppearanceSchedule>
 export function convertDynamicLinkedAppearanceToIndependentTiming<T extends DynamicAppearanceItem>(options?: {
   items?: T[]
@@ -83,7 +126,7 @@ export function convertDynamicLinkedAppearanceToIndependentTiming<T extends Dyna
   appearAnimation?: DynamicAppearAnimation
 }): Array<T & {
   appearanceDelayMs: number
-  appearanceHideMs?: number
+  appearanceHideMs?: number | null
   hideAfterTarget: boolean
   linkedAppearance?: undefined
 }>

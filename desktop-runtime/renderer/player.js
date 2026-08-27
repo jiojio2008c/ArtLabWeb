@@ -30,6 +30,8 @@ import { createDynamicPortalWorld } from './archive-portal-world.js'
 import {
   buildDynamicAppearanceTimeline,
   getContinuableDynamicAppearanceItemIds,
+  getDynamicAppearanceTimingForBackground,
+  getDynamicBackgroundAppearanceForGroup,
   sampleDynamicAppearanceTimeline
 } from './advanced-appearance-timeline.js'
 import {
@@ -1486,32 +1488,52 @@ const getVisibleItemsForPlayback = (group, backgroundFrame) => {
 const getAppearanceContextSignature = (items, backgroundFrame) => {
   const preview = runtimeState.preview ?? {}
   const group = getActiveGroup()
+  const background = backgroundFrame?.background
+  const backgroundId = background?.assetId ?? ''
+  const backgroundAppearance = getDynamicBackgroundAppearanceForGroup({
+    ...group,
+    appearMode: preview.appearMode ?? group?.appearMode,
+    appearIntervalMs: preview.intervalMs ?? group?.appearIntervalMs,
+    appearAnimation: preview.appearAnimation ?? group?.appearAnimation
+  }, background)
   const backgroundEpochKey = [
     advancedPlaybackState.sessionKey,
     backgroundFrame?.cycle ?? 0,
-    backgroundFrame?.background?.assetId ?? 'none',
+    backgroundId || 'none',
     Math.round(backgroundFrame?.changedAt ?? previewStartTime)
   ].join(':')
-  const itemSignature = items.map((item) => [
-    item.itemId,
-    item.appearanceDelayMs ?? 0,
-    item.appearanceHideMs ?? '',
-    item.hideAfterTarget === true ? 1 : 0,
-    item.linkedAppearance?.triggerItemId ?? '',
-    item.linkedAppearance?.mode ?? '',
-    item.linkedAppearance?.delayMs ?? 0
-  ].join(':')).join('|')
-  const appearAnimation = preview.appearAnimation
-    ?? group?.appearAnimation
-    ?? 'none'
+  const itemSignature = items.map((item) => {
+    const timing = getDynamicAppearanceTimingForBackground(item, backgroundId)
+    const appearanceHideMs = timing
+      && Object.prototype.hasOwnProperty.call(timing, 'appearanceHideMs')
+      ? timing.appearanceHideMs
+      : item.appearanceHideMs ?? ''
+    return [
+      item.itemId,
+      timing?.appearanceDelayMs ?? item.appearanceDelayMs ?? 0,
+      appearanceHideMs,
+      item.hideAfterTarget === true ? 1 : 0,
+      item.linkedAppearance?.triggerItemId ?? '',
+      item.linkedAppearance?.mode ?? '',
+      item.linkedAppearance?.delayMs ?? 0
+    ].join(':')
+  }).join('|')
+  const appearAnimation = backgroundAppearance.appearAnimation
   const contextKey = [
     backgroundEpochKey,
-    preview.appearMode ?? group?.appearMode ?? 'all',
-    preview.intervalMs ?? group?.appearIntervalMs ?? 800,
+    backgroundAppearance.appearMode,
+    backgroundAppearance.appearIntervalMs,
     appearAnimation,
     itemSignature
   ].join('|')
-  return { backgroundEpochKey, contextKey, appearAnimation }
+  return {
+    backgroundEpochKey,
+    contextKey,
+    appearAnimation,
+    appearMode: backgroundAppearance.appearMode,
+    intervalMs: backgroundAppearance.appearIntervalMs,
+    backgroundId
+  }
 }
 
 const syncItemAppearanceTimeline = (items, backgroundFrame, now) => {
@@ -1522,9 +1544,14 @@ const syncItemAppearanceTimeline = (items, backgroundFrame, now) => {
     return
   }
 
-  const preview = runtimeState.preview ?? {}
-  const group = getActiveGroup()
-  const { backgroundEpochKey, contextKey, appearAnimation } = getAppearanceContextSignature(items, backgroundFrame)
+  const {
+    backgroundEpochKey,
+    contextKey,
+    appearAnimation,
+    appearMode,
+    intervalMs,
+    backgroundId
+  } = getAppearanceContextSignature(items, backgroundFrame)
   if (advancedPlaybackState.appearanceContextKey === contextKey) return
 
   const previousEpochs = advancedPlaybackState.itemEpochs
@@ -1542,10 +1569,11 @@ const syncItemAppearanceTimeline = (items, backgroundFrame, now) => {
 
   const timeline = buildDynamicAppearanceTimeline({
     items,
-    appearMode: preview.appearMode ?? group?.appearMode ?? 'all',
-    intervalMs: preview.intervalMs ?? group?.appearIntervalMs ?? 800,
+    appearMode,
+    intervalMs,
     appearAnimation,
-    activeItemIds
+    activeItemIds,
+    backgroundId
   })
   const continuableItemIds = getContinuableDynamicAppearanceItemIds({
     items,

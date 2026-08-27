@@ -59,8 +59,96 @@ export const normalizeDynamicAppearanceTimeMs = (value, fallback = 0) => {
   )
 }
 
-const getExplicitAppearanceTimeMs = (item, field) => {
-  const sourceValue = item?.[field]
+const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
+
+const normalizeDynamicAppearanceTiming = (value) => {
+  if (typeof value === 'number' || typeof value === 'string') {
+    const numericValue = Number(value)
+    if (!Number.isFinite(numericValue)) return undefined
+    return { appearanceDelayMs: normalizeDynamicAppearanceTimeMs(numericValue) }
+  }
+  if (!isRecord(value)) return undefined
+
+  const hasDelay = hasOwn(value, 'appearanceDelayMs')
+  const hasHide = hasOwn(value, 'appearanceHideMs')
+  if (!hasDelay && !hasHide) return undefined
+
+  const timing = {
+    ...(hasDelay
+      ? { appearanceDelayMs: normalizeDynamicAppearanceTimeMs(value.appearanceDelayMs) }
+      : {})
+  }
+  if (hasHide) {
+    timing.appearanceHideMs = value.appearanceHideMs === null
+      ? null
+      : normalizeDynamicAppearanceTimeMs(value.appearanceHideMs)
+  }
+  return timing
+}
+
+export const getDynamicAppearanceTimingForBackground = (item, backgroundId = '') => {
+  const normalizedBackgroundId = String(backgroundId ?? '').trim()
+  const source = item?.appearanceByBackground
+  if (!normalizedBackgroundId || !isRecord(source) || !hasOwn(source, normalizedBackgroundId)) {
+    return undefined
+  }
+  return normalizeDynamicAppearanceTiming(source[normalizedBackgroundId])
+}
+
+export const getDynamicBackgroundAppearanceForGroup = (group = {}, background) => {
+  const fallbackMode = group?.appearMode === 'sequence' ? 'sequence' : 'all'
+  const fallbackInterval = Number(group?.appearIntervalMs)
+  const fallbackAnimation = normalizeDynamicAppearAnimation(group?.appearAnimation)
+  const source = isRecord(background?.appearance) ? background.appearance : {}
+  const sourceMode = source.appearMode ?? source.mode
+  const sourceInterval = source.appearIntervalMs ?? source.intervalMs
+  const sourceAnimation = source.appearAnimation ?? source.animation
+  const appearMode = sourceMode === 'sequence' || sourceMode === 'all'
+    ? sourceMode
+    : fallbackMode
+  const numericInterval = Number(sourceInterval)
+  const intervalMs = clamp(
+    Number.isFinite(numericInterval)
+      ? numericInterval
+      : Number.isFinite(fallbackInterval)
+        ? fallbackInterval
+        : 800,
+    100,
+    5000
+  )
+  return {
+    appearMode,
+    appearIntervalMs: Math.round(intervalMs),
+    appearAnimation: sourceAnimation === undefined
+      ? fallbackAnimation
+      : normalizeDynamicAppearAnimation(sourceAnimation)
+  }
+}
+
+export const resolveDynamicItemAppearanceForBackground = (item, backgroundId = '') => {
+  const override = getDynamicAppearanceTimingForBackground(item, backgroundId)
+  const hasOverrideHide = Boolean(override && hasOwn(override, 'appearanceHideMs'))
+  return {
+    ...item,
+    appearanceDelayMs: override && hasOwn(override, 'appearanceDelayMs')
+      ? override.appearanceDelayMs
+      : item?.appearanceDelayMs,
+    appearanceHideMs: hasOverrideHide
+      ? override.appearanceHideMs
+      : item?.appearanceHideMs
+  }
+}
+
+export const getDynamicAppearanceConfigForBackground = (background, fallback = {}) => (
+  getDynamicBackgroundAppearanceForGroup(fallback, background)
+)
+
+const getExplicitAppearanceTimeMs = (item, field, override) => {
+  const sourceValue = override && hasOwn(override, field)
+    ? override[field]
+    : item?.[field]
   if (sourceValue === null || sourceValue === undefined || sourceValue === '') return null
   const value = Number(sourceValue)
   return Number.isFinite(value)
@@ -198,7 +286,8 @@ export const buildDynamicAppearanceTimeline = ({
   appearMode = 'all',
   intervalMs = 800,
   appearAnimation = 'none',
-  activeItemIds = []
+  activeItemIds = [],
+  backgroundId = ''
 } = {}) => {
   const normalizedAnimation = normalizeDynamicAppearAnimation(appearAnimation)
   const entranceDurationMs = getDynamicAppearanceDurationMs(normalizedAnimation)
@@ -208,8 +297,13 @@ export const buildDynamicAppearanceTimeline = ({
     ? activeItemIds
     : new Set(activeItemIds)
   const validLinkByItemId = getValidNormalizedLinkMap(items)
+  const timingByItemId = new Map(items.map((item) => [
+    getItemId(item),
+    getDynamicAppearanceTimingForBackground(item, backgroundId)
+  ]).filter(([itemId]) => itemId))
+  const getItemTiming = (item) => timingByItemId.get(getItemId(item))
   const independentItemIds = new Set(items
-    .filter((item) => getExplicitAppearanceTimeMs(item, 'appearanceDelayMs') !== null)
+    .filter((item) => getExplicitAppearanceTimeMs(item, 'appearanceDelayMs', getItemTiming(item)) !== null)
     .map(getItemId)
     .filter(Boolean))
   const normalItemIds = items
@@ -229,8 +323,9 @@ export const buildDynamicAppearanceTimeline = ({
     const item = itemById.get(itemId)
     if (!item) return undefined
 
-    const explicitAppearanceDelayMs = getExplicitAppearanceTimeMs(item, 'appearanceDelayMs')
-    const explicitAppearanceHideMs = getExplicitAppearanceTimeMs(item, 'appearanceHideMs')
+    const itemTiming = getItemTiming(item)
+    const explicitAppearanceDelayMs = getExplicitAppearanceTimeMs(item, 'appearanceDelayMs', itemTiming)
+    const explicitAppearanceHideMs = getExplicitAppearanceTimeMs(item, 'appearanceHideMs', itemTiming)
     const link = explicitAppearanceDelayMs === null
       ? validLinkByItemId.get(itemId)
       : undefined

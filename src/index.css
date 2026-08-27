@@ -8162,15 +8162,8 @@ button.ui-pressed {
 .dynamic-layer-main {
   min-width: 0;
   min-height: 52px;
-  grid-template-columns: 24px 52px minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: 8px;
-}
-
-.dynamic-layer-main .dynamic-layer-order {
-  color: var(--muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 
 .dynamic-layer-main > img {
@@ -8706,10 +8699,6 @@ button.ui-pressed {
   .dynamic-layer-main {
     grid-template-columns: 44px minmax(0, 1fr);
   }
-
-  .dynamic-layer-order {
-    display: none;
-  }
 }
 
 @media (max-height: 760px) {
@@ -9059,10 +9048,6 @@ button.ui-pressed {
   gap: 7px;
   touch-action: pan-y;
   cursor: grab;
-}
-
-.dynamic-layer-main .dynamic-layer-order {
-  display: none;
 }
 
 .dynamic-layer-main > img {
@@ -18196,7 +18181,7 @@ button.ui-pressed {
 .dynamic-control-screen .dynamic-background-transition-layer {
   position: absolute;
   inset: 0;
-  z-index: 80;
+  z-index: 100;
   overflow: hidden;
   pointer-events: none;
 }
@@ -18210,8 +18195,14 @@ button.ui-pressed {
   height: auto;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.86);
-  filter: brightness(0) invert(1) drop-shadow(0 4px 16px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.28));
+  -webkit-filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.28));
   pointer-events: none;
+}
+
+.dynamic-control-screen .dynamic-background-transition-layer.is-curtain .dynamic-background-transition-logo {
+  filter: none !important;
+  -webkit-filter: none !important;
 }
 
 .dynamic-control-screen .dynamic-stage-item-motion.is-stage-entering {
@@ -18237,6 +18228,7 @@ button.ui-pressed {
 
 .dynamic-background-transition-layer.is-cameraFlash .dynamic-background-transition-logo {
   filter: brightness(0) drop-shadow(0 2px 10px rgba(255, 255, 255, 0.55));
+  -webkit-filter: brightness(0) drop-shadow(0 2px 10px rgba(255, 255, 255, 0.55));
 }
 
 @keyframes dynamic-transition-logo-in {
@@ -18918,6 +18910,10 @@ button.ui-pressed {
   min-width: 0;
   min-height: 46px;
   width: 100%;
+}
+
+.dynamic-background-modal .dynamic-background-entrance-controls > .ipad-button,
+.dynamic-background-modal .dynamic-background-bgm-controls > .dynamic-background-bgm-clear-all {
   font-size: 14px;
 }
 
@@ -18981,7 +18977,6 @@ button.ui-pressed {
   color: #9f3836;
   background: rgba(255, 246, 245, 0.9);
   box-shadow: none;
-  font-size: 14px;
   font-weight: 850;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -19109,29 +19104,6 @@ button.ui-pressed {
 
 .dynamic-control-screen .dynamic-layer-main {
   position: relative;
-}
-
-.dynamic-control-screen .dynamic-layer-main .dynamic-layer-order {
-  position: absolute;
-  z-index: 2;
-  top: 3px;
-  inset-inline-start: 3px;
-  width: 24px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 5px;
-  color: #fff;
-  background: rgba(23, 42, 38, 0.78);
-  box-shadow: 0 2px 6px rgba(19, 42, 37, 0.2);
-  font-size: 8px;
-  font-weight: 950;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  pointer-events: none;
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
 }
 
 .dynamic-control-screen .dynamic-layer-card.is-child-card {
@@ -19369,7 +19341,7 @@ button.ui-pressed {
 }
 
 .dynamic-control-screen .dynamic-stage-watermark-mark {
-  opacity: 0.44;
+  opacity: 0.4;
 }
 
 .dynamic-control-screen .dynamic-stage-watermark-lines {
@@ -19384,25 +19356,10 @@ button.ui-pressed {
     drop-shadow(0 0 5px rgba(8, 25, 31, 0.55));
 }
 
-.dynamic-control-screen .dynamic-stage-watermark-text {
-  fill: currentColor;
-  stroke: #08191f;
-  stroke-width: 2px;
-  paint-order: stroke fill;
-  font-family: Inter, "Microsoft JhengHei", "PingFang TC", sans-serif;
-  font-weight: 780;
-  letter-spacing: 2px;
-  text-anchor: middle;
-}
-
-.dynamic-control-screen .dynamic-stage-watermark-title {
-  font-size: 72px;
-}
-
-.dynamic-control-screen .dynamic-stage-watermark-subtitle {
-  font-size: 34px;
-  font-weight: 650;
-  letter-spacing: 6px;
+.dynamic-control-screen .dynamic-stage-watermark-logo {
+  filter:
+    drop-shadow(0 0 2px rgba(8, 25, 31, 0.95))
+    drop-shadow(0 0 5px rgba(8, 25, 31, 0.55));
 }
 
 /* Readability pass for the free-edit property and layer panels. */

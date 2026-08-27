@@ -24,6 +24,11 @@ import {
   DYNAMIC_GROUPS_KEY,
   setDynamicBackgroundBgm
 } from '../src/services/dynamicArtStorage.ts'
+import {
+  buildDynamicAppearanceTimeline,
+  getDynamicAppearanceTimingForBackground,
+  getDynamicPlaybackItemsForBackground
+} from '../desktop-runtime/renderer/advanced-appearance-timeline.js'
 import en from '../src/i18n/locales/en.ts'
 import plPL from '../src/i18n/locales/pl-PL.ts'
 import ptPT from '../src/i18n/locales/pt-PT.ts'
@@ -573,6 +578,64 @@ assert.equal(completeSummary.itemAudioCount, 1)
 assert.equal(completeSummary.backgroundAudioCount, 1)
 assert.equal(completeSummary.readyForPreview, true)
 
+const abBackgroundItems = [
+  makeItem('shared-object', 0),
+  makeItem('a-only-object', 1, {
+    backgroundIds: ['background-a'],
+    appearanceDelayMs: 100,
+    appearanceByBackground: {
+      'background-a': { appearanceDelayMs: 1400 }
+    }
+  }),
+  makeItem('b-only-object', 2, {
+    backgroundIds: ['background-b'],
+    appearanceByBackground: {
+      'background-b': { appearanceDelayMs: 350 }
+    }
+  })
+]
+const backgroundAItems = getDynamicPlaybackItemsForBackground(abBackgroundItems, 'background-a')
+const backgroundBItems = getDynamicPlaybackItemsForBackground(abBackgroundItems, 'background-b')
+assert.deepEqual(
+  backgroundAItems.map((item) => item.id ?? item.itemId),
+  ['shared-object', 'a-only-object'],
+  'Background A appearance settings must list only global and A-bound objects.'
+)
+assert.deepEqual(
+  backgroundBItems.map((item) => item.id ?? item.itemId),
+  ['shared-object', 'b-only-object'],
+  'Background B appearance settings must list only global and B-bound objects.'
+)
+const backgroundATimeline = buildDynamicAppearanceTimeline({
+  items: backgroundAItems,
+  backgroundId: 'background-a',
+  appearMode: 'sequence',
+  intervalMs: 800,
+  appearAnimation: 'none'
+})
+const backgroundBTimeline = buildDynamicAppearanceTimeline({
+  items: backgroundBItems,
+  backgroundId: 'background-b',
+  appearMode: 'sequence',
+  intervalMs: 800,
+  appearAnimation: 'none'
+})
+assert.equal(
+  backgroundATimeline['a-only-object'].entranceStartMs,
+  1400,
+  'Background A must use its own object entrance delay.'
+)
+assert.equal(
+  backgroundBTimeline['b-only-object'].entranceStartMs,
+  350,
+  'Background B must use its own object entrance delay.'
+)
+assert.equal(
+  getDynamicAppearanceTimingForBackground(abBackgroundItems[1], 'background-b'),
+  undefined,
+  'An A-only timing record must not leak into Background B.'
+)
+
 const freelyEditedGroup = {
   ...completeGroup,
   items: completeGroup.items.filter((item) => item.id !== 'e'),
@@ -720,6 +783,10 @@ const dynamicControlSource = readFileSync(
   new URL('../src/components/DynamicControlPage.tsx', import.meta.url),
   'utf8'
 )
+const brandLogoSource = readFileSync(
+  new URL('../src/components/BrandLogo.tsx', import.meta.url),
+  'utf8'
+)
 const dynamicBubbleEditorSource = readFileSync(
   new URL('../src/components/DynamicBubbleEditor.tsx', import.meta.url),
   'utf8'
@@ -824,6 +891,16 @@ assert.match(
   dynamicControlSource,
   /const renderLayerItem = \(item: DynamicItem\): React\.ReactNode => \{[\s\S]*?<li key=\{item\.id\} className="dynamic-layer-node is-root">/,
   'Free editing must render a flat layer list with one root card per object.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /dynamic-layer-order/,
+  'Layer cards must not render a visible numeric order badge.'
+)
+assert.doesNotMatch(
+  indexCss,
+  /dynamic-layer-order/,
+  'Removed layer-order badges must not retain dead styling.'
 )
 assert.doesNotMatch(
   dynamicControlSource,
@@ -977,8 +1054,48 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /appearanceDelayMs:\s*item\.appearanceDelayMs \?\? 0[\s\S]*appearanceHideMs:\s*item\.appearanceHideMs \?\? null[\s\S]*hideAfterTarget:\s*item\.hideAfterTarget === true/,
-  'Item motion payloads must include independent appearance and target-visibility settings.'
+  /const activeAppearanceTiming = activeBackgroundId[\s\S]*?const appearancePayload = !activeBackgroundId \|\| activeAppearanceTiming/,
+  'Item motion payloads must resolve independent appearance timing for the active background.'
+)
+assert.match(
+  dynamicControlSource,
+  /const hasAppearanceByBackground = Boolean\([\s\S]*?Object\.keys\(appearanceByBackground\)\.length > 0/,
+  'Item motion payloads must not clear a receiver background timing map with an empty map.'
+)
+assert.match(
+  dynamicControlSource,
+  /backgroundId:\s*activeBackgroundId[\s\S]*?hasAppearanceByBackground\s*\?\s*\{\s*appearanceByBackground\s*\}\s*:\s*\{\}/,
+  'Item motion payloads must preserve non-empty background timing maps.'
+)
+assert.match(
+  dynamicControlSource,
+  /\.\.\.appearancePayload[\s\S]*?hideAfterTarget:\s*item\.hideAfterTarget === true/,
+  'Item motion payloads must include resolved appearance and target-visibility settings.'
+)
+assert.match(
+  dynamicControlSource,
+  /if \(field === 'motion'\) return \[[\s\S]*?'appearanceHideMs',\s*'appearanceByBackground',\s*'hideAfterTarget'/,
+  'Item settings copy events must include per-background appearance timing in motion fields.'
+)
+assert.match(
+  dynamicControlSource,
+  /const appearanceItems = displayedBackgroundId\s*\n\s*\? getDynamicPlaybackItemsForBackground\(sortedItems, displayedBackgroundId\)\s*\n\s*:\s*sortedItems/,
+  'The appearance editor must list only objects assigned to the currently selected background.'
+)
+assert.match(
+  dynamicControlSource,
+  /const activeBackground = getActiveBackgroundForGroup\(group\)[\s\S]*?const displayedBackground = previewMode\s*\n\s*\? backgrounds\.find\(\(background\) => background\.id === previewBackgroundId\) \?\? activeBackground[\s\S]*?const displayedBackgroundId = displayedBackground\?\.id \?\? ''/,
+  'Appearance filtering must follow the active or preview-selected background.'
+)
+assert.match(
+  dynamicControlSource,
+  /buildDynamicAppearanceTimeline\(\{[\s\S]*?backgroundId:\s*displayedBackgroundId/,
+  'The control-page appearance timeline must be rebuilt with the selected background id.'
+)
+assert.match(
+  dynamicControlSource,
+  /appearanceByBackground:\s*\{[\s\S]*?\[activeBackgroundId\]:\s*nextTiming/,
+  'Editing an object appearance time must persist it under the selected background.'
 )
 assert.doesNotMatch(
   dynamicControlSource,
@@ -1001,14 +1118,65 @@ assert.match(
   'Free editing must use the creation-flow panel proportions.'
 )
 assert.match(
+  brandLogoSource,
+  /export const RIGHT_LOGO_URL = new URL\('\.\.\/\.\.\/Right_Logo\.png', import\.meta\.url\)\.href/,
+  'The homepage logo URL must remain reusable by the control-stage watermark.'
+)
+assert.match(
   dynamicControlSource,
-  /className="dynamic-stage-watermark-mark"[\s\S]*MagicFloor[\s\S]*preview/,
-  'The control-stage watermark must use the centered two-line preview mark.'
+  /import BrandLogo, \{ RIGHT_LOGO_URL \} from '\.\/BrandLogo\.tsx'/,
+  'The control-stage watermark must reuse the same logo asset as the homepage.'
+)
+assert.match(
+  dynamicControlSource,
+  /<image(?=[^>]*className="dynamic-stage-watermark-logo")(?=[^>]*href=\{RIGHT_LOGO_URL\})(?=[^>]*x="660")(?=[^>]*y="420")(?=[^>]*width="600")(?=[^>]*height="240")[^>]*\/>/,
+  'The control-stage watermark must center the homepage logo inside the safe zone.'
 )
 assert.match(
   indexCss,
-  /\.dynamic-control-screen \.dynamic-stage-watermark-mark\s*{\s*opacity:\s*0\.44;/,
-  'The control-stage watermark must remain 44% opaque.'
+  /\.dynamic-control-screen \.dynamic-stage-watermark-mark\s*{\s*opacity:\s*0\.4;/,
+  'The control-stage watermark must remain 40% opaque.'
+)
+const stageBackgroundZIndex = Number(indexCss.match(
+  /\.dynamic-stage-background\s*{\s*z-index:\s*(\d+);/
+)?.[1])
+const stageWatermarkZIndex = Number(indexCss.match(
+  /\.dynamic-control-screen \.dynamic-stage-watermark\s*{[\s\S]*?z-index:\s*(\d+);/
+)?.[1])
+const backgroundTransitionZIndex = Number(indexCss.match(
+  /\.dynamic-control-screen \.dynamic-background-transition-layer\s*{[\s\S]*?z-index:\s*(\d+);/
+)?.[1])
+assert.ok(
+  stageBackgroundZIndex < stageWatermarkZIndex
+    && stageWatermarkZIndex < backgroundTransitionZIndex,
+  'The stage watermark must sit above the background but below background-transition animation.'
+)
+const curtainTransitionLogoRule = indexCss.match(
+  /\.dynamic-control-screen \.dynamic-background-transition-layer\.is-curtain \.dynamic-background-transition-logo\s*\{[\s\S]*?\}/
+)
+assert.ok(curtainTransitionLogoRule, 'The curtain transition must define a platform-safe logo rule.')
+assert.match(
+  curtainTransitionLogoRule[0],
+  /filter:\s*none(?:\s*!important)?;[\s\S]*-webkit-filter:\s*none(?:\s*!important)?;/,
+  'The curtain transition logo must avoid WebKit-inconsistent color filters.'
+)
+const transitionLogoRule = indexCss.match(
+  /\.dynamic-control-screen \.dynamic-background-transition-logo\s*\{[\s\S]*?\}/
+)
+assert.ok(transitionLogoRule, 'The transition logo must define a shared visual rule.')
+assert.doesNotMatch(
+  transitionLogoRule[0],
+  /brightness\(0\)|invert\(1\)/,
+  'The shared transition logo rule must not recolor the already-white logo on WebKit.'
+)
+const cameraFlashLogoRule = indexCss.match(
+  /\.dynamic-background-transition-layer\.is-cameraFlash \.dynamic-background-transition-logo\s*\{[\s\S]*?\}/
+)
+assert.ok(cameraFlashLogoRule, 'The camera-flash transition must define its logo contrast rule.')
+assert.match(
+  cameraFlashLogoRule[0],
+  /brightness\(0\)/,
+  'The camera-flash transition must retain its black logo contrast.'
 )
 assert.match(
   indexCss,
@@ -1031,11 +1199,6 @@ assert.ok(
     * (watermarkLines[1][3] - watermarkLines[1][1]) < 0,
   'The two watermark diagonals must cross in opposite directions.'
 )
-assert.match(
-  dynamicControlSource,
-  /className="dynamic-stage-watermark-copy" transform="translate\(960 540\)"/,
-  'The two-line watermark label must be centered on the diagonal intersection.'
-)
 const watermarkMarkup = dynamicControlSource.match(
   /{watermarkEnabled && \(\s*(<svg[\s\S]*?<\/svg>)\s*\)}/
 )?.[1]
@@ -1057,6 +1220,48 @@ assert.ok(watermarkSafeZoneTag, 'The watermark mask must cut out an opaque-black
 const getSvgNumber = (tag, attribute) => Number(
   tag.match(new RegExp(`\\b${attribute}="([0-9.]+)"`))?.[1]
 )
+const watermarkUpperRightMaskNotchTag = watermarkMaskMarkup.match(
+  /<line(?=[^>]*className="dynamic-stage-watermark-upper-right-mask-notch")[^>]*\/>/
+)?.[0]
+assert.ok(
+  watermarkUpperRightMaskNotchTag,
+  'The watermark mask must reveal the upper-right dashed branch toward the logo.'
+)
+assert.match(
+  watermarkUpperRightMaskNotchTag,
+  /(?=[\s\S]*stroke="white")(?=[\s\S]*strokeWidth="64")(?=[\s\S]*strokeLinecap="butt")/,
+  'The upper-right mask notch must reveal the full non-scaling dash width without extending its end caps.'
+)
+const upperRightMaskNotch = {
+  x1: getSvgNumber(watermarkUpperRightMaskNotchTag, 'x1'),
+  y1: getSvgNumber(watermarkUpperRightMaskNotchTag, 'y1'),
+  x2: getSvgNumber(watermarkUpperRightMaskNotchTag, 'x2'),
+  y2: getSvgNumber(watermarkUpperRightMaskNotchTag, 'y2')
+}
+assert.ok(
+  upperRightMaskNotch.x1 > 960
+    && upperRightMaskNotch.y1 < 540
+    && upperRightMaskNotch.x2 > upperRightMaskNotch.x1
+    && upperRightMaskNotch.y2 < upperRightMaskNotch.y1,
+  'The watermark mask notch must point outward along only the upper-right branch.'
+)
+Object.entries({
+  start: [upperRightMaskNotch.x1, upperRightMaskNotch.y1],
+  end: [upperRightMaskNotch.x2, upperRightMaskNotch.y2]
+}).forEach(([label, [x, y]]) => {
+  assert.ok(
+    Math.abs(9 * x + 16 * y - 17280) < 0.05,
+    `The upper-right mask notch ${label} must remain on the original diagonal.`
+  )
+})
+assert.ok(
+  Math.abs(Math.hypot(upperRightMaskNotch.x1 - 960, upperRightMaskNotch.y1 - 540) - 140) < 0.05,
+  'The upper-right mask notch must preserve the safe gap beside the logo and its shadow.'
+)
+assert.ok(
+  Math.abs(Math.hypot(upperRightMaskNotch.x2 - 960, upperRightMaskNotch.y2 - 540) - 244.767) < 0.05,
+  'The upper-right mask notch must end at the existing safe-zone boundary.'
+)
 const safeZoneX = getSvgNumber(watermarkSafeZoneTag, 'x')
 const safeZoneY = getSvgNumber(watermarkSafeZoneTag, 'y')
 const safeZoneWidth = getSvgNumber(watermarkSafeZoneTag, 'width')
@@ -1066,11 +1271,11 @@ assert.ok(
     && safeZoneX + safeZoneWidth > 960
     && safeZoneY < 540
     && safeZoneY + safeZoneHeight > 540,
-  'The watermark cutout must contain the exact center label anchor.'
+  'The watermark cutout must contain the exact logo center.'
 )
 assert.ok(
   safeZoneWidth >= 500 && safeZoneHeight >= 220,
-  'The watermark cutout must leave readable breathing room around both label lines.'
+  'The watermark cutout must leave readable breathing room around the centered logo.'
 )
 const escapedWatermarkMaskId = watermarkMaskId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 assert.match(
@@ -1080,8 +1285,13 @@ assert.match(
 )
 assert.doesNotMatch(
   watermarkMarkup,
-  new RegExp(`<g(?=[^>]*className="dynamic-stage-watermark-copy")(?=[^>]*mask="url\\(#${escapedWatermarkMaskId}\\)")[^>]*>`),
-  'The center cutout must not hide the MagicFloor preview label.'
+  /<image(?=[^>]*className="dynamic-stage-watermark-logo")(?=[^>]*mask=)[^>]*>/,
+  'The center cutout must not hide the MagicFloor logo.'
+)
+assert.doesNotMatch(
+  watermarkMarkup,
+  /<text\b/,
+  'The control-stage watermark must not retain the former center text.'
 )
 assert.match(
   dynamicControlSource,
@@ -1131,6 +1341,22 @@ assert.match(
   /title={t\('control\.clearAllBackgroundMusicHint'\)}[\s\S]*{t\('control\.clearAllBackgroundMusic'\)}/,
   'The clear-all BGM button must provide a concise visible label and an explanatory accessible hint.'
 )
+const clearAllBackgroundBgmButtonCss = indexCss.match(
+  /\.dynamic-background-modal \.dynamic-background-bgm-clear-all\s*{([^}]*)}/
+)?.[1]
+assert.ok(clearAllBackgroundBgmButtonCss, 'The clear-all BGM button must keep its dedicated visual treatment.')
+const backgroundActionButtonFontCss = indexCss.match(
+  /\.dynamic-background-modal \.dynamic-background-entrance-controls > \.ipad-button,\s*\.dynamic-background-modal \.dynamic-background-bgm-controls > \.dynamic-background-bgm-clear-all\s*{([^}]*)}/
+)?.[1]
+assert.ok(
+  backgroundActionButtonFontCss,
+  'The clear-all BGM and apply-transition buttons must share one final font-size rule.'
+)
+assert.match(
+  backgroundActionButtonFontCss,
+  /font-size:\s*14px;/,
+  'The clear-all BGM label must match the apply-transition button font size.'
+)
 assert.doesNotMatch(
   dynamicControlSource,
   /className="dynamic-object-linkage-card"(?![^>]*hidden)/,
@@ -1143,7 +1369,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const getLayerSummary = \(item: DynamicItem\) => \{[\s\S]*item\.appearanceDelayMs[\s\S]*control\.layerAppearanceTime/,
+  /const getLayerSummary = \(item: DynamicItem\) => \{[\s\S]*getResolvedAppearanceTiming\(item, displayedBackgroundId\)\.appearanceDelayMs[\s\S]*control\.layerAppearanceTime/,
   'Layer cards must show each object\'s independent appearance time.'
 )
 const stageHitResolverStart = dynamicControlSource.indexOf('const resolveStageItemIdAtPoint = (clientPoint: Point) => {')

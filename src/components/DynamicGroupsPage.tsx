@@ -196,7 +196,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       group.libraryOrder ?? 0,
       group.items.length,
       group.thumbnail?.id ?? '',
-      group.background?.id ?? '',
+      group.activeBackgroundId ?? group.background?.id ?? '',
       group.updatedAt
     ])
   }), [currentFolderId, folders, groups, i18n.language, i18n.resolvedLanguage, sortMode, viewMode])
@@ -828,7 +828,16 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const renderMaterialPreview = (group: DynamicGroup, compact = false) => {
-    const preview = group.thumbnail ?? group.background
+    const backgrounds = group.backgrounds?.length
+      ? group.backgrounds
+      : group.background
+        ? [group.background]
+        : []
+    const activeBackgroundId = String(group.activeBackgroundId ?? '').trim()
+    const activeBackground = backgrounds.find((background) => background.id === activeBackgroundId)
+      ?? backgrounds.find((background) => background.id === group.background?.id)
+      ?? backgrounds[0]
+    const preview = group.thumbnail ?? activeBackground
     if (!preview || failedPreviewIds.includes(group.id)) {
       return <span className="dynamic-library-preview-fallback"><ImageIcon aria-hidden="true" /></span>
     }

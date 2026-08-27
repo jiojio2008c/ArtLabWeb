@@ -21,6 +21,13 @@ const source = {
   targetMode: 'target',
   targetLoop: true,
   targetPosition: { x: 0.82, y: 0.24 },
+  appearanceDelayMs: 1250,
+  appearanceHideMs: 4800,
+  appearanceByBackground: {
+    'background-1': { appearanceDelayMs: 300, appearanceHideMs: null },
+    'background-3': { appearanceDelayMs: 1700 }
+  },
+  hideAfterTarget: true,
   audioId: 'audio-1',
   audioTrigger: 'appearanceDelay',
   audioDelayMs: 1800,
@@ -43,6 +50,14 @@ assert.notStrictEqual(target.position, source.position)
 assert.notStrictEqual(target.targetPosition, source.targetPosition)
 assert.notStrictEqual(target.backgroundIds, source.backgroundIds)
 assert.notStrictEqual(target.linkedAppearance, source.linkedAppearance)
+assert.notStrictEqual(target.appearanceByBackground, source.appearanceByBackground)
+assert.notStrictEqual(
+  target.appearanceByBackground['background-1'],
+  source.appearanceByBackground['background-1']
+)
+
+target.appearanceByBackground['background-1'].appearanceDelayMs = 999
+assert.equal(source.appearanceByBackground['background-1'].appearanceDelayMs, 300)
 
 const clearedTarget = { audioId: 'old-audio' }
 applyItemSettingsCopy({}, clearedTarget, ['audioId'])

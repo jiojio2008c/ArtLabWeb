@@ -17,7 +17,7 @@
 - `animationId 0~9` 程序化动画，作用于 iPad 上传的图片
 - 预览模式下播放移动轨迹和逐个出现 / 全部出现
 - 进阶预览支持上方掉落、按轨道左右进场，以及从起始位置移动到用户设定的目标点
-- 作品统一指定物件进场方式：淡入、上方掉落或按轨道左右进场
+- 每张背景可独立指定物件进场方式：淡入、上方掉落或按轨道左右进场
 - 物件可联动另一物件，在触发物件完成进场后按指定时间淡入或淡出；支持一个触发方控制多个物件、联动链，并阻止自绑定与循环绑定
 - 受控物件未绑定当前背景时，会由触发物件临时带入当前预览；支持跨背景 `A -> B -> C`，且不会修改物件原有的 `backgroundIds`
 - 物件可绑定全部背景或指定背景；只有由不可见变为可见时才重新触发“出现”事件
@@ -34,11 +34,11 @@
 
 背景播放参数通过 `GroupStateSync` / `GroupSelectAndSync` 的 `backgroundPlayMode`、`backgroundIntervalMs` 字段同步，也可由 `BackgroundPlayback` 事件即时更新。自动切换只在 `PreviewMode.enabled=true` 时运行，编辑状态保持当前背景。
 
-EXE 保留 `DisplaySettings`、`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 的 `{ watermarkEnabled }` 字段以兼容既有协议，但桌面播放器永不绘制水印；`/status` 与运行状态会额外报告 `watermarkVisible=false`。`44%` 不透明度（`56%` 透明度）的水印仅属于 Web/iPad 控制预览。旧消息缺少该字段时仍按既有状态解析，不影响桌面纯舞台输出。
+EXE 保留 `DisplaySettings`、`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 的 `{ watermarkEnabled }` 字段以兼容既有协议，但桌面播放器永不绘制水印；`/status` 与运行状态会额外报告 `watermarkVisible=false`。`40%` 不透明度的首页 Logo 水印仅属于 Web/iPad 控制预览。旧消息缺少该字段时仍按既有状态解析，不影响桌面纯舞台输出。
 
-进阶参数同样由 `GroupStateSync` / `GroupSelectAndSync` 和 `PreviewMode` 同步。组级字段包括统一的物件 `appearAnimation`、旧数据兼容用的 `backgroundTransition` 和 `audioLibrary`；每张背景包含 `bgmAudioId` 与 `backgroundTransition`；物件包含 `targetMode`、`targetPosition`、`audioId`、`audioTrigger`、`audioDelayMs`、`linkedAppearance` 和 `backgroundIds`。桌面端固定按 `PreviewMode.advancedFeaturesEnabled=true` 播放进阶行为，即使接收 payload 显式传入 `false` 也会归一化为 `true`；关闭进阶功能不会删除已同步的数据。
+进阶参数同样由 `GroupStateSync` / `GroupSelectAndSync` 和 `PreviewMode` 同步。组级字段保留旧版兼容用的 `appearMode`、`appearIntervalMs`、`appearAnimation`、`backgroundTransition` 和 `audioLibrary`；每张背景包含 `bgmAudioId`、`backgroundTransition` 及独立的 `appearance`（`appearMode`、`appearIntervalMs`、`appearAnimation`）；物件包含 `targetMode`、`targetPosition`、`audioId`、`audioTrigger`、`audioDelayMs`、`linkedAppearance`、`backgroundIds` 和 `appearanceByBackground`（按背景保存 `appearanceDelayMs` 与 `appearanceHideMs`）。桌面端固定按 `PreviewMode.advancedFeaturesEnabled=true` 播放进阶行为，即使接收 payload 显式传入 `false` 也会归一化为 `true`；关闭进阶功能不会删除已同步的数据。
 
-物件联动的 UI 使用控制方语义 `A -> B`，同步协议仍由受控物件 B 保存 `linkedAppearance`：`{ triggerItemId: A.id, mode, delayMs }`。`mode` 为 `showAfter` 或 `hideAfter`，延迟上限为 `600000ms`；一个 A 可控制多个 B，一个 B 只能有一个触发方。当前 `linkedAppearanceModelVersion` 为 `3`。
+物件联动的 UI 使用控制方语义 `A -> B`，同步协议仍由受控物件 B 保存 `linkedAppearance`：`{ triggerItemId: A.id, mode, delayMs }`。`mode` 为 `showAfter` 或 `hideAfter`，延迟上限为 `600000ms`；一个 A 可控制多个 B，一个 B 只能有一个触发方。当前 `linkedAppearanceModelVersion` 为 `4`。
 
 联动物件不占逐个出场排序位置。若 B 没有绑定 A 当前所在背景，播放清单会递归临时加入 B 及后续受控物件，但不会写回或修改 `backgroundIds`；B 在自己的原生背景中且 A 不存在时会回退到正常进场。关闭进阶功能时不执行联动，但保留同步数据。关系锁仅用于表达联动，不限制位置、缩放、旋转或图层操作。共享时间线位于 `renderer/advanced-appearance-timeline.js`，iPad 与 EXE 使用同一组时长：淡入 `420ms`、上方掉落 `620ms`、左右进场 `560ms`。
 
@@ -92,14 +92,14 @@ npm run pack:all
 
 每个打包命令执行前都会自动清理同类型的旧 `release*` 目录。生成标准版时只删除旧标准版，生成完整翻转版时只删除旧翻转版，因此连续执行两个命令不会互相删除刚生成的另一版本。需要手动清空全部发布目录时可运行 `npm run clean:releases`。
 
-2026-08-20 当前最终交付位于：
+2026-08-27 当前最终交付位于：
 
 ```text
 desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
 desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
 ```
 
-两个版本都监听 `8080`，不能同时运行。标准版 SHA-256 为 `B0EBF4B963EF61F7E9757471CC4B736B0712D140175FE79035E1C4B93AF942BA`；整体显示水平与垂直翻转版 SHA-256 为 `08AC9D0DEFC0888B1FBB9EFED263D5E4ED08E37689A84759B8E4F6A1D8593097`。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。
+两个版本都监听 `8080`，不能同时运行。当前标准版 portable EXE SHA-256 为 `05B7F958354186EB5554A1B5246C1BE66682CC9A5899BBCB273EE2BF075F36B`；当前整体显示水平与垂直翻转版 portable EXE SHA-256 为 `63298C0DD4AF5D02E653B928734DC02DE070F08B224A38262CCBFF53C3BDFBA6`。本次标准版大小为 `85,323,982` bytes，翻转版大小为 `85,311,392` bytes。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。当前产物未配置 Windows 代码签名证书，正式分发前需完成签名。
 
 行为测试可运行：
 

@@ -33,9 +33,18 @@ const MAX_PREVIEW_GROUPS = 4
 const MAX_PREVIEW_ITEMS_PER_GROUP = 5
 const ART_DISPLAY_ICON_URL = new URL('../../ArtDisplay.jpg', import.meta.url).href
 
-const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => (
-  group.thumbnail ?? group.background ?? group.items.map(getDynamicItemMedia).find(Boolean)
-)
+const getGroupPreviewMedia = (group: DynamicGroup): DynamicMedia | undefined => {
+  const backgrounds = group.backgrounds?.length
+    ? group.backgrounds
+    : group.background
+      ? [group.background]
+      : []
+  const activeBackgroundId = String(group.activeBackgroundId ?? '').trim()
+  const activeBackground = backgrounds.find((background) => background.id === activeBackgroundId)
+    ?? backgrounds.find((background) => background.id === group.background?.id)
+    ?? backgrounds[0]
+  return group.thumbnail ?? activeBackground ?? group.items.map(getDynamicItemMedia).find(Boolean)
+}
 
 const EntryPage: React.FC<EntryPageProps> = ({
   wsIp,

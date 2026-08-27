@@ -4,7 +4,7 @@ interface BrandLogoProps {
   className?: string
 }
 
-const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
+export const RIGHT_LOGO_URL = new URL('../../Right_Logo.png', import.meta.url).href
 
 const BrandLogo: FC<BrandLogoProps> = ({ className = '' }) => (
   <img

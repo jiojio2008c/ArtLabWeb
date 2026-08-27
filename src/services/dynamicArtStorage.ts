@@ -133,11 +133,23 @@ interface DynamicAudioMedia extends Omit<DynamicMedia, 'type'> {
   durationMs?: number
 }
 
+interface DynamicAppearanceTiming {
+  appearanceDelayMs?: number
+  appearanceHideMs?: number | null
+}
+
+interface DynamicBackgroundAppearance {
+  appearMode: DynamicAppearMode
+  appearIntervalMs: number
+  appearAnimation: DynamicAppearAnimation
+}
+
 type DynamicStoredMedia = DynamicMedia | DynamicAudioMedia
 
 interface DynamicBackground extends DynamicMedia {
   bgmAudioId?: string
   backgroundTransition?: DynamicBackgroundTransition
+  appearance?: DynamicBackgroundAppearance
 }
 
 interface DynamicBubbleContent {
@@ -211,8 +223,9 @@ interface DynamicItemBase {
     y: number
   }
   appearanceDelayMs?: number
-  appearanceHideMs?: number
+  appearanceHideMs?: number | null
   hideAfterTarget?: boolean
+  appearanceByBackground?: Record<string, DynamicAppearanceTiming>
   audioId?: string
   audioTrigger?: DynamicItemAudioTrigger
   audioDelayMs?: number
@@ -553,6 +566,81 @@ const getDynamicBackgroundTransitionFromGroup = (group: DynamicGroup): DynamicBa
   return 'none'
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const normalizeDynamicAppearanceTiming = (value: unknown): DynamicAppearanceTiming | undefined => {
+  if (typeof value === 'number' || typeof value === 'string') {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue)
+      ? { appearanceDelayMs: normalizeDynamicAppearanceTimeMs(numericValue) }
+      : undefined
+  }
+  if (!isRecord(value)) return undefined
+
+  const hasDelay = Object.prototype.hasOwnProperty.call(value, 'appearanceDelayMs')
+  const hasHide = Object.prototype.hasOwnProperty.call(value, 'appearanceHideMs')
+  if (!hasDelay && !hasHide) return undefined
+
+  const timing: DynamicAppearanceTiming = {
+    ...(hasDelay
+      ? { appearanceDelayMs: normalizeDynamicAppearanceTimeMs(value.appearanceDelayMs) }
+      : {})
+  }
+  if (hasHide) {
+    timing.appearanceHideMs = value.appearanceHideMs === null
+      ? null
+      : normalizeDynamicAppearanceTimeMs(value.appearanceHideMs)
+  }
+  return timing
+}
+
+const normalizeDynamicAppearanceByBackground = (
+  value: unknown
+): Record<string, DynamicAppearanceTiming> => {
+  if (!isRecord(value)) return {}
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([backgroundId, timing]) => [
+        backgroundId.trim(),
+        normalizeDynamicAppearanceTiming(timing)
+      ] as const)
+      .filter((entry): entry is readonly [string, DynamicAppearanceTiming] => (
+        Boolean(entry[0]) && Boolean(entry[1])
+      ))
+  )
+}
+
+const normalizeDynamicBackgroundAppearance = (
+  value: unknown,
+  group: DynamicGroup
+): DynamicBackgroundAppearance => {
+  const source = isRecord(value) ? value : {}
+  const fallbackMode: DynamicAppearMode = group.appearMode === 'sequence' ? 'sequence' : 'all'
+  const sourceMode = source.appearMode ?? source.mode
+  const appearMode: DynamicAppearMode = sourceMode === 'sequence' || sourceMode === 'all'
+    ? sourceMode
+    : fallbackMode
+  const sourceInterval = source.appearIntervalMs ?? source.intervalMs
+  const appearIntervalMs = getDynamicAppearIntervalFromGroup({
+    ...group,
+    appearIntervalMs: sourceInterval === undefined ? group.appearIntervalMs : Number(sourceInterval)
+  })
+  const fallbackAnimation = getDynamicAppearAnimationFromGroup(group)
+  const sourceAnimation = source.appearAnimation ?? source.animation
+  const appearAnimation = sourceAnimation === undefined
+    ? fallbackAnimation
+    : normalizeDynamicAppearAnimation(sourceAnimation)
+
+  return {
+    appearMode,
+    appearIntervalMs,
+    appearAnimation
+  }
+}
+
 const getDynamicTargetModeFromItem = (item: DynamicItem): DynamicTargetMode => (
   item.targetMode === 'target' && item.targetPosition ? 'target' : 'loop'
 )
@@ -609,6 +697,7 @@ const normalizeDynamicIndependentAppearance = (items: DynamicItem[]) => items.ma
     ? normalizeDynamicAppearanceTimeMs(item.appearanceHideMs)
     : undefined,
   hideAfterTarget: item.hideAfterTarget === true,
+  appearanceByBackground: normalizeDynamicAppearanceByBackground(item.appearanceByBackground),
   linkedAppearance: undefined
 }))
 
@@ -863,10 +952,12 @@ const loadRawGroups = (): DynamicGroup[] => {
   try {
     const raw = localStorage.getItem(DYNAMIC_GROUPS_KEY)
     const groups = raw ? JSON.parse(raw) as DynamicGroup[] : []
-    return groups.map((group) => migrateDynamicLinkedAppearanceModel({
-      ...group,
-      items: Array.isArray(group.items) ? group.items.map(normalizeDynamicItemKind) : []
-    }))
+    return groups.map((group) => normalizeDynamicGroupAppearance(
+      migrateDynamicLinkedAppearanceModel({
+        ...group,
+        items: Array.isArray(group.items) ? group.items.map(normalizeDynamicItemKind) : []
+      })
+    ))
   } catch {
     return []
   }
@@ -891,10 +982,16 @@ const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicB
 }
 
 const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
+  const appearanceByBackground = normalizeDynamicAppearanceByBackground(item.appearanceByBackground)
+  const normalizedItem = {
+    ...item,
+    ...(Object.keys(appearanceByBackground).length > 0 ? { appearanceByBackground } : {})
+  }
+
   if (isDynamicBubbleItem(item)) {
     const bubble = normalizeDynamicBubbleContent(item.bubble)
     return {
-      ...item,
+      ...normalizedItem,
       kind: 'bubble',
       bubble: {
         ...bubble,
@@ -904,7 +1001,7 @@ const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
   }
 
   return {
-    ...item,
+    ...normalizedItem,
     kind: 'media',
     media: serializeMediaForStorage(item.media) ?? item.media
   }
@@ -922,13 +1019,34 @@ const serializeGroupForStorage = (group: DynamicGroup): DynamicGroup => ({
 })
 
 const saveDynamicGroups = (groups: DynamicGroup[]) => {
-  const storageGroups = groups.map(serializeGroupForStorage)
+  const storageGroups = groups.map((group) => (
+    serializeGroupForStorage(normalizeDynamicGroupAppearance(group))
+  ))
   localStorage.setItem(DYNAMIC_GROUPS_KEY, JSON.stringify(storageGroups))
 }
 
 const getGroupBackgrounds = (group: DynamicGroup) => {
   if (group.backgrounds?.length) return group.backgrounds
   return group.background ? [group.background] : []
+}
+
+const normalizeDynamicGroupAppearance = (group: DynamicGroup): DynamicGroup => {
+  const sourceBackgrounds = getGroupBackgrounds(group)
+  const backgrounds = sourceBackgrounds.map((background) => ({
+    ...background,
+    appearance: normalizeDynamicBackgroundAppearance(background.appearance, group)
+  }))
+  const activeBackground = getActiveBackground(group, backgrounds)
+
+  return {
+    ...group,
+    backgrounds,
+    background: activeBackground,
+    activeBackgroundId: activeBackground?.id ?? group.activeBackgroundId,
+    items: normalizeDynamicIndependentAppearance(
+      Array.isArray(group.items) ? group.items.map(normalizeDynamicItemKind) : []
+    )
+  }
 }
 
 const mergeMediaPersistentFields = <T extends DynamicStoredMedia>(media?: T, existingMedia?: DynamicStoredMedia): T | undefined => {
@@ -991,26 +1109,28 @@ const mergeGroupPersistentMedia = (group: DynamicGroup, existingGroup?: DynamicG
 }
 
 const getActiveBackground = (group: DynamicGroup, backgrounds = getGroupBackgrounds(group)) => {
-  return backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? group.background
+  const activeBackgroundId = String(group.activeBackgroundId ?? '').trim()
+  return backgrounds.find((background) => background.id === activeBackgroundId)
+    ?? backgrounds.find((background) => background.id === group.background?.id)
     ?? backgrounds[0]
 }
 
 const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
-  const sourceBackgrounds = getGroupBackgrounds(group)
-  const groupAppearAnimation = getDynamicAppearAnimationFromGroup(group)
-  const groupBackgroundTransition = getDynamicBackgroundTransitionFromGroup(group)
+  const normalizedGroup = normalizeDynamicGroupAppearance(group)
+  const sourceBackgrounds = getGroupBackgrounds(normalizedGroup)
+  const groupAppearAnimation = getDynamicAppearAnimationFromGroup(normalizedGroup)
+  const groupBackgroundTransition = getDynamicBackgroundTransitionFromGroup(normalizedGroup)
   const [thumbnail, resolvedBackgrounds, audioLibrary, resolvedItems] = await Promise.all([
-    group.thumbnail ? resolveMediaUrl(group.thumbnail) : Promise.resolve(undefined),
+    normalizedGroup.thumbnail ? resolveMediaUrl(normalizedGroup.thumbnail) : Promise.resolve(undefined),
     Promise.all(sourceBackgrounds.map(async (background) => ({
       ...await resolveMediaUrl(background),
       backgroundTransition: groupBackgroundTransition,
       appearAnimation: undefined
     }))),
-    Promise.all((group.audioLibrary ?? []).map(async (audio) => (
+    Promise.all((normalizedGroup.audioLibrary ?? []).map(async (audio) => (
       await resolveMediaUrl(audio) as DynamicAudioMedia
     ))),
-    Promise.all(group.items.map(async (sourceItem): Promise<DynamicItem> => {
+    Promise.all(normalizedGroup.items.map(async (sourceItem): Promise<DynamicItem> => {
       const item = normalizeDynamicItemKind(sourceItem)
       const commonItem = {
         ...item,
@@ -1060,10 +1180,10 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
   const backgrounds = resolvedBackgrounds as DynamicBackground[]
   const items = normalizeDynamicIndependentAppearance(resolvedItems)
 
-  const background = getActiveBackground(group, backgrounds)
+  const background = getActiveBackground(normalizedGroup, backgrounds)
 
   return {
-    ...group,
+    ...normalizedGroup,
     thumbnail,
     background,
     backgrounds,
@@ -1304,10 +1424,11 @@ const createDynamicGroup = async (
     updatedAt: now
   }
 
+  const normalizedGroup = normalizeDynamicGroupAppearance(nextGroup)
   const groups = loadRawGroups()
-  const nextGroups = [nextGroup, ...groups]
+  const nextGroups = [normalizedGroup, ...groups]
   saveDynamicGroups(nextGroups)
-  return hydrateGroup(nextGroup)
+  return hydrateGroup(normalizedGroup)
 }
 
 const updateDynamicGroupOrganization = async (
@@ -1375,15 +1496,16 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
   const groups = loadRawGroups()
   const index = groups.findIndex((item) => item.id === group.id)
   const existingGroup = index >= 0 ? groups[index] : undefined
+  const normalizedGroup = normalizeDynamicGroupAppearance(group)
   const nextGroup = mergeGroupPersistentMedia({
-    ...group,
-    backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
-    backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
-    appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
-    appearAnimation: getDynamicAppearAnimationFromGroup(group),
-    backgroundTransition: getDynamicBackgroundTransitionFromGroup(group),
-    audioLibrary: group.audioLibrary ?? [],
-    items: normalizeDynamicIndependentAppearance(group.items.map(normalizeDynamicItemKind)),
+    ...normalizedGroup,
+    backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(normalizedGroup),
+    backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(normalizedGroup),
+    appearIntervalMs: getDynamicAppearIntervalFromGroup(normalizedGroup),
+    appearAnimation: getDynamicAppearAnimationFromGroup(normalizedGroup),
+    backgroundTransition: getDynamicBackgroundTransitionFromGroup(normalizedGroup),
+    audioLibrary: normalizedGroup.audioLibrary ?? [],
+    items: normalizeDynamicIndependentAppearance(normalizedGroup.items.map(normalizeDynamicItemKind)),
     linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
     updatedAt: Date.now()
   }, existingGroup)
@@ -1417,7 +1539,8 @@ const setDynamicBackground = async (groupId: string, file: File) => {
 
   const background: DynamicBackground = {
     ...persistedBackground,
-    backgroundTransition: getDynamicBackgroundTransitionFromGroup(group)
+    backgroundTransition: getDynamicBackgroundTransitionFromGroup(group),
+    appearance: normalizeDynamicBackgroundAppearance(undefined, group)
   }
   const currentBackgrounds = getGroupBackgrounds(group)
   group.backgrounds = [background, ...currentBackgrounds.filter((item) => item.id !== background.id)]
@@ -1458,19 +1581,29 @@ const deleteDynamicBackgrounds = async (groupId: string, backgroundIds: string[]
     return hydrateGroup(group)
   }
 
-  const activeBackground = remainingBackgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? remainingBackgrounds[0]
-
   group.backgrounds = remainingBackgrounds
+  const activeBackground = getActiveBackground(group, remainingBackgrounds)
   group.background = activeBackground
   group.activeBackgroundId = activeBackground?.id
   group.items = group.items.map((item) => {
-    if (!Array.isArray(item.backgroundIds) || item.backgroundIds.length === 0) return item
-    const backgroundIds = item.backgroundIds.filter((backgroundId) => !deleteSet.has(backgroundId))
+    const backgroundIds = Array.isArray(item.backgroundIds)
+      ? item.backgroundIds.filter((backgroundId) => !deleteSet.has(backgroundId))
+      : []
+    const appearanceByBackground = Object.fromEntries(
+      Object.entries(normalizeDynamicAppearanceByBackground(item.appearanceByBackground))
+        .filter(([backgroundId]) => !deleteSet.has(backgroundId))
+    )
+    if (
+      (!Array.isArray(item.backgroundIds) || item.backgroundIds.length === 0)
+      && Object.keys(appearanceByBackground).length === Object.keys(item.appearanceByBackground ?? {}).length
+    ) return item
     return {
       ...item,
       // An empty list deliberately falls back to "all backgrounds".
       backgroundIds,
+      appearanceByBackground: Object.keys(appearanceByBackground).length > 0
+        ? appearanceByBackground
+        : undefined,
       updatedAt: Date.now()
     }
   })
@@ -1507,9 +1640,7 @@ const reorderDynamicBackgrounds = (
   const backgrounds = orderedIds
     .map((backgroundId) => backgroundById.get(backgroundId))
     .filter(Boolean) as DynamicBackground[]
-  const activeBackground = backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? backgrounds.find((background) => background.id === group.background?.id)
-    ?? backgrounds[0]
+  const activeBackground = getActiveBackground(group, backgrounds)
 
   group.backgrounds = backgrounds
   group.background = activeBackground
@@ -1848,6 +1979,7 @@ const copyDynamicItemSettings = async (
 
   const fieldSet = new Set(copyFields)
   const sourceTrack = source.moveTrack ?? getDynamicMoveTrackFromPosition(source.position.y)
+  const sourceAppearanceByBackground = normalizeDynamicAppearanceByBackground(source.appearanceByBackground)
   group.items = group.items.map((item) => {
     if (item.id !== targetItemId) return item
     const position = fieldSet.has('motion')
@@ -1880,6 +2012,14 @@ const copyDynamicItemSettings = async (
       appearanceDelayMs: fieldSet.has('motion')
         ? normalizeDynamicAppearanceTimeMs(source.appearanceDelayMs)
         : item.appearanceDelayMs,
+      appearanceHideMs: fieldSet.has('motion')
+        ? source.appearanceHideMs
+        : item.appearanceHideMs,
+      appearanceByBackground: fieldSet.has('motion')
+        ? Object.keys(sourceAppearanceByBackground).length > 0
+          ? sourceAppearanceByBackground
+          : undefined
+        : item.appearanceByBackground,
       hideAfterTarget: fieldSet.has('motion')
         ? source.hideAfterTarget === true
         : item.hideAfterTarget,
@@ -2056,8 +2196,9 @@ const setDynamicBackgroundBgm = async (groupId: string, backgroundIds: string[],
       ? { ...background, bgmAudioId: validAudioId }
       : background
   ))
-  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? group.backgrounds[0]
+  const activeBackground = getActiveBackground(group, group.backgrounds)
+  group.background = activeBackground
+  group.activeBackgroundId = activeBackground?.id
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return hydrateGroup(group)
@@ -2079,8 +2220,9 @@ const setDynamicBackgroundTransition = async (
   group.backgrounds = getGroupBackgrounds(group).map((background) => (
     { ...background, backgroundTransition: normalizedTransition, appearAnimation: undefined }
   ))
-  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? group.backgrounds[0]
+  const activeBackground = getActiveBackground(group, group.backgrounds)
+  group.background = activeBackground
+  group.activeBackgroundId = activeBackground?.id
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
   return hydrateGroup(group)
@@ -2098,8 +2240,9 @@ const deleteDynamicAudio = async (groupId: string, audioId: string) => {
   group.backgrounds = getGroupBackgrounds(group).map((background) => (
     background.bgmAudioId === audioId ? { ...background, bgmAudioId: undefined } : background
   ))
-  group.background = group.backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? group.backgrounds[0]
+  const activeBackground = getActiveBackground(group, group.backgrounds)
+  group.background = activeBackground
+  group.activeBackgroundId = activeBackground?.id
   group.items = group.items.map((item) => (
     item.audioId === audioId ? { ...item, audioId: undefined } : item
   ))
@@ -2113,8 +2256,10 @@ export type {
   DynamicAppearMode,
   DynamicAppearAnimation,
   DynamicAnimationMode,
+  DynamicAppearanceTiming,
   DynamicAudioMedia,
   DynamicBackground,
+  DynamicBackgroundAppearance,
   DynamicBackgroundPlayMode,
   DynamicBackgroundTransition,
   DynamicBubbleContent,

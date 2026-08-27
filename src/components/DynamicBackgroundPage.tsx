@@ -155,9 +155,15 @@ const DynamicBackgroundPage: React.FC<DynamicBackgroundPageProps> = ({
 }
 
 const getActiveBackground = (group: DynamicGroup): DynamicBackground | undefined => {
-  return group.background
-    ?? group.backgrounds?.find((background) => background.id === group.activeBackgroundId)
-    ?? group.backgrounds?.[0]
+  const backgrounds = group.backgrounds?.length
+    ? group.backgrounds
+    : group.background
+      ? [group.background]
+      : []
+  const activeBackgroundId = String(group.activeBackgroundId ?? '').trim()
+  return backgrounds.find((background) => background.id === activeBackgroundId)
+    ?? backgrounds.find((background) => background.id === group.background?.id)
+    ?? backgrounds[0]
 }
 
 export default DynamicBackgroundPage

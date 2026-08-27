@@ -329,6 +329,7 @@ try {
     const watermarkStyle = await page.locator('.dynamic-stage-watermark').evaluate((watermark) => {
       const mark = watermark.querySelector('.dynamic-stage-watermark-mark')
       const lines = watermark.querySelector('.dynamic-stage-watermark-lines')
+      const logo = watermark.querySelector('.dynamic-stage-watermark-logo')
       const lineStyle = lines ? window.getComputedStyle(lines) : null
       return {
         opacity: mark ? window.getComputedStyle(mark).opacity : '',
@@ -340,7 +341,14 @@ try {
           y1: Number(line.getAttribute('y1')),
           x2: Number(line.getAttribute('x2')),
           y2: Number(line.getAttribute('y2'))
-        }))
+        })),
+        logoGeometry: logo ? {
+          x: Number(logo.getAttribute('x')),
+          y: Number(logo.getAttribute('y')),
+          width: Number(logo.getAttribute('width')),
+          height: Number(logo.getAttribute('height')),
+          href: logo.getAttribute('href') ?? ''
+        } : null
       }
     })
     const layerBadges = await page.locator('.dynamic-layer-parent-summary, .dynamic-layer-children-toggle').count()
@@ -416,6 +424,12 @@ try {
     await clearAllBgmButton.scrollIntoViewIfNeeded()
     const clearAllBgmVisible = await clearAllBgmButton.isVisible()
     const clearAllBgmInitiallyEnabled = await clearAllBgmButton.isEnabled()
+    const clearAllBgmFontSize = await clearAllBgmButton.evaluate(
+      (button) => window.getComputedStyle(button).fontSize
+    )
+    const applyTransitionFontSize = await page
+      .locator('.dynamic-background-entrance-controls > .ipad-button')
+      .evaluate((button) => window.getComputedStyle(button).fontSize)
     await page.screenshot({
       path: screenshotPath(`${viewport.name}-background-bgm.png`),
       fullPage: true
@@ -557,6 +571,8 @@ try {
       intervalAfterDrag,
       clearAllBgmVisible,
       clearAllBgmInitiallyEnabled,
+      clearAllBgmFontSize,
+      applyTransitionFontSize,
       clearAllBgmDisabledAfterClear,
       audioLibraryCountBeforeClear,
       bgmStateAfterClear,
@@ -587,7 +603,7 @@ const failures = results.filter((result) => (
   || result.relationCards < 1
   || result.layerBadges < 2
   || result.linkedStageTapSelectedItemId !== 'item-b'
-  || result.watermarkStyle.opacity !== '0.44'
+  || result.watermarkStyle.opacity !== '0.4'
   || !result.watermarkStyle.strokeDasharray.includes('30px')
   || result.watermarkStyle.filter === 'none'
   || result.watermarkStyle.pointerEvents !== 'none'
@@ -598,12 +614,19 @@ const failures = results.filter((result) => (
   ))
   || (result.watermarkStyle.lineGeometry[0].y2 - result.watermarkStyle.lineGeometry[0].y1)
     * (result.watermarkStyle.lineGeometry[1].y2 - result.watermarkStyle.lineGeometry[1].y1) >= 0
+  || result.watermarkStyle.logoGeometry?.x !== 660
+  || result.watermarkStyle.logoGeometry?.y !== 420
+  || result.watermarkStyle.logoGeometry?.width !== 600
+  || result.watermarkStyle.logoGeometry?.height !== 240
+  || !result.watermarkStyle.logoGeometry?.href
   || result.parentBackgroundTabCount !== 1
   || result.childBackgroundTabCount !== 0
   || result.childBackgroundBodyCount !== 0
   || result.intervalMetrics.fieldsWidth > 200
   || result.intervalMetrics.wheelWidth < 96
   || result.intervalMetrics.documentWidth > result.intervalMetrics.viewportWidth
+  || result.clearAllBgmFontSize !== '14px'
+  || result.clearAllBgmFontSize !== result.applyTransitionFontSize
   || result.intervalAfterKeyboard !== result.intervalBefore + 1
   || result.intervalAfterDrag !== result.intervalAfterKeyboard + 1
   || JSON.stringify(result.linkageModeLabels) !== JSON.stringify(['緊隨其後', '指定出場', '指定隱藏'])

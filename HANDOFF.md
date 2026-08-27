@@ -3927,3 +3927,137 @@ dist/assets/web-3ui0Ni4Z.js
 - 已通过：`npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、两档真实浏览器回归、生产构建与相关 `git diff --check`。
 - 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-CmWONPiQ.js`、`index-B62fdCoR.css`、`web-B1e8Zp6-.js` 与 `466-DTcHxBId.mp3`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `A810145C90E24DC0BA8F5B464F60072B8D9DCEDE385DF50F580BF127C0B45DCC`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
 - 本轮没有修改桌面播放端代码或协议，无需重新打包标准版与上下翻转版 EXE；Vite 仍只报告主 bundle 超过 `500kB` 的既有非阻塞警告。
+
+## 57. 2026-08-26 舞台中心水印改用首页 Logo
+
+### Git 检查点与最终显示规则
+
+- 修改前已将完整工作树提交为 Git 检查点 `10c5ca37`，提交说明为 `chore: checkpoint before stage watermark logo update`；该提交只作为本轮改动前的可回退基线，未推送远端。
+- Web/iPad 动态艺术控制页舞台中心原有 `MagicFloor`／`preview` 两行文字已移除，现改为首页同一张 `Right_Logo.png`。`BrandLogo.tsx` 对外复用 `RIGHT_LOGO_URL`，控制页不复制第二套资源路径，首页和水印会始终引用同一 Logo 文件。
+- Logo 继续位于 `1920 × 1080` 舞台 SVG 的精确中心：`x=660`、`y=420`、`width=600`、`height=240`，使用 `preserveAspectRatio="xMidYMid meet"`。中心安全区、两条交叉虚线、`(960,540)` 交点、mask、`pointer-events: none`、设置页开关，以及编辑态／预览态均显示的既有规则保持不变。
+- 整组舞台水印的不透明度由 `0.44` 改为 `0.4`，即 40%；Logo 使用与虚线一致的深色双层阴影，确保白色透明底 Logo 在浅色舞台背景上仍可辨识。
+- 舞台内部最终层级为背景 `z-index: 1`、水印 `z-index: 90`、背景切换动画 `z-index: 100`。水印位于舞台背景和作品上方，但背景切换动画始终覆盖水印，切换过程中不会被水印线条或 Logo 干扰。
+- 最终产品边界不变：水印只在 Web/iPad 控制页绘制；Windows 标准版和上下翻转版 EXE 永远不绘制水印。桌面播放代码与协议没有修改，也无需重新打包 EXE；桌面端保留的禁用兼容代码不代表重新启用水印。
+
+### 回归、构建与同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、生产构建、`npm run sync:ios` 与 `git diff --check`。静态回归会锁定首页 Logo 资源复用、SVG 几何、40% 不透明度、中心安全区不遮挡 Logo、`背景 < 水印 < 背景切换动画` 的层级关系，以及旧 `<text>` 不得重新出现。
+- `transition-portal-preview` 的浏览器脚本已成功进入控制页并读取到新的 `.dynamic-stage-watermark-logo`、水印样式与几何数据；脚本随后在与本轮无关的旧 `.dynamic-object-linkage-card` 等待步骤超时，因此未把整套联动布局流程记为通过。
+- 已执行 `npm run sync:ios`；当前 Web/iOS 资源为 `index-qcNDnpOd.js`、`index-BjubkPSb.css`、`web-Dxi7gNwR.js` 与 `Right_Logo-NbNB79TN.png`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `69C30F269F15236FBAB183D713C69B224970F778EF370C52C2D1AAB8FB180E7F`；原生 Bundle ID 继续为 `com.magicfloor.artlab.ipadcontrol`。
+- 已直接核对两套构建产物：均包含 `.dynamic-stage-watermark-logo`、`.dynamic-stage-watermark-mark{opacity:.4}`、水印层级 `90` 与背景切换动画层级 `100`，均不再包含旧中心 `<text>` 或水印专用 `opacity:.44`。Vite 仍只报告主 bundle 超过 `500kB` 的既有非阻塞警告。
+
+## 58. 2026-08-27 舞台水印右上虚线补全
+
+### 局部 Mask 修正
+
+- 右上分支的明显空档并非 `30px 20px` 虚线相位造成，而是统一的 `x=660`、`y=420`、`600 × 240`、`rx=52` 矩形安全区没有贴合 Logo 右上方向的实际透明轮廓；直接缩小整个矩形会同时改变其他三条分支，并可能让下方虚线穿进 Logo，因此未采用全局缩小方案。
+- 原安全区矩形、两条正式对角线、虚线相位与 Logo 几何全部保持不变。仅在同一 SVG mask 的黑色安全区之后增加白色 `.dynamic-stage-watermark-upper-right-mask-notch`，沿原右上对角线从 `(1082.021,471.363)` 开放到原边界交点 `(1173.333,420)`，使用 `strokeWidth=64` 与 `strokeLinecap=butt`。
+- notch 两端继续满足原对角线方程 `9x + 16y = 17280`；起点距离舞台中心为 `140` viewBox 单位，终点距离约 `244.767`。因此右上虚线向 Logo 方向补近约 `104.77` viewBox 单位，折合 iPad Air 舞台约 `35.8px`、iPad Pro 12.9 舞台约 `51.5px`，同时为 Logo 及其阴影保留安全间距。
+- 正式可见线仍由原第二条完整 `<line>` 绘制，mask notch 只局部重新开放已有虚线，不会重启 dash 相位；左上、左下、右下三个分支不变。40% 总不透明度、Logo、中心安全区主体、水印 `z-index: 90`、背景切换动画 `z-index: 100`、设置开关与触控穿透规则均保持不变。
+
+### 回归、视觉检查与同步
+
+- `test:creation-flow` 已增加 notch 结构和几何断言：必须位于 mask 内、指向右上、两端落在原对角线上、起点保持 `140` 单位安全距离、终点仍落在原矩形边界，并锁定白色 `64` 宽 butt 端帽。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、生产构建、`npm run sync:ios` 与 `git diff --check`。浏览器已重新生成 iPad Air 舞台截图并人工确认右上虚线明显补近、未触碰 Logo，其他三条分支不变；整套 linkage 脚本随后仍在与本轮无关的旧 `.dynamic-object-linkage-card` 等待步骤超时。
+- 当前 Web/iOS 资源为 `index-C5HHwQJN.js`、`index-BjubkPSb.css`、`web-DDp26xo7.js` 与 `Right_Logo-NbNB79TN.png`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `E0E5D63A7447093C84E99245AD61E3F5CE77C710C7CEBF95E24BEE6B6B6C1FEF`；两端对应资源逐文件哈希一致，且 bundle 均包含新 notch 类及两端坐标。
+
+## 59. 2026-08-27 编辑背景清除全部 BGM 按钮文字放大
+
+- 前一版给 `.dynamic-background-bgm-clear-all` 单独设置 `20px` 没有实际生效：该选择器只有两个 class，而更高优先级的 `.dynamic-background-modal .dynamic-background-bgm-controls > .ipad-button` 含三个 class，并在 `max-width: 1100px` 响应式规则中将按钮压到 `8px`；因此截图中仍是小字。
+- 最终改为让“套用转场”和“清除全部 BGM”共用同一条后置规则：`.dynamic-background-entrance-controls > .ipad-button` 与 `.dynamic-background-bgm-controls > .dynamic-background-bgm-clear-all` 都使用 `font-size: 14px`。两边选择器特异性同为 `(0,3,0)`，且位于旧规则之后，所以 iPad 窄视口下的实际计算字号也完全一致。
+- 本轮只修正按钮文字的 CSS 级联。清除按钮原有全宽布局、`46px` 最小高度、内边距、危险操作配色、禁用态、换行规则、图标及清除行为均保持不变。
+- `test:creation-flow` 已锁定两个按钮必须共用同一个 `14px` 规则；浏览器布局脚本会分别读取两个按钮的 computed `font-size`，要求清除按钮实际为 `14px` 且与“套用转场”一致。已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、相关脚本语法检查、生产构建、`npm run sync:ios` 与 `git diff --check`。
+- 当前 Web/iOS 资源为 `index-C-kkD9KH.js`、`index-D66lmjim.css` 与 `web-DuGIYUnV.js`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `86125470DFDE128A6F4DB7301D5E4597EE6EF90F4DA2CBC2727D9856769FFDBC`；两端对应 CSS 哈希一致，生产 CSS 均包含两个按钮共享的 `font-size:14px` 最终规则。
+
+## 60. 2026-08-27 舞台图层物件序号移除
+
+- 舞台控制页右侧“图层”列表已移除每张物件卡片缩略图左上角的两位数序号徽标，例如 `01`、`02`、`03`。对应 `.dynamic-layer-order` JSX 节点及四处历史样式全部删除，基础卡片网格同步由“序号＋缩略图＋文字”三列收敛为“缩略图＋文字”两列，不会留下空白栏位。
+- 本轮只移除可见标识，不删除 `item.order`。控制端舞台 `z-index`、列表前后顺序、拖拽排序、键盘上下排序、存储、GroupStateSync 与 Windows 播放端绘制顺序继续沿用原有层级数据；物件名称、缩略图、摘要、复选框、属性/删除按钮和图层标题旁的 `当前数量/上限` 统计均保持不变。
+- `test:creation-flow` 已增加源码与 CSS 双重断言，禁止 `.dynamic-layer-order` 节点或死样式重新出现。已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、生产构建、`npm run sync:ios` 与 `git diff --check`。
+- Chromium/Edge 已在 iPad Air `1024 × 768` 的真实控制页重新生成 `transition-portal-preview/test-artifacts/linkage/ipad-air-layers.png`，人工确认所有缩略图左上角序号消失，卡片内容与操作区正常；整套旧布局脚本随后仍在与本轮无关的 `.dynamic-object-linkage-card` 等待步骤超时。
+- 当前 Web/iOS 资源为 `index-D3gHcuzl.js`、`index-CoeK4F4l.css` 与 `web-CijR1jPD.js`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `5B189CE90D41873C9394218DE7B882B63C226CD653917FF85F8ECA9475A714AB`；两端三项资源逐文件哈希一致，生产 JS/CSS 均不再包含 `dynamic-layer-order`。
+
+## 61. 2026-08-27 App Store Bundle ID 与上架文案同步
+
+- iOS 当前有效 Bundle Identifier 已由 `com.magicfloor.artlab.ipadcontrol` 改为 App Store Connect 既有记录对应的 `com.magicfloor.artlab`。`capacitor.config.ts`、Xcode App Target 的 Debug 与 Release `PRODUCT_BUNDLE_IDENTIFIER` 三处均已同步；`Info.plist` 继续使用 `$(PRODUCT_BUNDLE_IDENTIFIER)`，没有写死重复值。
+- `npm run sync:ios` 已重新执行，生成且被 iOS `.gitignore` 忽略的 `ios/App/App/capacitor.config.json` 已确认 `appId=com.magicfloor.artlab`。三个有效配置文件中不再包含旧 ID；第 49、52–57 节记录的旧 ID 保留为当时构建历史，没有批量篡改。
+- 根目录 README 的 Capacitor 初始化示例已同步为当前 `appId` 与 `MagicFloor` 名称。新增 `APP_STORE_SUBMISSION_ZH-HANS.md`，提供可直接粘贴的简体中文副标题、宣传文本、完整软件描述、App Review 审核备注模板及提交前必填清单。
+- 上架文案明确说明账号登录、动态艺术编辑、本地预览、互动上传、远程控制、局域网配套接收端和本机资料保存边界，没有宣称尚未提供的作品云同步或公开社区。副标题 `13` 字符、宣传文本 `63` 字符、软件描述 `835` 字符，均在 App Store Connect 对应字段上限内。
+- 已通过生产构建、Capacitor iOS 同步、SPM 路径修复、`npm run test:creation-flow`、`npm run test:receiver-sync` 与 `git diff --check`。当前 Web/iOS 资源继续为 `index-D3gHcuzl.js`、`index-CoeK4F4l.css` 与 `web-CijR1jPD.js`；两端 `index.html` SHA-256 均为 `5B189CE90D41873C9394218DE7B882B63C226CD653917FF85F8ECA9475A714AB`，三项资源逐文件哈希一致。
+- Windows 环境不能完成 Xcode Archive、签名或上传。后续必须在 macOS/Xcode 选择拥有 `com.magicfloor.artlab` App ID 的 Apple Developer Team，确认 Release provisioning profile 与 App Store Connect 记录匹配，再 Archive；提交前还必须补入真实审核账号、隐私政策网址、技术支持网址及跨设备功能的审核测试方式。
+
+## 62. 2026-08-27 App Store iPad 截图交付
+
+- 已在 `app-store-assets/screenshots/ipad-pro-12-9/` 生成 10 张可直接上传 App Store Connect 的横屏 PNG。统一采用 Apple 接受的 `2732 × 2048 px`，对应 `1366 × 1024` CSS 视口与 `deviceScaleFactor=2`，没有后期拉伸或 AI 生成。
+- 10 张内容依次为首页、作品档案、舞台控制、物件属性、背景编辑、出场设定、本地预览、互动主题、遮罩编辑和远程键盘控制。页面使用简体中文及专门的本地演示作品数据，不依赖线上账号内容，也没有显示测试文案、失败 Toast 或网络错误。
+- 新增 `transition-portal-preview/scripts/capture-app-store-screenshots.mjs` 与 `npm --prefix transition-portal-preview run capture:app-store` 命令。脚本使用本机 Edge 访问真实应用，拦截截图期间的认证、资料读取与局域网接收端请求，逐页等待素材稳定后截图，并把页面异常、控制台错误和尺寸不符视为失败。
+- 背景编辑截图会主动滚动到设置区底部，并验证 BGM 操作与 `清除全部 BGM` 按钮完整落在可见范围；互动遮罩截图使用现有 `fish.png` 导入并选择海龟遮罩。截图顺序、用途、重跑命令及验证说明记录于 `app-store-assets/screenshots/README.md`。
+- 已逐张人工检查所有背景、作品缩略图、舞台物件、主题封面、互动遮罩与控制面板，确认 10 张内容明显不同且没有弹窗裁切。独立使用 `System.Drawing.Image` 读取最终文件，确认 PNG 恰好 10 张且每张真实尺寸均为 `2732 × 2048`；截图脚本运行期间 10 页的 `console`／`pageerror` 均为空。
+
+## 63. 2026-08-27 出场设定按背景隔离与 iPad 窗帘水印修复
+
+### 出场设定背景隔离
+
+- “出场设定”页现在以当前活动背景或预览选中的背景作为唯一范围，左侧物件列表、标题数量、空状态和时间线都只读取该背景可见的物件；不会再把其他背景的物件混在同一页。
+- `backgroundIds=[]` 仍代表物件贯穿全部背景；指定 `backgroundIds` 的物件只会在对应背景显示。播放端 `desktop-runtime/renderer/player.js` 与控制端使用同一筛选规则，确保编辑、iPad 预览和 Windows 播放一致。
+- 每个背景独立保存 `appearMode`、`appearIntervalMs`、`appearAnimation`，每个物件可通过 `appearanceByBackground[backgroundId]` 保存独立的出场延迟和到达后隐藏时间。切换背景后重新进入出场设定会读取对应配置，不会覆盖其他背景。
+- `ItemMotion` 同步现在先解析当前背景的出场时间；当前背景存在独立配置时优先发送并保留该配置，只有旧客户端没有对应 map 项时才回退旧的全局字段。这样修改移动速度或幅度不会再把某个背景的出场时间写回旧值，也不会用空 map 清掉接收端已有配置。
+- “属性复制”选择“移动方式”时会同时复制旧版出场字段、逐背景 `appearanceByBackground` 和到达后隐藏设置；桌面端复制核心会对逐背景计时做独立对象复制，避免后续编辑互相引用。
+
+### iPad 窗帘转场水印
+
+- 已确认 `Right_Logo.png` 可见像素为纯白，iPad 变黑不是素材问题，而是旧 iOS bundle 中 `brightness(0) invert(1)` 在 WKWebView 动画合成层上的兼容差异；本机 Chromium 能执行完整滤镜，部分 iPad 会只执行 `brightness(0)`，于是白色 Logo 变黑。
+- 舞台窗帘转场的 Logo 现在直接使用白色原图，仅保留阴影，`.is-curtain` 同时清除 `filter` 和 `-webkit-filter`；白底的 `cameraFlash` 仍保留黑色 Logo 滤镜以维持对比度。没有使用跨平台表现不稳定的 `mix-blend-mode`。
+- 层级继续固定为背景 `z-index: 1`、普通舞台水印 `z-index: 90`、背景转场层 `z-index: 100`：普通水印位于背景上方，但转场动画会完整覆盖水印，不会被水印线条或 Logo 干扰。
+
+### 回归、构建与交付边界
+
+- 已通过 `npm run test:creation-flow`、`npx tsc --noEmit --pretty false`、`npm run test:receiver-sync`、`npm --prefix desktop-runtime run test:appearance`、`npm --prefix desktop-runtime run test:presentation`、`npm --prefix desktop-runtime run test:item-copy`、`node --test desktop-runtime/group-state-revision-integration.test.cjs`、三个运行时 `node --check` 和 `git diff --check`。
+- 已重新执行 `npm run sync:ios`（包含 TypeScript/Vite 构建、Capacitor iOS 复制和 `fix:ios-spm-paths`）。当前 Web/iOS 资源为 `index-wvjcFhkt.js`、`index-D_JK92rf.css`、`web-Ce72dX2y.js` 与 `Right_Logo-NbNB79TN.png`；`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `10C6B6210E0DB7D9B67D0EF27ABE79A9AA7841997E690E06BD4D42C053001A69`，60 个 Web 文件全部逐文件一致，iOS 额外的 `cordova.js`／`cordova_plugins.js` 为 Capacitor 正常文件。
+- 产物静态核对确认 curtain 规则同时包含 `filter:none!important` 与 `-webkit-filter:none!important`，水印透明度为 `.4`，转场层级为 `100`；iOS 配置和 Xcode Debug/Release Bundle ID 均为 `com.magicfloor.artlab`。
+- 当前环境为 Windows，无法进行真实 iPad Pro/Air WKWebView、Xcode Archive、签名或 App Store 上传验证；需安装包含本次最新 bundle 的新包，单纯刷新旧安装包不会替换旧 CSS/缓存。
+
+## 64. 2026-08-27 出场设定摘要按当前背景最终同步
+
+### 摘要显示修正
+
+- 图层卡片摘要现在通过 `getResolvedAppearanceTiming(item, displayedBackgroundId)` 读取当前活动背景或预览背景的出场延迟；切换背景后，列表摘要不会继续显示另一个背景或旧全局字段的时间。
+- 出场设定左侧列表、时间线、舞台预览和 Windows 播放端继续共用有效活动背景解析与 `getDynamicPlaybackItemsForBackground(...)` 筛选；`backgroundIds=[]` 的全局物件仍在所有背景显示，指定背景的物件不会混入其他场景。
+- 独立背景出场配置、接收端同步、旧数据兼容回退、窗帘转场白色 Logo 原图与 `filter`/`-webkit-filter` 清除规则均保持不变。
+- `desktop-runtime/README.md` 已同步说明每张背景的独立出场参数、物件 `appearanceByBackground` 数据结构及当前 `linkedAppearanceModelVersion=4`。
+
+### 最终构建与验证
+
+- 已重新执行 `npm run sync:ios`，当前 Web/iOS 资源为 `index-BeoNexvg.js`、`index-D_JK92rf.css`、`web-CcZJMrrZ.js`、`Right_Logo-NbNB79TN.png`、`magic-floor-background-C-YGeMXK.webp`、`ArtDisplay-C-eGl2ju.jpg` 和 `466-DTcHxBId.mp3`。
+- `dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `79AE18226DAF394A3F91BEAB2B87A04E29377C707E98C242F295B99461CD785E`；`dist` 的 60 个 Web 文件与 iOS 公共目录逐文件 SHA-256 一致，iOS 额外的 `cordova.js`／`cordova_plugins.js` 为 Capacitor 正常文件。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm --prefix desktop-runtime run test:appearance`、`npm --prefix desktop-runtime run test:presentation`、`npm --prefix desktop-runtime run test:item-copy`、`node --test desktop-runtime/group-state-revision-integration.test.cjs`、三个运行时 `node --check` 与 `git diff --check`。Vite 仅报告既有主 bundle 超过 `500kB` 的非阻塞提示。
+- Windows 环境仍无法真实验证 iPad Pro/Air 的 WKWebView 合成、Xcode Archive、签名和 App Store 上传；必须安装包含上述最新 Web bundle 的新 iOS 包，单纯刷新旧安装包不会替换旧资源或缓存。
+
+## 65. 2026-08-27 当前版本桌面 EXE 重新打包
+
+### 构建产物
+
+- 已执行 `npm --prefix desktop-runtime run pack:all`，标准版与竖屏翻转版均根据当前工作树重新打包；打包前分别清理了旧的 `release` 与 `release-vertical-flip` 目录。
+- 标准版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,323,981` bytes，SHA-256 为 `6FBE0272F5E716722B6ED150AE808474124CE15CE8468C9B2A10239EAD0D4038`。
+- 竖屏翻转版：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,311,393` bytes，SHA-256 为 `51D603EEF724DC7619D046ED7076706338383E930D2D15090CA4F3FD4EC98DDE`。
+
+### 包内核对
+
+- 两份 `app.asar` 均已确认包含 `appearanceByBackground`、`getDynamicAppearanceTimingForBackground`、`background.appearance`、最新 `player.js` 和 `Right_Logo.png`；包内关键桌面源码与当前源码 SHA-256 一致。
+- 两套包的 `main.js`、`renderer/player.js`、`renderer/advanced-appearance-timeline.js` 均通过 `node --check`；当前构建仍使用 Electron Builder 的默认图标配置。
+- 当前环境无法可靠执行 GUI EXE 冷启动和真实舞台硬件联调；正式现场应先启动其中一套并确认 `8080` 监听，标准版与翻转版不能同时运行。
+- 两份 EXE 当前均为 `NotSigned`；本机或内网测试可用，正式对外分发仍需配置 Windows 代码签名证书。`release*` 目录被 Git 忽略，交付时应直接复制 EXE 文件。
+
+## 66. 2026-08-27 再次确认桌面 EXE 交付包
+
+### 本次构建结果
+
+- 在完成上一轮开发烟测清理后，再次执行 `npm --prefix desktop-runtime run pack:all`，命令返回退出码 `0`；标准版和竖屏翻转版均从当前工作树重新生成。
+- 标准版：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,323,982` bytes，SHA-256 为 `05B7F958354186EB5554A1B5246C1BE66682CC9A5899BBCB273EE2BF075F36B`，生成时间 `2026-08-27 17:36:34`。
+- 竖屏翻转版：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,311,392` bytes，SHA-256 为 `63298C0DD4AF5D02E653B928734DC02DE070F08B224A38262CCBFF53C3BDFBA6`，生成时间 `2026-08-27 17:38:11`。
+
+### 包内和回归核验
+
+- 两个 `app.asar` 均成功解包；`main.js`、`renderer/player.js`、`renderer/advanced-appearance-timeline.js` 和 `renderer/assets/Right_Logo.png` 与当前源码/素材 SHA-256 完全匹配。
+- `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、`test:presentation`（38 项）、`test:item-copy`、三个运行时 `node --check` 与 `git diff --check` 全部通过。
+- 已在清除开发终端遗留的 `ELECTRON_RUN_AS_NODE=1` 后分别冷启动两套 EXE；两套 `/status` 均返回 `server.status=listening`、`port=8080`、`view.mode=archive` 和 `watermarkVisible=false`，随后已正常退出并释放端口。`8080` 和 `5173` 当前均无监听。EXE 仍为 `NotSigned`，正式分发前需要 Windows 代码签名证书；真实 iPad、舞台硬件联调和 Xcode Archive 仍需在目标设备／macOS 上验证。

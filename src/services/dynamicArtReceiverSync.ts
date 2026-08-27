@@ -1,5 +1,7 @@
 import {
   getDynamicMediaFile,
+  DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  type DynamicBackgroundAppearance,
   type DynamicBackground,
   type DynamicGroup,
   type DynamicItem,
@@ -66,8 +68,24 @@ const cloneDynamicMedia = <T extends DynamicMedia | DynamicAudioMedia>(media: T)
 
 const cloneDynamicBackground = (background: DynamicBackground): DynamicBackground => ({
   ...cloneDynamicMedia(background),
-  backgroundTransition: background.backgroundTransition
+  backgroundTransition: background.backgroundTransition,
+  appearance: background.appearance
+    ? { ...background.appearance }
+    : background.appearance
 })
+
+const cloneAppearanceByBackground = (
+  appearanceByBackground: DynamicItem['appearanceByBackground']
+): DynamicItem['appearanceByBackground'] => {
+  if (!appearanceByBackground) return appearanceByBackground
+
+  return Object.fromEntries(
+    Object.entries(appearanceByBackground).map(([backgroundId, timing]) => [
+      backgroundId,
+      timing ? { ...timing } : timing
+    ])
+  )
+}
 
 const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
   ...group,
@@ -82,7 +100,8 @@ const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
       targetPosition: item.targetPosition ? { ...item.targetPosition } : item.targetPosition,
       clickAnimationIds: Array.isArray(item.clickAnimationIds) ? [...item.clickAnimationIds] : [],
       linkedAppearance: item.linkedAppearance ? { ...item.linkedAppearance } : item.linkedAppearance,
-      backgroundIds: Array.isArray(item.backgroundIds) ? [...item.backgroundIds] : item.backgroundIds
+      backgroundIds: Array.isArray(item.backgroundIds) ? [...item.backgroundIds] : item.backgroundIds,
+      appearanceByBackground: cloneAppearanceByBackground(item.appearanceByBackground)
     }
 
     if (isDynamicBubbleItem(item)) {
@@ -102,13 +121,27 @@ const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
   })
 })
 
-const getActiveBackground = (group: DynamicGroup, backgrounds = getBackgrounds(group)) => (
-  backgrounds.find((background) => background.id === group.activeBackgroundId)
-    ?? group.background
+const getActiveBackground = (group: DynamicGroup, backgrounds = getBackgrounds(group)) => {
+  const activeBackgroundId = String(group.activeBackgroundId ?? '').trim()
+  return backgrounds.find((background) => background.id === activeBackgroundId)
+    ?? backgrounds.find((background) => background.id === group.background?.id)
     ?? backgrounds[0]
-)
+}
 
-const toBackgroundPayload = (background?: DynamicBackground) => (
+const getLegacyBackgroundAppearance = (group: DynamicGroup): DynamicBackgroundAppearance => ({
+  appearMode: group.appearMode === 'sequence' ? 'sequence' : 'all',
+  appearIntervalMs: Number.isFinite(Number(group.appearIntervalMs))
+    ? Math.round(Number(group.appearIntervalMs))
+    : DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  appearAnimation: group.appearAnimation === 'drop' || group.appearAnimation === 'trackSlide'
+    ? group.appearAnimation
+    : 'none'
+})
+
+const toBackgroundPayload = (
+  background?: DynamicBackground,
+  fallbackAppearance?: DynamicBackgroundAppearance
+) => (
   background
     ? {
         assetId: background.id,
@@ -116,7 +149,10 @@ const toBackgroundPayload = (background?: DynamicBackground) => (
         mediaType: background.type,
         mimeType: background.mimeType,
         bgmAudioId: background.bgmAudioId,
-        backgroundTransition: background.backgroundTransition ?? 'none'
+        backgroundTransition: background.backgroundTransition ?? 'none',
+        appearance: background.appearance
+          ? { ...background.appearance }
+          : fallbackAppearance
       }
     : null
 )
@@ -145,6 +181,7 @@ const toItemPayload = (item: DynamicItem) => {
     appearanceDelayMs: item.appearanceDelayMs ?? 0,
     appearanceHideMs: item.appearanceHideMs ?? null,
     hideAfterTarget: item.hideAfterTarget === true,
+    appearanceByBackground: cloneAppearanceByBackground(item.appearanceByBackground) ?? {},
     audioId: item.audioId ?? null,
     audioTrigger: item.audioTrigger ?? 'appearance',
     audioDelayMs: item.audioDelayMs ?? 0,
@@ -206,6 +243,7 @@ const buildGroupSyncPayload = (
 ) => {
   const backgrounds = getBackgrounds(group)
   const activeBackground = getActiveBackground(group, backgrounds)
+  const legacyBackgroundAppearance = getLegacyBackgroundAppearance(group)
   const stateRevision = Number.isFinite(revisionOptions.stateRevision)
     && Number(revisionOptions.stateRevision) > 0
     ? Math.floor(Number(revisionOptions.stateRevision))
@@ -229,9 +267,9 @@ const buildGroupSyncPayload = (
     backgroundPlayMode: group.backgroundPlayMode,
     backgroundIntervalMs: group.backgroundIntervalMs,
     backgroundTransition: group.backgroundTransition ?? 'none',
-    activeBackgroundId: group.activeBackgroundId ?? activeBackground?.id,
-    background: toBackgroundPayload(activeBackground),
-    backgrounds: backgrounds.map((background) => toBackgroundPayload(background)),
+    activeBackgroundId: activeBackground?.id ?? '',
+    background: toBackgroundPayload(activeBackground, legacyBackgroundAppearance),
+    backgrounds: backgrounds.map((background) => toBackgroundPayload(background, legacyBackgroundAppearance)),
     audioLibrary: (group.audioLibrary ?? []).map((audio) => ({
       assetId: audio.id,
       name: audio.name,
@@ -310,14 +348,33 @@ const getGroupAssetSignature = (group: DynamicGroup) => {
   )
 }
 
+const getAppearanceByBackgroundSignature = (
+  appearanceByBackground: DynamicItem['appearanceByBackground']
+) => (
+  Object.entries(appearanceByBackground ?? {})
+    .map(([backgroundId, timing]) => [
+      backgroundId,
+      timing?.appearanceDelayMs ?? 0,
+      timing?.appearanceHideMs ?? null
+    ] as const)
+    .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+)
+
 const getGroupSyncSignature = (group: DynamicGroup) => {
+  const legacyBackgroundAppearance = getLegacyBackgroundAppearance(group)
   const backgroundParts = getBackgrounds(group)
-    .map((background) => JSON.stringify([
-      'background',
-      getMediaSignaturePart(background),
-      background.bgmAudioId ?? '',
-      background.backgroundTransition ?? 'none'
-    ]))
+    .map((background) => {
+      const appearance = background.appearance ?? legacyBackgroundAppearance
+      return JSON.stringify([
+        'background',
+        getMediaSignaturePart(background),
+        background.bgmAudioId ?? '',
+        background.backgroundTransition ?? 'none',
+        appearance.appearMode,
+        appearance.appearIntervalMs,
+        appearance.appearAnimation
+      ])
+    })
   const itemParts = group.items
     .slice()
     .sort((a, b) => a.order - b.order)
@@ -349,6 +406,7 @@ const getGroupSyncSignature = (group: DynamicGroup) => {
         item.appearanceDelayMs ?? 0,
         item.appearanceHideMs ?? null,
         item.hideAfterTarget === true,
+        getAppearanceByBackgroundSignature(item.appearanceByBackground),
         item.audioId ?? '',
         item.audioTrigger ?? 'appearance',
         item.audioDelayMs ?? 0,

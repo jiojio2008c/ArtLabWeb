@@ -77,8 +77,8 @@ npx cap add ios
 編輯 `capacitor.config.ts` 文件：
 ```typescript
 export default defineConfig({
-  appId: 'com.artlab.app',
-  appName: 'Art Lab',
+  appId: 'com.magicfloor.artlab',
+  appName: 'MagicFloor',
   webDir: 'dist',
   bundledWebRuntime: false,
   ios: {

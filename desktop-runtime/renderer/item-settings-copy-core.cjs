@@ -15,6 +15,10 @@ const DEFAULT_ITEM_SETTINGS_COPY_FIELDS = Object.freeze([
   'targetMode',
   'targetLoop',
   'targetPosition',
+  'appearanceDelayMs',
+  'appearanceHideMs',
+  'appearanceByBackground',
+  'hideAfterTarget',
   'audioId',
   'audioTrigger',
   'audioDelayMs',
@@ -22,8 +26,18 @@ const DEFAULT_ITEM_SETTINGS_COPY_FIELDS = Object.freeze([
   'linkedAppearance'
 ])
 
-const cloneItemSettingValue = (value) => {
+const cloneItemSettingValue = (value, field) => {
   if (Array.isArray(value)) return [...value]
+  if (field === 'appearanceByBackground' && value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([backgroundId, timing]) => [
+        backgroundId,
+        timing && typeof timing === 'object' && !Array.isArray(timing)
+          ? { ...timing }
+          : timing
+      ])
+    )
+  }
   if (value && typeof value === 'object') return { ...value }
   return value
 }
@@ -38,7 +52,7 @@ const applyItemSettingsCopy = (
       delete target[field]
       return
     }
-    target[field] = cloneItemSettingValue(source[field])
+    target[field] = cloneItemSettingValue(source[field], field)
   })
   return target
 }
