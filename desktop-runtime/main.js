@@ -26,6 +26,7 @@ const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
 const DEFAULT_GROUP_ID = 'default_group'
 const VERTICAL_DISPLAY_FLIP = process.env.MAGICFLOOR_VERTICAL_FLIP === '1'
+const DEFAULT_BACKGROUND_PLAYBACK_LOOP = true
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
@@ -93,11 +94,13 @@ const runtimeState = {
   preview: {
     enabled: false,
     groupId: null,
+    backgroundId: null,
     advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
     appearMode: 'all',
     intervalMs: 800,
     backgroundPlayMode: 'fixed',
     backgroundIntervalMs: 5000,
+    backgroundPlaybackLoop: DEFAULT_BACKGROUND_PLAYBACK_LOOP,
     replayId: 0,
     startedAt: Date.now()
   },
@@ -220,6 +223,27 @@ const normalizeBackgroundTransition = (value, fallback = 'none') => (
     : fallback
 )
 
+const normalizeBackgroundPlaybackLoop = (
+  value,
+  fallback = DEFAULT_BACKGROUND_PLAYBACK_LOOP
+) => {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (value === 0) return false
+    if (value === 1) return true
+  }
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase()
+    if (['false', '0', 'off', 'no'].includes(normalizedValue)) return false
+    if (['true', '1', 'on', 'yes'].includes(normalizedValue)) return true
+  }
+  if (fallback === false || fallback === 0) return false
+  if (typeof fallback === 'string') {
+    return !['false', '0', 'off', 'no'].includes(fallback.trim().toLowerCase())
+  }
+  return true
+}
+
 const resolveActiveBackgroundId = (group, backgrounds = group?.backgrounds ?? []) => {
   const activeBackgroundId = String(group?.activeBackgroundId ?? '').trim()
   if (activeBackgroundId && backgrounds.some((background) => background?.assetId === activeBackgroundId)) {
@@ -232,6 +256,19 @@ const resolveActiveBackgroundId = (group, backgrounds = group?.backgrounds ?? []
   }
 
   return backgrounds.find((background) => background?.assetId)?.assetId ?? null
+}
+
+const resolvePreviewBackgroundId = (group, backgroundId) => {
+  const normalizedBackgroundId = String(backgroundId ?? '').trim()
+  if (!normalizedBackgroundId) return null
+  const backgrounds = Array.isArray(group?.backgrounds) ? group.backgrounds : []
+  return backgrounds.some((background) => background?.assetId === normalizedBackgroundId)
+    ? normalizedBackgroundId
+    : null
+}
+
+const clearPreviewTargetBackground = () => {
+  runtimeState.preview.backgroundId = null
 }
 
 const syncActiveBackground = (group) => {
@@ -544,8 +581,12 @@ const loadState = () => {
       ...(loaded.preview ?? {}),
       advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
       enabled: false,
+      backgroundId: null,
       startedAt: Date.now()
     }
+    runtimeState.preview.backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(
+      runtimeState.preview.backgroundPlaybackLoop
+    )
     normalizeStoredRuntimeState()
   } catch (error) {
     console.error('Failed to load runtime state:', error)
@@ -649,6 +690,7 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       backgrounds: [],
       backgroundPlayMode: 'fixed',
       backgroundIntervalMs: 5000,
+      backgroundPlaybackLoop: DEFAULT_BACKGROUND_PLAYBACK_LOOP,
       backgroundTransition: 'none',
       advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
       stateRevision: storedRevision,
@@ -662,6 +704,9 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
     }
   }
   runtimeState.groups[id].advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
+  runtimeState.groups[id].backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(
+    runtimeState.groups[id].backgroundPlaybackLoop
+  )
   runtimeState.groups[id].stateRevision = Math.max(
     storedRevision,
     isValidRevision(runtimeState.groups[id].stateRevision)
@@ -747,6 +792,7 @@ const normalizeStoredRuntimeState = () => {
     )
     group.appearAnimation = normalizeAppearAnimation(group.appearAnimation)
     group.backgroundTransition = normalizeBackgroundTransition(group.backgroundTransition)
+    group.backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(group.backgroundPlaybackLoop)
     group.audioLibrary = Array.isArray(group.audioLibrary) ? group.audioLibrary : []
     const storedBackgrounds = Array.isArray(group.backgrounds) && group.backgrounds.length > 0
       ? group.backgrounds
@@ -987,6 +1033,7 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.view.mirror.source = normalizeArchiveSource(payload.source)
         ?? runtimeState.view.mirror.source
       runtimeState.preview.enabled = false
+      clearPreviewTargetBackground()
       break
     }
 
@@ -1007,6 +1054,7 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.view.mirror.capturedAt = 0
       runtimeState.view.mirror.transition = 'none'
       runtimeState.preview.enabled = false
+      clearPreviewTargetBackground()
       break
     }
 
@@ -1042,6 +1090,7 @@ const applyDynamicEvent = (eventName, payload) => {
       runtimeState.view.mirror.width = Math.max(1, Number(payload.width) || 1)
       runtimeState.view.mirror.height = Math.max(1, Number(payload.height) || 1)
       runtimeState.preview.enabled = false
+      clearPreviewTargetBackground()
       break
     }
 
@@ -1054,7 +1103,12 @@ const applyDynamicEvent = (eventName, payload) => {
     }
 
     case 'GroupSelect': {
+      const previousActiveGroupId = runtimeState.activeGroupId
       setActiveGroup(payload.groupId, payload.name)
+      if (previousActiveGroupId !== runtimeState.activeGroupId) {
+        runtimeState.preview.enabled = false
+        clearPreviewTargetBackground()
+      }
       break
     }
 
@@ -1075,6 +1129,7 @@ const applyDynamicEvent = (eventName, payload) => {
       if (runtimeState.activeGroupId === payload.groupId) {
         runtimeState.activeGroupId = null
         runtimeState.preview.enabled = false
+        clearPreviewTargetBackground()
       }
       break
     }
@@ -1088,6 +1143,7 @@ const applyDynamicEvent = (eventName, payload) => {
       if (activatesGroup) {
         runtimeState.view.mode = 'stage'
         runtimeState.preview.enabled = false
+        clearPreviewTargetBackground()
         runtimeState.preview.groupId = group.groupId
       }
       group.name = payload.name ?? group.name
@@ -1098,11 +1154,23 @@ const applyDynamicEvent = (eventName, payload) => {
       group.appearAnimation = normalizeAppearAnimation(payload.appearAnimation ?? group.appearAnimation)
       group.backgroundPlayMode = payload.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
       group.backgroundIntervalMs = payload.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000
+      group.backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(
+        payload.backgroundPlaybackLoop,
+        group.backgroundPlaybackLoop
+      )
       group.backgroundTransition = normalizeBackgroundTransition(
         payload.backgroundTransition,
         group.backgroundTransition ?? 'none'
       )
       group.activeBackgroundId = payload.activeBackgroundId ?? group.activeBackgroundId
+      if (
+        runtimeState.preview.enabled
+        && runtimeState.preview.groupId === group.groupId
+      ) {
+        runtimeState.preview.backgroundPlayMode = group.backgroundPlayMode
+        runtimeState.preview.backgroundIntervalMs = group.backgroundIntervalMs
+        runtimeState.preview.backgroundPlaybackLoop = group.backgroundPlaybackLoop
+      }
 
       const backgrounds = Array.isArray(payload.backgrounds)
         ? payload.backgrounds
@@ -1160,6 +1228,16 @@ const applyDynamicEvent = (eventName, payload) => {
 
       syncActiveBackground(group)
 
+      if (
+        runtimeState.preview.enabled
+        && runtimeState.preview.groupId === group.groupId
+      ) {
+        runtimeState.preview.backgroundId = resolvePreviewBackgroundId(
+          group,
+          runtimeState.preview.backgroundId
+        )
+      }
+
       const existingItems = new Map(group.items.map((item) => [item.itemId, item]))
       const incomingItems = (payload.items ?? []).map((itemPayload, index) => {
         const existing = existingItems.get(itemPayload.itemId) ?? {}
@@ -1212,16 +1290,25 @@ const applyDynamicEvent = (eventName, payload) => {
     case 'PreviewMode': {
       const groupId = payload.groupId ?? runtimeState.activeGroupId
       if (groupId) setActiveGroup(groupId)
+      const previewGroup = ensureGroup(groupId)
+      const previewEnabled = Boolean(payload.enabled)
       runtimeState.preview = {
-        enabled: Boolean(payload.enabled),
+        enabled: previewEnabled,
         groupId,
+        backgroundId: previewEnabled
+          ? resolvePreviewBackgroundId(previewGroup, payload.backgroundId)
+          : null,
         advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
-        appearMode: payload.appearMode ?? ensureGroup(groupId).appearMode ?? 'all',
-        intervalMs: payload.intervalMs ?? ensureGroup(groupId).appearIntervalMs ?? 800,
-        appearAnimation: payload.appearAnimation ?? ensureGroup(groupId).appearAnimation ?? 'none',
-        backgroundPlayMode: payload.backgroundPlayMode ?? ensureGroup(groupId).backgroundPlayMode ?? 'fixed',
-        backgroundIntervalMs: payload.backgroundIntervalMs ?? ensureGroup(groupId).backgroundIntervalMs ?? 5000,
-        backgroundTransition: payload.backgroundTransition ?? ensureGroup(groupId).backgroundTransition ?? 'none',
+        appearMode: payload.appearMode ?? previewGroup.appearMode ?? 'all',
+        intervalMs: payload.intervalMs ?? previewGroup.appearIntervalMs ?? 800,
+        appearAnimation: payload.appearAnimation ?? previewGroup.appearAnimation ?? 'none',
+        backgroundPlayMode: payload.backgroundPlayMode ?? previewGroup.backgroundPlayMode ?? 'fixed',
+        backgroundIntervalMs: payload.backgroundIntervalMs ?? previewGroup.backgroundIntervalMs ?? 5000,
+        backgroundPlaybackLoop: normalizeBackgroundPlaybackLoop(
+          payload.backgroundPlaybackLoop,
+          previewGroup.backgroundPlaybackLoop
+        ),
+        backgroundTransition: payload.backgroundTransition ?? previewGroup.backgroundTransition ?? 'none',
         replayId: payload.replayId ?? runtimeState.preview.replayId + 1,
         resolvedAnimationIds: payload.resolvedAnimationIds ?? {},
         startedAt: Date.now()
@@ -1253,6 +1340,13 @@ const applyDynamicEvent = (eventName, payload) => {
       }))
       group.activeBackgroundId = payload.nextActiveAssetId ?? group.activeBackgroundId
       syncActiveBackground(group)
+      if (
+        runtimeState.preview.enabled
+        && runtimeState.preview.groupId === group.groupId
+        && !resolvePreviewBackgroundId(group, runtimeState.preview.backgroundId)
+      ) {
+        clearPreviewTargetBackground()
+      }
       group.updatedAt = Date.now()
       break
     }
@@ -1261,6 +1355,18 @@ const applyDynamicEvent = (eventName, payload) => {
       const group = ensureGroup(payload.groupId)
       group.backgroundPlayMode = payload.mode ?? payload.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
       group.backgroundIntervalMs = payload.intervalMs ?? payload.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000
+      group.backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(
+        payload.backgroundPlaybackLoop,
+        group.backgroundPlaybackLoop
+      )
+      if (
+        runtimeState.preview.enabled
+        && runtimeState.preview.groupId === group.groupId
+      ) {
+        runtimeState.preview.backgroundPlayMode = group.backgroundPlayMode
+        runtimeState.preview.backgroundIntervalMs = group.backgroundIntervalMs
+        runtimeState.preview.backgroundPlaybackLoop = group.backgroundPlaybackLoop
+      }
       group.updatedAt = Date.now()
       break
     }

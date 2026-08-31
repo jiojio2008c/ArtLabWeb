@@ -929,7 +929,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /className="dynamic-appearance-item-list"[\s\S]*?className="dynamic-appearance-item-card"[\s\S]*?<DynamicItemThumbnail[\s\S]*?className="dynamic-appearance-item-thumbnail"/,
+  /className=\{`dynamic-appearance-item-list[\s\S]*?className=\{`dynamic-appearance-item-card[\s\S]*?<DynamicItemThumbnail[\s\S]*?className="dynamic-appearance-item-thumbnail"/,
   'The appearance editor must render every object as a visual card.'
 )
 assert.match(
@@ -944,8 +944,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /appearanceEditorMode === 'all'[\s\S]*?t\('control\.appearanceImmediate'\)[\s\S]*?appearanceEditorMode === 'sequence'[\s\S]*?className="dynamic-appearance-timing-grid"/,
-  'All-at-once mode must remain immediate while one-by-one mode exposes timing choices.'
+  /appearanceEditorMode === 'all'[\s\S]*?t\('control\.layerAppearanceSimultaneous'\)[\s\S]*?appearanceEditorMode === 'sequence'[\s\S]*?className="dynamic-appearance-timing-grid"/,
+  'All-at-once mode must remain simultaneous while one-by-one mode exposes timing choices.'
 )
 assert.doesNotMatch(
   dynamicControlSource,
@@ -979,7 +979,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length >= 2/,
+  /const showBackgroundQuickSwitcher = !playbackActive && backgrounds\.length >= 2/,
   'The stage background switcher must stay hidden for zero or one background and while previewing.'
 )
 assert.match(
@@ -989,7 +989,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /className="dynamic-background-quick-rail"[\s\S]*?backgrounds\.map\(\(background\) =>[\s\S]*?className=\{`dynamic-background-quick-card \$\{active \? 'active' : ''\}`\}[\s\S]*?aria-pressed=\{active\}/,
+  /className="dynamic-background-quick-rail"[\s\S]*?backgrounds\.map\(\(background\) =>[\s\S]*?className=\{`dynamic-background-quick-card\s+\$\{active \? 'active' : ''\}[\s\S]*?aria-pressed=\{active\}/,
   'The quick switcher must expose every background as a clearly selectable card.'
 )
 assert.match(
@@ -1084,7 +1084,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const activeBackground = getActiveBackgroundForGroup\(group\)[\s\S]*?const displayedBackground = previewMode\s*\n\s*\? backgrounds\.find\(\(background\) => background\.id === previewBackgroundId\) \?\? activeBackground[\s\S]*?const displayedBackgroundId = displayedBackground\?\.id \?\? ''/,
+  /const activeBackground = getActiveBackgroundForGroup\(group\)[\s\S]*?const displayedBackground = playbackActive\s*\n\s*\? backgrounds\.find\(\(background\) => background\.id === previewBackgroundId\) \?\? activeBackground[\s\S]*?const displayedBackgroundId = displayedBackground\?\.id \?\? ''/,
   'Appearance filtering must follow the active or preview-selected background.'
 )
 assert.match(
@@ -1129,7 +1129,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /<image(?=[^>]*className="dynamic-stage-watermark-logo")(?=[^>]*href=\{RIGHT_LOGO_URL\})(?=[^>]*x="660")(?=[^>]*y="420")(?=[^>]*width="600")(?=[^>]*height="240")[^>]*\/>/,
+  /<image(?=[^>]*className="dynamic-stage-watermark-logo")(?=[^>]*href=\{RIGHT_LOGO_URL\})(?=[^>]*x="680")(?=[^>]*y="395")(?=[^>]*width="560")(?=[^>]*height="220")[^>]*\/>/,
   'The control-stage watermark must center the homepage logo inside the safe zone.'
 )
 assert.match(
@@ -1255,12 +1255,14 @@ Object.entries({
   )
 })
 assert.ok(
-  Math.abs(Math.hypot(upperRightMaskNotch.x1 - 960, upperRightMaskNotch.y1 - 540) - 140) < 0.05,
-  'The upper-right mask notch must preserve the safe gap beside the logo and its shadow.'
+  Math.hypot(upperRightMaskNotch.x1 - 960, upperRightMaskNotch.y1 - 540) >= 100
+    && Math.hypot(upperRightMaskNotch.x1 - 960, upperRightMaskNotch.y1 - 540) <= 130,
+  'The upper-right mask notch must begin close to the logo without touching the center.'
 )
 assert.ok(
-  Math.abs(Math.hypot(upperRightMaskNotch.x2 - 960, upperRightMaskNotch.y2 - 540) - 244.767) < 0.05,
-  'The upper-right mask notch must end at the existing safe-zone boundary.'
+  Math.hypot(upperRightMaskNotch.x2 - 960, upperRightMaskNotch.y2 - 540) >= 260
+    && Math.hypot(upperRightMaskNotch.x2 - 960, upperRightMaskNotch.y2 - 540) <= 300,
+  'The upper-right mask notch must extend through the safe-zone boundary.'
 )
 const safeZoneX = getSvgNumber(watermarkSafeZoneTag, 'x')
 const safeZoneY = getSvgNumber(watermarkSafeZoneTag, 'y')
@@ -1288,10 +1290,15 @@ assert.doesNotMatch(
   /<image(?=[^>]*className="dynamic-stage-watermark-logo")(?=[^>]*mask=)[^>]*>/,
   'The center cutout must not hide the MagicFloor logo.'
 )
-assert.doesNotMatch(
+assert.match(
   watermarkMarkup,
-  /<text\b/,
-  'The control-stage watermark must not retain the former center text.'
+  /<text(?=[^>]*className="dynamic-stage-watermark-caption")(?=[^>]*x="960")(?=[^>]*y="684")[^>]*>\s*preview only\s*<\/text>/,
+  'The control-stage watermark must label the logo as preview-only.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen \.dynamic-stage-watermark-caption\s*\{[\s\S]*font-size:\s*48px;[\s\S]*font-weight:\s*800;/,
+  'The preview-only watermark caption must remain legible.'
 )
 assert.match(
   dynamicControlSource,
@@ -1369,8 +1376,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const getLayerSummary = \(item: DynamicItem\) => \{[\s\S]*getResolvedAppearanceTiming\(item, displayedBackgroundId\)\.appearanceDelayMs[\s\S]*control\.layerAppearanceTime/,
-  'Layer cards must show each object\'s independent appearance time.'
+  /const getLayerSummary = \(item: DynamicItem\) => \{[\s\S]*appearanceOrderIndexById\.get\(item\.id\)[\s\S]*control\.layerAppearance(?:Simultaneous|Order)/,
+  'Layer cards must show each object\'s entrance order rather than seconds.'
 )
 const stageHitResolverStart = dynamicControlSource.indexOf('const resolveStageItemIdAtPoint = (clientPoint: Point) => {')
 const stageHitResolverEnd = dynamicControlSource.indexOf('const handleStagePointerDown', stageHitResolverStart)
@@ -1420,7 +1427,7 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /displayedItems\.map\(\(item, index\) => \{\s*if \(previewMode && item\.isVisible === false\) return null/,
+  /displayedItems\.map\(\(item, index\) => \{\s*if \(playbackActive && item\.isVisible === false\) return null/,
   'Preview rendering must hide objects marked invisible while keeping them available to the editor.'
 )
 assert.match(

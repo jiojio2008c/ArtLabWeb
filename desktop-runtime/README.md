@@ -32,7 +32,7 @@
 
 鼠标切换动画只保存在当前 EXE 内存中，不修改作品档案、不写入运行时状态，也不会向 iPad 回传。iPad 启动或重播预览、切换作品档案、同步组状态或修改物件动画时，播放器会清除对应的鼠标临时动画并立即恢复 iPad 设置。
 
-背景播放参数通过 `GroupStateSync` / `GroupSelectAndSync` 的 `backgroundPlayMode`、`backgroundIntervalMs` 字段同步，也可由 `BackgroundPlayback` 事件即时更新。自动切换只在 `PreviewMode.enabled=true` 时运行，编辑状态保持当前背景。
+背景播放参数通过 `GroupStateSync` / `GroupSelectAndSync` 的 `backgroundPlayMode`、`backgroundIntervalMs`、`backgroundPlaybackLoop` 字段同步，也可由 `BackgroundPlayback` 事件即时更新。`backgroundPlaybackLoop` 缺省为 `true` 以兼容旧作品；关闭后 sequence/random 各背景只播放一轮并停留在最后一张。自动切换只在 `PreviewMode.enabled=true` 时运行，编辑状态保持当前背景。
 
 EXE 保留 `DisplaySettings`、`GroupStateSync`、`GroupSelectAndSync` 与 `PreviewMode` 的 `{ watermarkEnabled }` 字段以兼容既有协议，但桌面播放器永不绘制水印；`/status` 与运行状态会额外报告 `watermarkVisible=false`。`40%` 不透明度的首页 Logo 水印仅属于 Web/iPad 控制预览。旧消息缺少该字段时仍按既有状态解析，不影响桌面纯舞台输出。
 
@@ -99,12 +99,16 @@ desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe
 desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe
 ```
 
-两个版本都监听 `8080`，不能同时运行。当前标准版 portable EXE SHA-256 为 `05B7F958354186EB5554A1B5246C1BE66682CC9A5899BBCB273EE2BF075F36B`；当前整体显示水平与垂直翻转版 portable EXE SHA-256 为 `63298C0DD4AF5D02E653B928734DC02DE070F08B224A38262CCBFF53C3BDFBA6`。本次标准版大小为 `85,323,982` bytes，翻转版大小为 `85,311,392` bytes。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。当前产物未配置 Windows 代码签名证书，正式分发前需完成签名。
+两个版本都监听 `8080`，不能同时运行。当前标准版 portable EXE SHA-256 为 `A1AE3E8BDF7C59E2441FF812B0188E4A4E675A4D7931A84BE9717AB58585A052`；当前整体显示水平与垂直翻转版 portable EXE SHA-256 为 `5953C3FCE88AC4A68FA6E086D1A3D80F97A04BDEFC5F466B5569796A5BD1AA41`。本次标准版大小为 `85,326,411` bytes，翻转版大小为 `85,313,766` bytes。打包使用本地 `node_modules/electron/dist`，避免 Windows 在下载缓存解压阶段产生临时目录重命名失败。当前产物未配置 Windows 代码签名证书，正式分发前需完成签名。
 
 行为测试可运行：
 
 ```powershell
 npm run test:appearance
 ```
+
+## PreviewMode temporary background target
+
+`PreviewMode` accepts an optional `backgroundId` for the current preview session. The desktop player validates this id against the synchronized group backgrounds and uses it as the playback start background, falling back to `activeBackgroundId` for older clients or invalid ids. The target is transient: disabling preview, returning to the archive, switching groups, or deleting the target background clears it. The target is included in the preview presentation key so a newly selected background restarts asset readiness and playback timing.
 
 该测试覆盖淡入、上方掉落、左右进场，以及联动物件的逐个排序、延迟出现、延迟隐藏、隐藏后的点击状态、跨背景递归带入且不修改背景归属、原生背景回退、关系方向、循环联动保护与延迟上限。

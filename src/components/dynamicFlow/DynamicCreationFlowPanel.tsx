@@ -13,6 +13,7 @@ import {
   Layers3,
   Link2,
   LockKeyhole,
+  Mic,
   Move,
   Music2,
   Play,
@@ -40,9 +41,29 @@ import type {
 
 type DynamicCreationFlowAppearanceNode = DynamicCreationFlowPanelProps['appearanceTree'][number]
 
+interface BackgroundChoiceDragState {
+  backgroundId: string
+  orderedIds: string[]
+  originalIds: string[]
+  pointerId: number
+  pointerType: string
+  sourceElement: HTMLElement
+  startPoint: { x: number; y: number }
+  lastPoint: { x: number; y: number }
+  active: boolean
+  changed: boolean
+}
+
+interface BackgroundChoiceDropHint {
+  backgroundId: string
+  placement: 'before' | 'after'
+}
+
 const APPEAR_INTERVAL_MIN_MS = 100
 const APPEAR_INTERVAL_MAX_MS = 5000
 const APPEAR_INTERVAL_STEP_MS = 100
+const BACKGROUND_CHOICE_TOUCH_HOLD_MS = 180
+const BACKGROUND_CHOICE_MOUSE_DRAG_THRESHOLD = 6
 
 const PANEL_STEPS: Array<{
   id: DynamicCreationFlowPanelStep
@@ -108,8 +129,10 @@ const DynamicCreationFlowPanel = ({
   onAddRelation,
   onEditRelation,
   onSetItemBackgrounds,
+  onReorderBackgrounds,
   onManageBackgrounds,
   onUploadAudio,
+  onRecordAudio,
   onPreviewAudio,
   onSetItemAudio,
   onSetItemAudioTrigger,
@@ -123,7 +146,19 @@ const DynamicCreationFlowPanel = ({
   const { t } = useTranslation()
   const [collapsedAppearanceItemIds, setCollapsedAppearanceItemIds] = useState<Set<string>>(() => new Set())
   const [collapsedBackgroundItemIds, setCollapsedBackgroundItemIds] = useState<Set<string>>(() => new Set())
+  const [backgroundChoiceOrder, setBackgroundChoiceOrder] = useState<string[]>(() => backgrounds.map((background) => background.id))
+  const [draggedBackgroundChoiceId, setDraggedBackgroundChoiceId] = useState('')
+  const [backgroundChoiceDropHint, setBackgroundChoiceDropHint] = useState<BackgroundChoiceDropHint | null>(null)
   const audioObjectRailRef = useRef<HTMLDivElement>(null)
+  const backgroundChoiceGridRef = useRef<HTMLDivElement>(null)
+  const backgroundChoiceDragRef = useRef<BackgroundChoiceDragState | null>(null)
+  const backgroundChoiceDragActivationTimerRef = useRef<number | null>(null)
+  const backgroundChoiceSuppressClickRef = useRef(false)
+  const backgroundChoicePointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void
+    end: (event: PointerEvent) => void
+    cancel: (event: PointerEvent) => void
+  } | null>(null)
   const audioDelayLabelId = useId()
   const activeStep = PANEL_STEPS.find((entry) => entry.id === step) ?? PANEL_STEPS[0]
   const orderedItems = [...items].sort((first, second) => first.order - second.order)
@@ -162,6 +197,26 @@ const DynamicCreationFlowPanel = ({
     APPEAR_INTERVAL_MAX_MS,
     Math.max(APPEAR_INTERVAL_MIN_MS, appearIntervalMs)
   )
+  const backgroundIds = backgrounds.map((background) => background.id)
+  const backgroundIdsKey = backgroundIds.join('|')
+  const orderedBackgrounds = backgroundChoiceOrder
+    .map((backgroundId) => backgrounds.find((background) => background.id === backgroundId))
+    .filter((background): background is DynamicCreationFlowPanelProps['backgrounds'][number] => Boolean(background))
+
+  useEffect(() => {
+    setBackgroundChoiceOrder((currentOrder) => {
+      const validIds = new Set(backgroundIds)
+      const currentValidIds = currentOrder.filter((backgroundId) => validIds.has(backgroundId))
+      const nextOrder = currentValidIds.length === backgroundIds.length
+        && currentValidIds.every((backgroundId, index) => backgroundId === backgroundIds[index])
+        ? currentOrder
+        : [...backgroundIds]
+      return nextOrder.length === currentOrder.length
+        && nextOrder.every((backgroundId, index) => backgroundId === currentOrder[index])
+        ? currentOrder
+        : nextOrder
+    })
+  }, [backgroundIdsKey])
 
   useEffect(() => {
     if (step !== 'audio' || !selectedFlowItemId) return
@@ -187,6 +242,248 @@ const DynamicCreationFlowPanel = ({
     selectedFlowItemId,
     step
   ])
+
+  const clearBackgroundChoiceDragActivationTimer = () => {
+    if (backgroundChoiceDragActivationTimerRef.current === null) return
+    window.clearTimeout(backgroundChoiceDragActivationTimerRef.current)
+    backgroundChoiceDragActivationTimerRef.current = null
+  }
+
+  const detachBackgroundChoicePointerListeners = () => {
+    const listeners = backgroundChoicePointerListenersRef.current
+    if (!listeners) return
+    window.removeEventListener('pointermove', listeners.move)
+    window.removeEventListener('pointerup', listeners.end)
+    window.removeEventListener('pointercancel', listeners.cancel)
+    backgroundChoicePointerListenersRef.current = null
+  }
+
+  const suppressBackgroundChoiceClickAfterDrag = () => {
+    backgroundChoiceSuppressClickRef.current = true
+    window.setTimeout(() => {
+      backgroundChoiceSuppressClickRef.current = false
+    }, 0)
+  }
+
+  const updateBackgroundChoiceOrderAtPoint = (clientX: number, clientY: number) => {
+    const dragState = backgroundChoiceDragRef.current
+    const choiceGrid = backgroundChoiceGridRef.current
+    if (!dragState?.active || !choiceGrid) return
+
+    const cards = Array.from(
+      choiceGrid.querySelectorAll<HTMLButtonElement>('[data-background-choice-id]')
+    ).filter((card) => card.dataset.backgroundChoiceId !== dragState.backgroundId)
+    if (cards.length === 0) {
+      setBackgroundChoiceDropHint(null)
+      return
+    }
+
+    let targetCard = cards[0]
+    let targetDistance = Number.POSITIVE_INFINITY
+    cards.forEach((card) => {
+      const rect = card.getBoundingClientRect()
+      const distance = Math.hypot(
+        clientX - (rect.left + rect.width / 2),
+        clientY - (rect.top + rect.height / 2)
+      )
+      if (distance < targetDistance) {
+        targetCard = card
+        targetDistance = distance
+      }
+    })
+
+    const targetRect = targetCard.getBoundingClientRect()
+    const targetBackgroundId = targetCard.dataset.backgroundChoiceId
+    if (!targetBackgroundId) return
+    const placement: BackgroundChoiceDropHint['placement'] = (
+      clientY < targetRect.top + targetRect.height / 2
+      || (
+        Math.abs(clientY - (targetRect.top + targetRect.height / 2)) < targetRect.height / 3
+        && clientX < targetRect.left + targetRect.width / 2
+      )
+    ) ? 'before' : 'after'
+
+    setBackgroundChoiceDropHint((currentHint) => (
+      currentHint?.backgroundId === targetBackgroundId && currentHint.placement === placement
+        ? currentHint
+        : { backgroundId: targetBackgroundId, placement }
+    ))
+
+    const nextIds = dragState.orderedIds.filter((backgroundId) => backgroundId !== dragState.backgroundId)
+    const targetIndex = nextIds.indexOf(targetBackgroundId)
+    if (targetIndex < 0) return
+    nextIds.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, dragState.backgroundId)
+    if (nextIds.every((backgroundId, index) => backgroundId === dragState.orderedIds[index])) return
+
+    dragState.orderedIds = nextIds
+    dragState.changed = true
+    backgroundChoiceSuppressClickRef.current = true
+    setBackgroundChoiceOrder(nextIds)
+  }
+
+  const activateBackgroundChoiceDrag = (dragState: BackgroundChoiceDragState) => {
+    if (backgroundChoiceDragRef.current !== dragState || dragState.active) return
+    clearBackgroundChoiceDragActivationTimer()
+    dragState.active = true
+    try {
+      dragState.sourceElement.setPointerCapture(dragState.pointerId)
+    } catch {
+      // Pointer capture can be unavailable in older iPad WebViews.
+    }
+    setDraggedBackgroundChoiceId(dragState.backgroundId)
+    setBackgroundChoiceDropHint(null)
+  }
+
+  const handleBackgroundChoicePointerMove = (event: PointerEvent) => {
+    const dragState = backgroundChoiceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    dragState.lastPoint = { x: event.clientX, y: event.clientY }
+    const distance = Math.hypot(
+      event.clientX - dragState.startPoint.x,
+      event.clientY - dragState.startPoint.y
+    )
+    if (!dragState.active) {
+      if (dragState.pointerType === 'mouse' && distance >= BACKGROUND_CHOICE_MOUSE_DRAG_THRESHOLD) {
+        activateBackgroundChoiceDrag(dragState)
+      } else if (dragState.pointerType !== 'mouse' && distance >= 18) {
+        clearBackgroundChoiceDragActivationTimer()
+        backgroundChoiceDragRef.current = null
+        setBackgroundChoiceDropHint(null)
+        detachBackgroundChoicePointerListeners()
+      }
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    updateBackgroundChoiceOrderAtPoint(event.clientX, event.clientY)
+  }
+
+  const handleBackgroundChoicePointerEnd = (event: PointerEvent) => {
+    const dragState = backgroundChoiceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    clearBackgroundChoiceDragActivationTimer()
+    detachBackgroundChoicePointerListeners()
+    try {
+      if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+        dragState.sourceElement.releasePointerCapture(dragState.pointerId)
+      }
+    } catch {
+      // Pointer capture may already be released.
+    }
+    backgroundChoiceDragRef.current = null
+    if (!dragState.active) {
+      setBackgroundChoiceDropHint(null)
+      return
+    }
+
+    if (dragState.changed) {
+      event.preventDefault()
+      event.stopPropagation()
+      onReorderBackgrounds?.(dragState.orderedIds)
+    }
+    setDraggedBackgroundChoiceId('')
+    setBackgroundChoiceDropHint(null)
+    if (dragState.changed) suppressBackgroundChoiceClickAfterDrag()
+  }
+
+  const handleBackgroundChoicePointerCancel = (event: PointerEvent) => {
+    const dragState = backgroundChoiceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    clearBackgroundChoiceDragActivationTimer()
+    detachBackgroundChoicePointerListeners()
+    try {
+      if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+        dragState.sourceElement.releasePointerCapture(dragState.pointerId)
+      }
+    } catch {
+      // Pointer capture may already be released.
+    }
+    backgroundChoiceDragRef.current = null
+    if (dragState.active && dragState.changed) setBackgroundChoiceOrder(dragState.originalIds)
+    setDraggedBackgroundChoiceId('')
+    setBackgroundChoiceDropHint(null)
+    if (dragState.changed) suppressBackgroundChoiceClickAfterDrag()
+  }
+
+  const handleBackgroundChoicePointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    backgroundId: string
+  ) => {
+    if (
+      !onReorderBackgrounds
+      || !advancedFeaturesEnabled
+      || !event.isPrimary
+      || (event.pointerType === 'mouse' && event.button !== 0)
+    ) return
+
+    const dragState: BackgroundChoiceDragState = {
+      backgroundId,
+      orderedIds: [...backgroundChoiceOrder],
+      originalIds: [...backgroundChoiceOrder],
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      sourceElement: event.currentTarget,
+      startPoint: { x: event.clientX, y: event.clientY },
+      lastPoint: { x: event.clientX, y: event.clientY },
+      active: false,
+      changed: false
+    }
+    backgroundChoiceDragRef.current = dragState
+    detachBackgroundChoicePointerListeners()
+    const listeners = {
+      move: handleBackgroundChoicePointerMove,
+      end: handleBackgroundChoicePointerEnd,
+      cancel: handleBackgroundChoicePointerCancel
+    }
+    backgroundChoicePointerListenersRef.current = listeners
+    window.addEventListener('pointermove', listeners.move, { passive: false })
+    window.addEventListener('pointerup', listeners.end)
+    window.addEventListener('pointercancel', listeners.cancel)
+
+    if (event.pointerType !== 'mouse') {
+      clearBackgroundChoiceDragActivationTimer()
+      backgroundChoiceDragActivationTimerRef.current = window.setTimeout(() => {
+        activateBackgroundChoiceDrag(dragState)
+      }, BACKGROUND_CHOICE_TOUCH_HOLD_MS)
+    }
+  }
+
+  const handleBackgroundChoiceClickCapture = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!backgroundChoiceSuppressClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    backgroundChoiceSuppressClickRef.current = false
+  }
+
+  const handleBackgroundChoiceKeyboardMove = (backgroundId: string, offset: -1 | 1) => {
+    if (!onReorderBackgrounds || !advancedFeaturesEnabled) return
+    const currentIndex = backgroundChoiceOrder.indexOf(backgroundId)
+    const nextIndex = currentIndex + offset
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= backgroundChoiceOrder.length) return
+    const nextIds = [...backgroundChoiceOrder]
+    const [movedId] = nextIds.splice(currentIndex, 1)
+    nextIds.splice(nextIndex, 0, movedId)
+    setBackgroundChoiceOrder(nextIds)
+    onReorderBackgrounds(nextIds)
+  }
+
+  useEffect(() => () => {
+    clearBackgroundChoiceDragActivationTimer()
+    detachBackgroundChoicePointerListeners()
+    const dragState = backgroundChoiceDragRef.current
+    if (dragState) {
+      try {
+        if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+          dragState.sourceElement.releasePointerCapture(dragState.pointerId)
+        }
+      } catch {
+        // Pointer capture may already be released.
+      }
+    }
+    backgroundChoiceDragRef.current = null
+  }, [])
 
   const handleRadioKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -690,8 +987,19 @@ const DynamicCreationFlowPanel = ({
               </div>
 
               {backgroundOwnerItem.backgroundIds.length > 0 && (
-                <div className="dynamic-flow-background-choice-grid" role="group" aria-label={t('control.specifiedBackgrounds')}>
-                  {backgrounds.map((background) => {
+                <>
+                  {onReorderBackgrounds && (
+                    <p className="dynamic-flow-background-choice-hint">
+                      {t('control.dragBackgroundHint')}
+                    </p>
+                  )}
+                  <div
+                    ref={backgroundChoiceGridRef}
+                    className={`dynamic-flow-background-choice-grid ${draggedBackgroundChoiceId ? 'is-reordering' : ''}`}
+                    role="group"
+                    aria-label={t('control.specifiedBackgrounds')}
+                  >
+                  {orderedBackgrounds.map((background, index) => {
                     const checked = backgroundOwnerItem.backgroundIds.includes(background.id)
                     const onlySelected = checked && backgroundOwnerItem.backgroundIds.length === 1
                     return (
@@ -700,14 +1008,32 @@ const DynamicCreationFlowPanel = ({
                         type="button"
                         role="checkbox"
                         aria-checked={checked}
-                        className={checked ? 'is-selected' : ''}
-                        disabled={!advancedFeaturesEnabled || onlySelected}
-                        onClick={() => onSetItemBackgrounds(
-                          backgroundOwnerItem.id,
-                          checked
-                            ? backgroundOwnerItem.backgroundIds.filter((backgroundId) => backgroundId !== background.id)
-                            : [...backgroundOwnerItem.backgroundIds, background.id]
-                        )}
+                        data-background-choice-id={background.id}
+                        className={`${checked ? 'is-selected' : ''} ${draggedBackgroundChoiceId === background.id ? 'is-dragging' : ''} ${backgroundChoiceDropHint?.backgroundId === background.id ? `drop-${backgroundChoiceDropHint.placement}` : ''}`}
+                        disabled={!advancedFeaturesEnabled}
+                        onPointerDown={(event) => handleBackgroundChoicePointerDown(event, background.id)}
+                        onClickCapture={handleBackgroundChoiceClickCapture}
+                        onContextMenu={(event) => event.preventDefault()}
+                        onClick={() => {
+                          if (onlySelected) return
+                          onSetItemBackgrounds(
+                            backgroundOwnerItem.id,
+                            checked
+                              ? backgroundOwnerItem.backgroundIds.filter((backgroundId) => backgroundId !== background.id)
+                              : [...backgroundOwnerItem.backgroundIds, background.id]
+                          )
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            handleBackgroundChoiceKeyboardMove(background.id, -1)
+                          } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            handleBackgroundChoiceKeyboardMove(background.id, 1)
+                          }
+                        }}
+                        aria-grabbed={draggedBackgroundChoiceId === background.id}
+                        aria-label={`${background.name}, ${index + 1}`}
                       >
                         <span className="dynamic-flow-background-choice-preview">
                           {background.type === 'video' ? (
@@ -721,7 +1047,8 @@ const DynamicCreationFlowPanel = ({
                       </button>
                     )
                   })}
-                </div>
+                  </div>
+                </>
               )}
             </>
           )}
@@ -823,16 +1150,29 @@ const DynamicCreationFlowPanel = ({
               <div className="dynamic-flow-audio-assignment">
                 <div className="dynamic-flow-audio-source-heading">
                   <h4>{t('flow.audioChooseSource')}</h4>
-                  <button
-                    type="button"
-                    className="dynamic-flow-audio-upload"
-                    disabled={!advancedFeaturesEnabled || isAddingAudio}
-                    onClick={onUploadAudio}
-                    aria-busy={isAddingAudio || undefined}
-                  >
-                    <Upload aria-hidden="true" />
-                    <span>{t(isAddingAudio ? 'control.audioUploading' : 'control.uploadAudio')}</span>
-                  </button>
+                  <div className="dynamic-flow-audio-source-actions">
+                    <button
+                      type="button"
+                      className="dynamic-flow-audio-upload"
+                      disabled={!advancedFeaturesEnabled || isAddingAudio}
+                      onClick={onUploadAudio}
+                      aria-busy={isAddingAudio || undefined}
+                    >
+                      <Upload aria-hidden="true" />
+                      <span>{t(isAddingAudio ? 'control.audioUploading' : 'control.uploadAudio')}</span>
+                    </button>
+                    {onRecordAudio && (
+                      <button
+                        type="button"
+                        className="dynamic-flow-audio-upload dynamic-flow-audio-record"
+                        disabled={!advancedFeaturesEnabled || isAddingAudio}
+                        onClick={onRecordAudio}
+                      >
+                        <Mic aria-hidden="true" />
+                        <span>{t('control.recordAudio')}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div

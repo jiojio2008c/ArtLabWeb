@@ -1,0 +1,415 @@
+.dynamic-audio-recorder-overlay,
+.dynamic-audio-recorder-overlay * {
+  box-sizing: border-box;
+}
+
+.dynamic-audio-recorder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.dynamic-audio-recorder-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 29, 31, 0.54);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: dynamic-audio-recorder-scrim-in 180ms ease both;
+}
+
+.dynamic-audio-recorder-dialog {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(720px, 100%);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 24px;
+  outline: none;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(240, 247, 246, 0.98)),
+    #f4f8f6;
+  box-shadow: 0 30px 100px rgba(8, 27, 31, 0.3);
+  animation: dynamic-audio-recorder-dialog-in 220ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.dynamic-audio-recorder-header {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px 15px 20px;
+  border-bottom: 1px solid rgba(22, 59, 61, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.dynamic-audio-recorder-heading-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.dynamic-audio-recorder-heading-copy p,
+.dynamic-audio-recorder-heading-copy h2 {
+  margin: 0;
+}
+
+.dynamic-audio-recorder-heading-copy h2 {
+  color: #1a2c2b;
+  font-size: clamp(21px, 3vw, 27px);
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.dynamic-audio-recorder-heading-copy .eyebrow {
+  margin-bottom: 3px;
+  color: #087d7b;
+}
+
+.dynamic-audio-recorder-icon {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #087f7b;
+  background: rgba(18, 169, 201, 0.13);
+}
+
+.dynamic-audio-recorder-close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  appearance: none;
+  border: 1px solid rgba(24, 57, 58, 0.13);
+  border-radius: 50%;
+  color: #526563;
+  background: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.dynamic-audio-recorder-close:hover:not(:disabled),
+.dynamic-audio-recorder-close:focus-visible {
+  border-color: rgba(8, 127, 123, 0.36);
+  color: #087f7b;
+  background: #fff;
+}
+
+.dynamic-audio-recorder-close:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.dynamic-audio-recorder-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.dynamic-audio-recorder-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 22px 18px;
+}
+
+.dynamic-audio-recorder-description {
+  margin: 0 0 18px;
+  color: #536765;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.dynamic-audio-recorder-error {
+  min-height: 48px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 13px;
+  border: 1px solid rgba(192, 77, 65, 0.25);
+  border-radius: 13px;
+  color: #9d3d35;
+  background: rgba(255, 237, 233, 0.88);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.dynamic-audio-recorder-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.dynamic-audio-recorder-meter {
+  min-height: 104px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 18px;
+  border: 1px solid rgba(28, 78, 76, 0.12);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(18, 169, 201, 0.12), transparent 42%),
+    linear-gradient(145deg, rgba(246, 252, 250, 0.95), rgba(229, 244, 240, 0.88));
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.dynamic-audio-recorder-meter.is-recording {
+  border-color: rgba(220, 79, 65, 0.38);
+  background:
+    radial-gradient(circle at 15% 20%, rgba(233, 85, 69, 0.2), transparent 44%),
+    linear-gradient(145deg, rgba(255, 247, 243, 0.98), rgba(255, 236, 230, 0.9));
+  box-shadow: 0 8px 24px rgba(194, 77, 65, 0.1);
+}
+
+.dynamic-audio-recorder-meter-icon {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+  color: #087f7b;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.dynamic-audio-recorder-meter.is-recording .dynamic-audio-recorder-meter-icon {
+  color: #c84d42;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.dynamic-audio-recorder-pulse {
+  width: 17px;
+  height: 17px;
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 rgba(200, 77, 66, 0.42);
+  animation: dynamic-audio-recorder-pulse 1.35s ease-out infinite;
+}
+
+.dynamic-audio-recorder-meter-copy {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.dynamic-audio-recorder-meter-copy strong {
+  color: #1b3533;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.dynamic-audio-recorder-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #47716d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.dynamic-audio-recorder-preview-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 15px;
+  padding: 14px 15px 15px;
+  border: 1px solid rgba(28, 78, 76, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.dynamic-audio-recorder-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #315c58;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dynamic-audio-recorder-preview-heading span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dynamic-audio-recorder-preview-heading span svg {
+  color: #2f9c64;
+}
+
+.dynamic-audio-recorder-preview-heading small {
+  color: #71817f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dynamic-audio-recorder-preview-card audio {
+  width: 100%;
+  min-height: 42px;
+  accent-color: #087f7b;
+}
+
+.dynamic-audio-recorder-preview-status {
+  color: #6b7c79;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dynamic-audio-recorder-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dynamic-audio-recorder-actions {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px max(16px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(22, 59, 61, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dynamic-audio-recorder-primary-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.dynamic-audio-recorder-actions .ipad-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.dynamic-audio-recorder-record-button,
+.dynamic-audio-recorder-stop-button,
+.dynamic-audio-recorder-save-button {
+  min-width: 142px;
+}
+
+.dynamic-audio-recorder-retake-button {
+  min-width: 112px;
+}
+
+.dynamic-audio-recorder-actions .ipad-button:focus-visible {
+  outline: 3px solid rgba(18, 169, 201, 0.34);
+  outline-offset: 2px;
+}
+
+.dynamic-audio-recorder-actions .ipad-button:disabled {
+  cursor: not-allowed;
+}
+
+.dynamic-audio-recorder-actions .is-spinning {
+  animation: dynamic-audio-recorder-spin 850ms linear infinite;
+}
+
+@keyframes dynamic-audio-recorder-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dynamic-audio-recorder-dialog-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes dynamic-audio-recorder-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(200, 77, 66, 0.42); }
+  70% { box-shadow: 0 0 0 12px rgba(200, 77, 66, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(200, 77, 66, 0); }
+}
+
+@keyframes dynamic-audio-recorder-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 620px) {
+  .dynamic-audio-recorder-overlay {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .dynamic-audio-recorder-dialog {
+    width: 100%;
+    max-height: min(760px, 100dvh);
+    border-radius: 24px 24px 0 0;
+  }
+
+  .dynamic-audio-recorder-content {
+    padding: 18px 16px 14px;
+  }
+
+  .dynamic-audio-recorder-actions {
+    padding-inline: 16px;
+  }
+}
+
+@media (max-width: 460px) {
+  .dynamic-audio-recorder-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .dynamic-audio-recorder-cancel,
+  .dynamic-audio-recorder-primary-actions,
+  .dynamic-audio-recorder-primary-actions .ipad-button {
+    width: 100%;
+  }
+
+  .dynamic-audio-recorder-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dynamic-audio-recorder-primary-actions.is-single-action {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dynamic-audio-recorder-retake-button,
+  .dynamic-audio-recorder-record-button,
+  .dynamic-audio-recorder-stop-button,
+  .dynamic-audio-recorder-save-button {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-audio-recorder-scrim,
+  .dynamic-audio-recorder-dialog,
+  .dynamic-audio-recorder-pulse,
+  .dynamic-audio-recorder-actions .is-spinning {
+    animation: none;
+  }
+}

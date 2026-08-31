@@ -1,6 +1,8 @@
 import {
   getDynamicMediaFile,
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
+  DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP,
+  normalizeDynamicBackgroundPlaybackLoop,
   type DynamicBackgroundAppearance,
   type DynamicBackground,
   type DynamicGroup,
@@ -266,6 +268,10 @@ const buildGroupSyncPayload = (
     appearAnimation: group.appearAnimation ?? 'none',
     backgroundPlayMode: group.backgroundPlayMode,
     backgroundIntervalMs: group.backgroundIntervalMs,
+    backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
+      group.backgroundPlaybackLoop,
+      DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP
+    ),
     backgroundTransition: group.backgroundTransition ?? 'none',
     activeBackgroundId: activeBackground?.id ?? '',
     background: toBackgroundPayload(activeBackground, legacyBackgroundAppearance),
@@ -448,6 +454,10 @@ const getGroupSyncSignature = (group: DynamicGroup) => {
       group.appearAnimation ?? 'none',
       group.backgroundPlayMode ?? 'fixed',
       group.backgroundIntervalMs ?? 0,
+      normalizeDynamicBackgroundPlaybackLoop(
+        group.backgroundPlaybackLoop,
+        DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP
+      ),
       group.backgroundTransition ?? 'none',
       group.linkedAppearanceModelVersion ?? 0
     ],

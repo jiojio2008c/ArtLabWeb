@@ -124,6 +124,7 @@ const group = {
   activeBackgroundId: background.id,
   backgroundPlayMode: 'sequence',
   backgroundIntervalMs: 4500,
+  backgroundPlaybackLoop: false,
   backgroundTransition: 'curtain',
   appearMode: 'sequence',
   appearIntervalMs: 750,
@@ -360,6 +361,7 @@ assert.equal(payload.items[1].bubble.surfaceColor, '#fffef6')
 assert.equal(payload.items[1].bubble.outlineColor, '#3b9089')
 assert.equal(payload.backgroundTransition, 'curtain')
 assert.equal(payload.backgroundIntervalMs, 4500)
+assert.equal(payload.backgroundPlaybackLoop, false)
 
 const baseSignature = getGroupSyncSignature(group)
 const baseAssetSignature = getGroupAssetSignature(group)
@@ -464,6 +466,14 @@ assert.notEqual(
   }),
   baseSignature,
   'Changing timeline timing must trigger a complete receiver sync.'
+)
+assert.notEqual(
+  getGroupSyncSignature({
+    ...group,
+    backgroundPlaybackLoop: true
+  }),
+  baseSignature,
+  'Changing the background loop policy must trigger a complete receiver sync.'
 )
 assert.notEqual(
   getGroupSyncSignature({

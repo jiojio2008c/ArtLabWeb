@@ -14,6 +14,7 @@ import {
   Link2,
   Maximize2,
   MessageCircleMore,
+  Mic,
   Music2,
   Move,
   MousePointerClick,
@@ -150,7 +151,12 @@ import {
   synchronizeDynamicLinkedBackgrounds,
   type DynamicAppearanceSchedule
 } from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
-import { getDynamicBackgroundPlaybackStartIndex } from '../../desktop-runtime/renderer/background-playback-core.js'
+import {
+  getDynamicBackgroundPlaybackIndexAtCycle,
+  getDynamicBackgroundPlaybackRoundLength,
+  getDynamicBackgroundPlaybackStartIndex,
+  normalizeDynamicBackgroundPlaybackLoop
+} from '../../desktop-runtime/renderer/background-playback-core.js'
 import DynamicCreationFlowPanel, {
   type DynamicCreationFlowBackground,
   type DynamicCreationFlowIssue,
@@ -162,6 +168,7 @@ import DynamicBubbleEditor, {
 import DynamicBubbleVisual from './DynamicBubbleVisual.tsx'
 import DynamicItemThumbnail, { toDynamicBubbleDraft } from './DynamicItemThumbnail.tsx'
 import BrandLogo, { RIGHT_LOGO_URL } from './BrandLogo.tsx'
+import DynamicAudioRecorderDialog from './DynamicAudioRecorderDialog.tsx'
 
 type ControlTab = 'motion' | 'animation' | 'transform' | 'audio' | 'background' | 'copy'
 type GestureMode = 'none' | 'drag' | 'pinch'
@@ -242,6 +249,27 @@ interface BackgroundDragState {
   lastPoint: Point
   active: boolean
   changed: boolean
+  listElement: HTMLElement
+  axis: 'vertical' | 'horizontal'
+}
+
+interface AppearanceDragState {
+  itemId: string
+  orderedIds: string[]
+  visibleIds: string[]
+  originalGroup: DynamicGroup
+  pointerId: number
+  pointerType: string
+  sourceElement: HTMLElement
+  startPoint: Point
+  lastPoint: Point
+  active: boolean
+  changed: boolean
+}
+
+interface AppearanceDropHint {
+  itemId: string
+  placement: 'before' | 'after'
 }
 
 interface BackgroundDragPreview {
@@ -336,23 +364,6 @@ const mixHash = (value: number) => {
   mixed = Math.imul(mixed ^ (mixed >>> 16), 0x7feb352d)
   mixed = Math.imul(mixed ^ (mixed >>> 15), 0x846ca68b)
   return (mixed ^ (mixed >>> 16)) >>> 0
-}
-const getRandomBackgroundIndexForCycle = (
-  groupId: string,
-  replayId: number,
-  backgrounds: DynamicBackground[],
-  activeIndex: number,
-  cycle: number
-) => {
-  if (backgrounds.length <= 1 || cycle <= 0) return activeIndex
-
-  const key = `${groupId}:${replayId}:${activeIndex}:${backgrounds.map((background) => background.id).join(',')}`
-  let nextIndex = activeIndex
-  for (let nextCycle = 1; nextCycle <= cycle; nextCycle += 1) {
-    const offset = 1 + (hashString(`${key}:${nextCycle}`) % (backgrounds.length - 1))
-    nextIndex = (nextIndex + offset) % backgrounds.length
-  }
-  return nextIndex
 }
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 const getAngle = (a: Point, b: Point) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI
@@ -1402,6 +1413,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const backgroundTransitionTimersRef = useRef<number[]>([])
   const layerListRef = useRef<HTMLDivElement>(null)
   const backgroundListRef = useRef<HTMLDivElement>(null)
+  const appearanceListRef = useRef<HTMLDivElement>(null)
   const latestGroupRef = useRef(group)
   const pointersRef = useRef<Map<number, Point>>(new Map())
   const gestureModeRef = useRef<GestureMode>('none')
@@ -1418,12 +1430,21 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const backgroundDragActivationTimerRef = useRef<number | null>(null)
   const backgroundAutoScrollFrameRef = useRef<number | null>(null)
   const backgroundSuppressClickRef = useRef(false)
+  const appearanceDragRef = useRef<AppearanceDragState | null>(null)
+  const appearanceDragActivationTimerRef = useRef<number | null>(null)
+  const appearanceAutoScrollFrameRef = useRef<number | null>(null)
+  const appearanceSuppressClickRef = useRef(false)
   const backgroundPointerListenersRef = useRef<{
     move: (event: PointerEvent) => void
     end: (event: PointerEvent) => void
     cancel: (event: PointerEvent) => void
   } | null>(null)
   const layerPointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void
+    end: (event: PointerEvent) => void
+    cancel: (event: PointerEvent) => void
+  } | null>(null)
+  const appearancePointerListenersRef = useRef<{
     move: (event: PointerEvent) => void
     end: (event: PointerEvent) => void
     cancel: (event: PointerEvent) => void
@@ -1435,6 +1456,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const previewStartRequestRef = useRef(0)
   const previewStartPendingRef = useRef(false)
   const previewModeRef = useRef(false)
+  const stagePlaybackActiveRef = useRef(false)
+  const previewBackgroundIdRef = useRef('')
   const previewPanelSnapshotRef = useRef<PreviewPanelSnapshot | null>(null)
   const transformPersistTimerRef = useRef<number | null>(null)
   const propertyNameInputRef = useRef<HTMLInputElement>(null)
@@ -1511,6 +1534,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [pressedBackgroundId, setPressedBackgroundId] = useState('')
   const [backgroundDragPreview, setBackgroundDragPreview] = useState<BackgroundDragPreview | null>(null)
   const [backgroundDropHint, setBackgroundDropHint] = useState<BackgroundDropHint | null>(null)
+  const [draggedAppearanceItemId, setDraggedAppearanceItemId] = useState('')
+  const [pressedAppearanceItemId, setPressedAppearanceItemId] = useState('')
+  const [appearanceDropHint, setAppearanceDropHint] = useState<AppearanceDropHint | null>(null)
   const [manipulatingItemId, setManipulatingItemId] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [itemImageSizes, setItemImageSizes] = useState<Record<string, MediaSize>>(() => getStoredItemMediaSizes(group.items))
@@ -1519,6 +1545,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [receiverSyncStatus, setReceiverSyncStatus] = useState<SyncStatus | 'complete' | null>(null)
   const [receiverSyncError, setReceiverSyncError] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
+  const [stagePlaybackActive, setStagePlaybackActive] = useState(false)
   const [stageEntryActive, setStageEntryActive] = useState(true)
   const [previewReplayId, setPreviewReplayId] = useState(0)
   const [previewBackgroundId, setPreviewBackgroundId] = useState(() => (
@@ -1535,6 +1562,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [targetDraftHideAfterTarget, setTargetDraftHideAfterTarget] = useState(false)
   const [previewingAudioId, setPreviewingAudioId] = useState('')
   const [isAddingAudio, setIsAddingAudio] = useState(false)
+  const [audioRecorderContext, setAudioRecorderContext] = useState<'item' | 'background' | 'flow' | null>(null)
+  const [audioRecorderItemId, setAudioRecorderItemId] = useState('')
   const [audioFileErrorKey, setAudioFileErrorKey] = useState('')
   const [backgroundBgmDraftAudioId, setBackgroundBgmDraftAudioId] = useState('')
   const [backgroundBgmClearedNotice, setBackgroundBgmClearedNotice] = useState(false)
@@ -1593,7 +1622,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const backgroundIdsKey = backgrounds.map((background) => background.id).join('|')
   const activeBackground = getActiveBackgroundForGroup(group)
   const activeBackgroundId = activeBackground?.id ?? ''
-  const displayedBackground = previewMode
+  const playbackActive = previewMode || stagePlaybackActive
+  const displayedBackground = playbackActive
     ? backgrounds.find((background) => background.id === previewBackgroundId) ?? activeBackground
     : activeBackground
   const displayedBackgroundId = displayedBackground?.id ?? ''
@@ -1613,7 +1643,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const backgroundScopeActive = (advancedFeaturesEnabled || previewSelectedBackgroundOnly)
     && Boolean(displayedBackgroundId)
   const flowStageShowsAllItems = editorExperience === 'flow'
-    && !previewMode
+    && !playbackActive
     && (
       flowStep === 'objects'
       || flowStep === 'layout'
@@ -1625,12 +1655,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const appearanceItems = displayedBackgroundId
     ? getDynamicPlaybackItemsForBackground(sortedItems, displayedBackgroundId)
     : sortedItems
+  const appearanceOrderIndexById = new Map(
+    appearanceItems.map((item, index) => [item.id, index + 1])
+  )
   const displayedAppearanceItems = displayedItems.map((item) => (
     overlayAppearanceTimingForBackground(item, displayedBackgroundId)
   ))
   const displayedItemIdsKey = displayedItems.map((item) => item.id).join('|')
   const layerItems = [...displayedItems].reverse()
-  const selectableItems = editorExperience === 'flow' && !previewMode
+  const selectableItems = editorExperience === 'flow' && !playbackActive
     ? sortedItems
     : displayedItems
   const selectedItem = selectableItems.find((item) => item.id === selectedItemId) ?? selectableItems[0]
@@ -1676,7 +1709,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const previewBackgroundPlayMode = previewSelectedBackgroundOnly
     ? 'fixed'
     : group.backgroundPlayMode ?? 'fixed'
-  const showBackgroundQuickSwitcher = !previewMode && backgrounds.length >= 2
+  const showBackgroundQuickSwitcher = !playbackActive && backgrounds.length >= 2
   const backgroundIntervalDisplayValue = Number(backgroundIntervalDraft)
   const backgroundWheelValue = Number.isFinite(backgroundIntervalDisplayValue) && backgroundIntervalDisplayValue > 0
     ? backgroundIntervalDisplayValue
@@ -1695,7 +1728,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     || (flowStep === 'backgrounds' && flowDetailSection !== 'background')
     || (flowStep === 'audio' && flowDetailSection !== 'audio')
   )
-  const rightPanelMode = previewMode
+  const rightPanelMode = playbackActive
     ? 'preview'
     : flowCustomPanelVisible
       ? 'flow'
@@ -1704,7 +1737,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       : toolOpen && selectedItem
         ? 'object'
         : 'layers'
-  const rightPanelVisible = !previewMode && rightPanelMode !== 'collapsed'
+  const rightPanelVisible = !playbackActive && rightPanelMode !== 'collapsed'
   const availablePropertyTabs = propertyTabOptions.filter(({ id }) => (
     (advancedFeaturesEnabled ? advancedPropertyTabIds : basicPropertyTabIds).includes(id)
   ))
@@ -2017,6 +2050,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       : 'none'
     const timing = getBackgroundTransitionTiming(transition)
     if (transition === 'none' || timing.closeMs <= 0) {
+      previewBackgroundIdRef.current = nextBackgroundId
       setPreviewBackgroundId(nextBackgroundId)
       setBackgroundTransitionState(null)
       return 0
@@ -2029,6 +2063,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setBackgroundTransitionState({ type: transition, phase: 'closing', key })
 
     const switchTimer = window.setTimeout(() => {
+      previewBackgroundIdRef.current = nextBackgroundId
       setPreviewBackgroundId(nextBackgroundId)
       setBackgroundTransitionState({ type: transition, phase: 'opening', key })
     }, timing.closeMs)
@@ -2104,6 +2139,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     previewStartRequestRef.current += 1
     previewStartPendingRef.current = false
     previewModeRef.current = false
+    stagePlaybackActiveRef.current = false
     clearPreviewPlayback(false)
     stopAudioPreview()
     const nextFlowSession = loadDynamicCreationFlowSession(group.id, {
@@ -2114,6 +2150,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setFlowDetailSection('')
     setSelectedItemId(getInitialItemId(group.items, initialItemId, nextFlowSession.selectedItemId))
     setPreviewMode(false)
+    setStagePlaybackActive(false)
+    setAudioRecorderContext(null)
+    setAudioRecorderItemId('')
     previewPanelSnapshotRef.current = null
     setToolOpen(false)
     setBackgroundPanelOpen(false)
@@ -2142,7 +2181,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setIsSavingItemName(false)
     setSelectedLayerItemIds([])
     setSelectedBackgroundIds([])
-    setPreviewBackgroundId(getActiveBackgroundForGroup(group)?.id ?? '')
+    const nextPreviewBackgroundId = getActiveBackgroundForGroup(group)?.id ?? ''
+    previewBackgroundIdRef.current = nextPreviewBackgroundId
+    setPreviewBackgroundId(nextPreviewBackgroundId)
     setPreviewSelectedBackgroundOnly(false)
     clearTargetEditing()
   }, [advancedFeaturesEnabled, clearPreviewPlayback, clearTargetEditing, group.id, initialExperience, initialItemId, stopAudioPreview])
@@ -2153,7 +2194,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [flowSession.groupId, flowSession.selectedItemId, group.id, selectedItemId, updateFlowSession])
 
   useEffect(() => {
-    if (previewMode || editorExperience !== 'flow') return
+    if (playbackActive || editorExperience !== 'flow') return
 
     setRightPanelCollapsed(false)
     if (flowStep === 'objects') {
@@ -2179,7 +2220,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
 
     setToolOpen(false)
-  }, [activeTab, editorExperience, flowDetailSection, flowStep, group.items.length, previewMode])
+  }, [activeTab, editorExperience, flowDetailSection, flowStep, group.items.length, playbackActive])
 
   useEffect(() => {
     setCopyConfirmOpen(false)
@@ -2206,7 +2247,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [selectedItem?.id, selectedItem?.animationId])
 
   useLayoutEffect(() => {
-    if (!previewMode || !advancedFeaturesEnabled) {
+    if (!playbackActive || !advancedFeaturesEnabled) {
       itemPlaybackSessionRef.current = ''
       itemPlaybackContextRef.current = ''
       itemPlaybackEpochsRef.current = {}
@@ -2286,7 +2327,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     itemPlaybackContextRef.current = contextKey
     itemPlaybackEpochsRef.current = nextEpochs
     setItemPlaybackEpochs(nextEpochs)
-  }, [advancedFeaturesEnabled, appearIntervalMs, baseAppearanceTimeline, displayedAppearAnimation, displayedAppearanceItems, displayedAppearMode, displayedBackgroundId, displayedItems, displayedItemsTimelineKey, group.id, previewMode, previewReplayId])
+  }, [advancedFeaturesEnabled, appearIntervalMs, baseAppearanceTimeline, displayedAppearAnimation, displayedAppearanceItems, displayedAppearMode, displayedBackgroundId, displayedItems, displayedItemsTimelineKey, group.id, playbackActive, previewReplayId])
 
   useEffect(() => {
     if (!isEditingItemName) return undefined
@@ -2344,11 +2385,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [clickAnimationRangeOpen, copyConfirmOpen, isCopying, isImagePreviewOpen])
 
   useEffect(() => {
+    if (!stagePlaybackActive) return undefined
+    const handleStagePlaybackKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setStagePlaybackEnabled(false)
+    }
+    window.addEventListener('keydown', handleStagePlaybackKeyDown)
+    return () => window.removeEventListener('keydown', handleStagePlaybackKeyDown)
+  }, [stagePlaybackActive])
+
+  useEffect(() => {
     if (!targetEditingItemId) return
-    if (previewMode || !toolOpen || visibleActiveTab !== 'motion' || backgroundPanelOpen || rightPanelCollapsed) {
+    if (playbackActive || !toolOpen || visibleActiveTab !== 'motion' || backgroundPanelOpen || rightPanelCollapsed) {
       clearTargetEditing()
     }
-  }, [backgroundPanelOpen, clearTargetEditing, previewMode, rightPanelCollapsed, targetEditingItemId, toolOpen, visibleActiveTab])
+  }, [backgroundPanelOpen, clearTargetEditing, playbackActive, rightPanelCollapsed, targetEditingItemId, toolOpen, visibleActiveTab])
 
   useEffect(() => {
     const video = stageBackgroundVideoRef.current
@@ -2385,18 +2437,27 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [displayedBackground?.id, displayedBackground?.type, displayedBackground?.url, transitionPreparing])
 
   useEffect(() => {
-    const activeId = activeBackgroundId || backgrounds[0]?.id || ''
+    const explicitBackgroundId = previewSelectedBackgroundOnly
+      && backgrounds.some((background) => background.id === previewBackgroundIdRef.current)
+      ? previewBackgroundIdRef.current
+      : ''
+    const activeId = explicitBackgroundId || activeBackgroundId || backgrounds[0]?.id || ''
     const playbackStartIndex = getDynamicBackgroundPlaybackStartIndex(
       backgrounds,
       activeId,
       previewBackgroundPlayMode
     )
     const playbackStartId = backgrounds[playbackStartIndex]?.id ?? activeId
+    const playbackLoop = normalizeDynamicBackgroundPlaybackLoop(
+      group.backgroundPlaybackLoop,
+      true
+    )
+    previewBackgroundIdRef.current = playbackStartId
     setPreviewBackgroundId(playbackStartId)
     clearBackgroundTransitionPlayback()
 
     if (
-      !previewMode
+      !playbackActive
       || previewBackgroundPlayMode === 'fixed'
       || backgrounds.length <= 1
     ) {
@@ -2405,45 +2466,54 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
     let currentId = playbackStartId
     let cycle = 0
-    const activeIndex = Math.max(0, playbackStartIndex)
+    const roundLength = getDynamicBackgroundPlaybackRoundLength(
+      backgrounds,
+      previewBackgroundPlayMode
+    )
+    const playbackSeed = `${group.id}:${previewReplayId}:${Math.max(0, playbackStartIndex)}:${backgrounds.map((background) => background.id).join(',')}`
     const scheduleNext = (delayMs = backgroundIntervalMs) => {
       backgroundCycleTimerRef.current = window.setTimeout(() => {
-        const currentIndex = Math.max(0, backgrounds.findIndex((background) => background.id === currentId))
-        let nextId = playbackStartId
-        if (previewBackgroundPlayMode === 'sequence') {
-          nextId = backgrounds[(currentIndex + 1) % backgrounds.length]?.id ?? playbackStartId
-        } else {
-          cycle += 1
-          const nextIndex = getRandomBackgroundIndexForCycle(
-            group.id,
-            previewReplayId,
-            backgrounds,
-            activeIndex,
-            cycle
-          )
-          nextId = backgrounds[nextIndex]?.id ?? playbackStartId
-        }
+        backgroundCycleTimerRef.current = null
+        if (!previewModeRef.current && !stagePlaybackActiveRef.current) return
+
+        const nextCycle = cycle + 1
+        if (!playbackLoop && nextCycle >= roundLength) return
+
+        const nextIndex = getDynamicBackgroundPlaybackIndexAtCycle(
+          backgrounds,
+          backgrounds[Math.max(0, playbackStartIndex)]?.id ?? activeId,
+          previewBackgroundPlayMode,
+          nextCycle,
+          playbackLoop,
+          playbackSeed
+        )
+        const nextId = backgrounds[nextIndex]?.id ?? ''
+        if (!nextId || nextId === currentId) return
+
         const transitionDuration = transitionToPreviewBackground(currentId, nextId)
         currentId = nextId
-        scheduleNext(Math.max(backgroundIntervalMs, transitionDuration + 120))
+        cycle = nextCycle
+        if (playbackLoop || cycle < roundLength - 1) {
+          scheduleNext(Math.max(backgroundIntervalMs, transitionDuration + 120))
+        }
       }, delayMs)
     }
     scheduleNext()
 
     return clearBackgroundTransitionPlayback
-  }, [activeBackgroundId, backgroundIdsKey, backgroundIntervalMs, clearBackgroundTransitionPlayback, group.background?.id, group.id, previewBackgroundPlayMode, previewMode, previewReplayId, transitionToPreviewBackground])
+  }, [activeBackgroundId, backgroundIdsKey, backgroundIntervalMs, clearBackgroundTransitionPlayback, group.background?.id, group.backgroundPlaybackLoop, group.id, playbackActive, previewBackgroundPlayMode, previewSelectedBackgroundOnly, previewReplayId, transitionToPreviewBackground])
 
   useEffect(() => {
-    if (!previewMode || !advancedFeaturesEnabled) {
+    if (!playbackActive || !advancedFeaturesEnabled) {
       stopBgmPlayback(false)
       return
     }
     const bgm = group.audioLibrary?.find((audio) => audio.id === displayedBackground?.bgmAudioId)
     playPreviewBgm(bgm)
-  }, [advancedFeaturesEnabled, displayedBackground?.bgmAudioId, group.audioLibrary, playPreviewBgm, previewMode, previewReplayId, stopBgmPlayback])
+  }, [advancedFeaturesEnabled, displayedBackground?.bgmAudioId, group.audioLibrary, playbackActive, playPreviewBgm, previewReplayId, stopBgmPlayback])
 
   useEffect(() => {
-    const sessionKey = previewMode && advancedFeaturesEnabled
+    const sessionKey = playbackActive && advancedFeaturesEnabled
       ? `${group.id}:${previewReplayId}`
       : ''
     if (objectAudioSessionKeyRef.current !== sessionKey) {
@@ -2498,7 +2568,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       }, Math.max(0, playAt - performance.now()))
       objectAudioTimersRef.current.set(item.id, timer)
     })
-  }, [advancedFeaturesEnabled, displayedBackgroundId, displayedItems, displayedItemsAudioKey, itemPlaybackEpochs, playObjectAudio, previewMode, previewReplayId])
+  }, [advancedFeaturesEnabled, displayedBackgroundId, displayedItems, displayedItemsAudioKey, itemPlaybackEpochs, playbackActive, playObjectAudio, previewReplayId])
 
   useLayoutEffect(() => {
     const stage = stageRef.current
@@ -2542,7 +2612,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   useEffect(() => {
     const preventNativeScrollDuringLayerDrag = (event: TouchEvent) => {
-      if (layerDragRef.current?.active || backgroundDragRef.current?.active) event.preventDefault()
+      if (
+        layerDragRef.current?.active
+        || backgroundDragRef.current?.active
+        || appearanceDragRef.current?.active
+      ) event.preventDefault()
     }
 
     document.addEventListener('touchmove', preventNativeScrollDuringLayerDrag, { passive: false, capture: true })
@@ -2555,7 +2629,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const selectedItemExists = group.items.some((item) => item.id === selectedItemId)
     const selectedItemIsDisplayed = displayedItems.some((item) => item.id === selectedItemId)
     const selectionMustFollowBackground = editorExperience !== 'flow'
-      && !previewMode
+      && !playbackActive
       && backgroundScopeActive
       && !selectedItemIsDisplayed
 
@@ -2577,18 +2651,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     displayedItemIdsKey,
     editorExperience,
     group.items,
-    previewMode,
+    playbackActive,
     selectedItemId
   ])
 
   useEffect(() => {
-    if (previewMode) return
+    if (playbackActive) return
     const displayedItemIds = new Set(displayedItems.map((item) => item.id))
     setSelectedLayerItemIds((currentIds) => {
       const nextIds = currentIds.filter((itemId) => displayedItemIds.has(itemId))
       return nextIds.length === currentIds.length ? currentIds : nextIds
     })
-  }, [displayedItemIdsKey, previewMode])
+  }, [displayedItemIdsKey, playbackActive])
 
   useEffect(() => {
     if (transitionPreparing) return undefined
@@ -2670,6 +2744,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     previewStartRequestRef.current += 1
     previewStartPendingRef.current = false
     previewModeRef.current = false
+    stagePlaybackActiveRef.current = false
     clearTargetEditing()
     clearPreviewPlayback(false)
     stopAudioPreview()
@@ -2698,6 +2773,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (backgroundAutoScrollFrameRef.current !== null) {
       window.cancelAnimationFrame(backgroundAutoScrollFrameRef.current)
     }
+    if (appearanceDragActivationTimerRef.current !== null) {
+      window.clearTimeout(appearanceDragActivationTimerRef.current)
+    }
+    if (appearanceAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(appearanceAutoScrollFrameRef.current)
+    }
     const listeners = layerPointerListenersRef.current
     if (listeners) {
       window.removeEventListener('pointermove', listeners.move)
@@ -2712,11 +2793,26 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       window.removeEventListener('pointercancel', backgroundListeners.cancel)
       backgroundPointerListenersRef.current = null
     }
+    const appearanceListeners = appearancePointerListenersRef.current
+    if (appearanceListeners) {
+      window.removeEventListener('pointermove', appearanceListeners.move)
+      window.removeEventListener('pointerup', appearanceListeners.end)
+      window.removeEventListener('pointercancel', appearanceListeners.cancel)
+      appearancePointerListenersRef.current = null
+    }
   }, [clearPreviewPlayback, clearTargetEditing, stopAudioPreview])
 
   useEffect(() => {
     previewModeRef.current = previewMode
   }, [previewMode])
+
+  useEffect(() => {
+    stagePlaybackActiveRef.current = stagePlaybackActive
+  }, [stagePlaybackActive])
+
+  useLayoutEffect(() => {
+    previewBackgroundIdRef.current = previewBackgroundId
+  }, [previewBackgroundId])
 
   useEffect(() => {
     if (transitionPreparing) return undefined
@@ -2776,7 +2872,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const selectItem = (itemId: string, openTool = false) => {
-    if (previewMode) return
+    if (playbackActive) return
     if (itemId !== selectedItemId) clearTargetEditing()
 
     const shouldRefreshPropertyPreview = (openTool && (!toolOpen || selectedItemId !== itemId))
@@ -2817,6 +2913,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       intervalMs?: number
       backgroundPlayMode?: DynamicBackgroundPlayMode
       backgroundIntervalMs?: number
+      backgroundPlaybackLoop?: boolean
+      backgroundId?: string
       replayId?: number
     } = {}
   ) => {
@@ -2831,7 +2929,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       appearAnimation: displayedAppearAnimation,
       backgroundPlayMode: options.backgroundPlayMode ?? previewGroup.backgroundPlayMode,
       backgroundIntervalMs: options.backgroundIntervalMs ?? backgroundIntervalMs,
+      backgroundPlaybackLoop: options.backgroundPlaybackLoop ?? previewGroup.backgroundPlaybackLoop ?? true,
       backgroundTransition: previewGroup.backgroundTransition ?? 'none',
+      backgroundId: options.backgroundId ?? (enabled ? previewBackgroundIdRef.current : ''),
       replayId: options.replayId ?? previewReplayIdRef.current,
       resolvedAnimationIds: buildResolvedAnimationIds(options.replayId ?? previewReplayIdRef.current)
     })
@@ -2843,6 +2943,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     sendPreviewModeState(true, {
       appearMode,
       intervalMs,
+      backgroundId: previewBackgroundIdRef.current,
       replayId
     })
   }
@@ -2850,7 +2951,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const startPreviewReceiverSync = (
     requestId: number,
     replayId: number,
-    backgroundPlayMode?: DynamicBackgroundPlayMode
+    backgroundPlayMode?: DynamicBackgroundPlayMode,
+    backgroundId?: string
   ) => {
     let timedOut = false
     let settled = false
@@ -2891,7 +2993,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         if (
           previewStartRequestRef.current !== requestId
           || previewReplayIdRef.current !== replayId
-          || !previewModeRef.current
+          || (!previewModeRef.current && !stagePlaybackActiveRef.current)
         ) return
         setReceiverSyncError(false)
         if (synced) {
@@ -2905,7 +3007,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         } else {
           setReceiverSyncStatus(null)
         }
-        sendPreviewModeState(true, { replayId, backgroundPlayMode })
+        sendPreviewModeState(true, { replayId, backgroundPlayMode, backgroundId })
       })
       .catch(() => {
         settled = true
@@ -2930,7 +3032,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     } = {}
   ) => {
     if (enabled) {
-      if (previewModeRef.current || previewStartPendingRef.current) return
+      if (previewModeRef.current || stagePlaybackActiveRef.current || previewStartPendingRef.current) return
       const requestId = previewStartRequestRef.current + 1
       previewStartRequestRef.current = requestId
       previewStartPendingRef.current = false
@@ -2947,13 +3049,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       }
       const replayId = nextPreviewReplayId()
       previewModeRef.current = true
+      const targetBackgroundId = options.backgroundId
+        ?? getActiveBackgroundForGroup(latestGroupRef.current)?.id
+        ?? getBackgrounds(latestGroupRef.current)[0]?.id
+        ?? ''
+      previewBackgroundIdRef.current = targetBackgroundId
       setPreviewSelectedBackgroundOnly(options.backgroundPlayMode === 'fixed' && Boolean(options.backgroundId))
-      setPreviewBackgroundId(
-        options.backgroundId
-          ?? getActiveBackgroundForGroup(latestGroupRef.current)?.id
-          ?? getBackgrounds(latestGroupRef.current)[0]?.id
-          ?? ''
-      )
+      setPreviewBackgroundId(targetBackgroundId)
       setPreviewMode(true)
       setToolOpen(false)
       setBackgroundPanelOpen(false)
@@ -2963,7 +3065,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       setIsImagePreviewOpen(false)
       setManipulatingItemId('')
       setReceiverSyncError(false)
-      startPreviewReceiverSync(requestId, replayId, options.backgroundPlayMode)
+      startPreviewReceiverSync(requestId, replayId, options.backgroundPlayMode, targetBackgroundId)
       return
     }
 
@@ -2985,15 +3087,68 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setBackgroundPanelOpen(false)
     clearPreviewPlayback(false)
     previewPanelSnapshotRef.current = null
-    sendPreviewModeState(false, { replayId })
+    previewBackgroundIdRef.current = ''
+    sendPreviewModeState(false, { replayId, backgroundId: '' })
+  }
+
+  const setStagePlaybackEnabled = (
+    enabled: boolean,
+    options: {
+      backgroundId?: string
+      backgroundPlayMode?: DynamicBackgroundPlayMode
+    } = {}
+  ) => {
+    if (enabled) {
+      if (previewModeRef.current || stagePlaybackActiveRef.current || previewStartPendingRef.current) return
+      const selectedBackgroundId = options.backgroundId
+        ?? getActiveBackgroundForGroup(latestGroupRef.current)?.id
+        ?? getBackgrounds(latestGroupRef.current)[0]?.id
+        ?? ''
+      if (!selectedBackgroundId) return
+
+      const requestId = previewStartRequestRef.current + 1
+      previewStartRequestRef.current = requestId
+      previewStartPendingRef.current = false
+      clearTargetEditing()
+      clearPreviewPlayback(false)
+      const replayId = nextPreviewReplayId()
+      stagePlaybackActiveRef.current = true
+      previewBackgroundIdRef.current = selectedBackgroundId
+      setPreviewSelectedBackgroundOnly(true)
+      setPreviewBackgroundId(selectedBackgroundId)
+      setStagePlaybackActive(true)
+      setReceiverSyncError(false)
+      startPreviewReceiverSync(requestId, replayId, options.backgroundPlayMode ?? 'fixed', selectedBackgroundId)
+      return
+    }
+
+    previewStartRequestRef.current += 1
+    previewStartPendingRef.current = false
+    if (!stagePlaybackActiveRef.current) return
+    stagePlaybackActiveRef.current = false
+    setStagePlaybackActive(false)
+    setPreviewSelectedBackgroundOnly(false)
+    const nextPreviewBackgroundId = getActiveBackgroundForGroup(latestGroupRef.current)?.id
+      ?? getBackgrounds(latestGroupRef.current)[0]?.id
+      ?? ''
+    previewBackgroundIdRef.current = nextPreviewBackgroundId
+    setPreviewBackgroundId(nextPreviewBackgroundId)
+    setReceiverSyncStatus(null)
+    setReceiverSyncError(false)
+    clearPreviewPlayback(false)
+    sendPreviewModeState(false, { replayId: previewReplayIdRef.current, backgroundId: '' })
   }
 
   const handleSelectedBackgroundPreview = () => {
-    const selectedBackground = latestGroupRef.current.background
-      ?? getBackgrounds(latestGroupRef.current)[0]
+    if (stagePlaybackActiveRef.current) {
+      setStagePlaybackEnabled(false)
+      return
+    }
+
+    const selectedBackground = getActiveBackgroundForGroup(latestGroupRef.current)
     if (!selectedBackground) return
 
-    setPreviewModeEnabled(true, {
+    setStagePlaybackEnabled(true, {
       backgroundId: selectedBackground.id,
       backgroundPlayMode: 'fixed'
     })
@@ -3027,7 +3182,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (previewMode) {
+    if (stagePlaybackActiveRef.current) {
+      event.preventDefault()
+      setStagePlaybackEnabled(false)
+      return
+    }
+
+    if (playbackActive) {
       event.preventDefault()
       return
     }
@@ -3592,10 +3753,14 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [markItemMediaReady])
 
   const handleBackgroundSelect = async (backgroundId: string) => {
-    const selectedBackground = backgrounds.find((background) => background.id === backgroundId)
+    if (stagePlaybackActiveRef.current) {
+      setStagePlaybackEnabled(false)
+    }
+    const currentGroup = latestGroupRef.current
+    const selectedBackground = getBackgrounds(currentGroup).find((background) => background.id === backgroundId)
     setBackgroundBgmDraftAudioId(selectedBackground?.bgmAudioId ?? '')
-    setBackgroundTransitionDraft(group.backgroundTransition ?? 'none')
-    const nextGroup = await setActiveDynamicBackground(group.id, backgroundId)
+    setBackgroundTransitionDraft(currentGroup.backgroundTransition ?? 'none')
+    const nextGroup = await setActiveDynamicBackground(currentGroup.id, backgroundId)
     if (!nextGroup) return
 
     latestGroupRef.current = nextGroup
@@ -3603,7 +3768,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const backgroundPayload = toBackgroundPayload(nextGroup.background)
     if (backgroundPayload) {
       sendDynamicEvent(wsIp, dynamicPort, 'BackgroundSet', {
-        groupId: group.id,
+        groupId: currentGroup.id,
         ...backgroundPayload
       })
     }
@@ -3623,15 +3788,23 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   const setBackgroundPlayback = (
     backgroundPlayMode: DynamicBackgroundPlayMode,
-    intervalMs = backgroundIntervalMs
+    intervalMs = backgroundIntervalMs,
+    backgroundPlaybackLoop = normalizeDynamicBackgroundPlaybackLoop(
+      latestGroupRef.current.backgroundPlaybackLoop,
+      true
+    )
   ) => {
-    const updatedGroup = updateDynamicBackgroundPlayback(group.id, backgroundPlayMode, intervalMs)
+    const updatedGroup = updateDynamicBackgroundPlayback(group.id, backgroundPlayMode, intervalMs, backgroundPlaybackLoop)
     if (!updatedGroup) return
 
     const nextGroup: DynamicGroup = {
       ...latestGroupRef.current,
       backgroundPlayMode: updatedGroup.backgroundPlayMode,
       backgroundIntervalMs: updatedGroup.backgroundIntervalMs,
+      backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
+        updatedGroup.backgroundPlaybackLoop,
+        true
+      ),
       updatedAt: updatedGroup.updatedAt
     }
     latestGroupRef.current = nextGroup
@@ -3639,8 +3812,20 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     sendDynamicEvent(wsIp, dynamicPort, 'BackgroundPlayback', {
       groupId: group.id,
       mode: nextGroup.backgroundPlayMode,
-      intervalMs: nextGroup.backgroundIntervalMs
+      intervalMs: nextGroup.backgroundIntervalMs,
+      backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
+        nextGroup.backgroundPlaybackLoop,
+        true
+      )
     })
+  }
+
+  const setBackgroundPlaybackLoop = (loop: boolean) => {
+    setBackgroundPlayback(
+      latestGroupRef.current.backgroundPlayMode ?? 'fixed',
+      latestGroupRef.current.backgroundIntervalMs ?? backgroundIntervalMs,
+      loop
+    )
   }
 
   const commitBackgroundIntervalDraft = (displayValue?: number) => {
@@ -3815,12 +4000,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setAudioFileErrorKey('')
     setIsAddingAudio(true)
     try {
+      const currentGroup = latestGroupRef.current
+      const existingAudioIds = new Set((currentGroup.audioLibrary ?? []).map((audio) => audio.id))
       const [nextGroup, durationMs] = await Promise.all([
-        addDynamicAudio(group.id, normalizedFile),
+        addDynamicAudio(currentGroup.id, normalizedFile),
         readAudioDurationMs(normalizedFile)
       ])
       if (!nextGroup) throw new Error('Unable to add audio to the current group')
-      const addedAudio = nextGroup.audioLibrary?.[0]
+      const addedAudio = nextGroup.audioLibrary?.find((audio) => !existingAudioIds.has(audio.id))
+        ?? nextGroup.audioLibrary?.[0]
       if (!addedAudio) throw new Error('Stored audio is missing from the current group')
       const groupWithDuration = updateAudioDuration(nextGroup, addedAudio.id, durationMs)
       const stateRevision = reserveDynamicGroupStateRevision(groupWithDuration.id, groupWithDuration.updatedAt)
@@ -3832,7 +4020,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         file: normalizedFile,
         fields: {
           role: 'audio',
-          groupId: group.id,
+          groupId: groupWithDuration.id,
           assetId: addedAudio.id,
           mediaType: 'audio',
           mimeType: addedAudio.mimeType,
@@ -3860,6 +4048,50 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     persistAdvancedItem((item) => ({ ...item, audioId: audio.id }))
   }
 
+  const openAudioRecorder = (context: 'item' | 'background' | 'flow') => {
+    if (isAddingAudio) return
+    setAudioRecorderItemId(context === 'item' || context === 'flow' ? selectedItem?.id ?? '' : '')
+    setAudioRecorderContext(context)
+  }
+
+  const closeAudioRecorder = () => {
+    setAudioRecorderContext(null)
+    setAudioRecorderItemId('')
+  }
+
+  const handleRecordedAudioSave = async ({ file }: { file: File }) => {
+    const context = audioRecorderContext
+    const targetItemId = audioRecorderItemId
+    const audio = await addAudioFile(file)
+    if (!audio) throw new Error(t('control.audioAddFailed'))
+
+    if ((context === 'item' || context === 'flow') && targetItemId) {
+      const targetStillExists = latestGroupRef.current.items.some((item) => item.id === targetItemId)
+      if (targetStillExists) {
+        const changedItem = updateItemLocal(targetItemId, (item) => ({ ...item, audioId: audio.id }), {
+          persist: true,
+          emit: false
+        })
+        if (changedItem) sendGroupStateSync(latestGroupRef.current)
+      }
+    } else if (context === 'background') {
+      setBackgroundBgmDraftAudioId(audio.id)
+      if (selectedBackgroundIds.length > 0) {
+        const nextGroup = await setDynamicBackgroundBgm(
+          latestGroupRef.current.id,
+          selectedBackgroundIds,
+          audio.id
+        )
+        if (nextGroup) {
+          latestGroupRef.current = nextGroup
+          onGroupChange(nextGroup)
+          sendGroupStateSync(nextGroup)
+        }
+      }
+    }
+    closeAudioRecorder()
+  }
+
   const handleBackgroundAudioChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -3868,7 +4100,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!audio) return
     setBackgroundBgmDraftAudioId(audio.id)
     if (selectedBackgroundIds.length > 0) {
-      const nextGroup = await setDynamicBackgroundBgm(group.id, selectedBackgroundIds, audio.id)
+      const nextGroup = await setDynamicBackgroundBgm(
+        latestGroupRef.current.id,
+        selectedBackgroundIds,
+        audio.id
+      )
       if (nextGroup) {
         latestGroupRef.current = nextGroup
         onGroupChange(nextGroup)
@@ -4884,7 +5120,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleLayerCardPointerDown = (event: React.PointerEvent<HTMLElement>, itemId: string) => {
-    if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    if (playbackActive || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
     const target = event.target as HTMLElement
     if (target.closest('.dynamic-layer-property-button, .dynamic-layer-delete-button, .dynamic-layer-select, .dynamic-layer-children-toggle')) return
 
@@ -5091,9 +5327,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }, 0)
   }
 
-  const updateBackgroundDragOrderAtPoint = (clientY: number) => {
+  const updateBackgroundDragOrderAtPoint = (clientX: number, clientY: number) => {
     const dragState = backgroundDragRef.current
-    const backgroundList = backgroundListRef.current
+    const backgroundList = dragState?.listElement
     if (!dragState?.active || !backgroundList) return
 
     const cards = Array.from(backgroundList.querySelectorAll<HTMLElement>('[data-background-id]'))
@@ -5103,11 +5339,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       return
     }
 
+    const coordinate = dragState.axis === 'horizontal' ? clientX : clientY
     let targetCard = cards[cards.length - 1]
     let placement: BackgroundDropHint['placement'] = 'after'
     for (const card of cards) {
       const rect = card.getBoundingClientRect()
-      if (clientY < rect.top + rect.height / 2) {
+      const midpoint = dragState.axis === 'horizontal'
+        ? rect.left + rect.width / 2
+        : rect.top + rect.height / 2
+      if (coordinate < midpoint) {
         targetCard = card
         placement = 'before'
         break
@@ -5137,30 +5377,43 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   const runBackgroundAutoScroll = () => {
     const dragState = backgroundDragRef.current
-    const backgroundList = backgroundListRef.current
+    const backgroundList = dragState?.listElement
     if (!dragState?.active || !backgroundList) {
       backgroundAutoScrollFrameRef.current = null
       return
     }
 
     const rect = backgroundList.getBoundingClientRect()
-    const distanceFromTop = dragState.lastPoint.y - rect.top
-    const distanceFromBottom = rect.bottom - dragState.lastPoint.y
+    const distanceFromStart = dragState.axis === 'horizontal'
+      ? dragState.lastPoint.x - rect.left
+      : dragState.lastPoint.y - rect.top
+    const distanceFromEnd = dragState.axis === 'horizontal'
+      ? rect.right - dragState.lastPoint.x
+      : rect.bottom - dragState.lastPoint.y
     let scrollDelta = 0
 
-    if (distanceFromTop < LAYER_AUTO_SCROLL_EDGE) {
-      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromTop) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+    if (distanceFromStart < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromStart) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
       scrollDelta = -Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
-    } else if (distanceFromBottom < LAYER_AUTO_SCROLL_EDGE) {
-      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromBottom) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+    } else if (distanceFromEnd < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromEnd) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
       scrollDelta = Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
     }
 
     if (scrollDelta !== 0) {
-      const previousScrollTop = backgroundList.scrollTop
-      backgroundList.scrollTop += scrollDelta
-      if (backgroundList.scrollTop !== previousScrollTop) {
-        updateBackgroundDragOrderAtPoint(dragState.lastPoint.y)
+      const previousScrollPosition = dragState.axis === 'horizontal'
+        ? backgroundList.scrollLeft
+        : backgroundList.scrollTop
+      if (dragState.axis === 'horizontal') {
+        backgroundList.scrollLeft += scrollDelta
+      } else {
+        backgroundList.scrollTop += scrollDelta
+      }
+      const nextScrollPosition = dragState.axis === 'horizontal'
+        ? backgroundList.scrollLeft
+        : backgroundList.scrollTop
+      if (nextScrollPosition !== previousScrollPosition) {
+        updateBackgroundDragOrderAtPoint(dragState.lastPoint.x, dragState.lastPoint.y)
       }
     }
 
@@ -5193,9 +5446,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleBackgroundCardPointerDown = (event: React.PointerEvent<HTMLElement>, backgroundId: string) => {
-    if (previewMode || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    if (playbackActive || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
     const target = event.target as HTMLElement
     if (target.closest('.background-check, input, .background-card-delete')) return
+    const sourceList = event.currentTarget.closest<HTMLElement>(
+      '.dynamic-background-quick-list, .background-library-list, .dynamic-object-background-list'
+    )
+    if (!sourceList) return
+    const axis: BackgroundDragState['axis'] = sourceList.classList.contains('dynamic-background-quick-list')
+      ? 'horizontal'
+      : 'vertical'
 
     const sourceRect = event.currentTarget.getBoundingClientRect()
 
@@ -5214,7 +5474,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       startPoint: { x: event.clientX, y: event.clientY },
       lastPoint: { x: event.clientX, y: event.clientY },
       active: false,
-      changed: false
+      changed: false,
+      listElement: sourceList,
+      axis
     }
     backgroundDragRef.current = dragState
     setPressedBackgroundId(backgroundId)
@@ -5270,7 +5532,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           y: event.clientY - dragState.pointerOffset.y
         }
       : currentPreview)
-    updateBackgroundDragOrderAtPoint(event.clientY)
+    updateBackgroundDragOrderAtPoint(event.clientX, event.clientY)
   }
 
   const handleBackgroundCardPointerEnd = (event: PointerEvent) => {
@@ -5289,13 +5551,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     event.preventDefault()
     event.stopPropagation()
     if (dragState.changed) {
-      const nextGroup = reorderDynamicBackgrounds(group.id, dragState.orderedIds, latestGroupRef.current)
-      if (nextGroup) {
-        latestGroupRef.current = nextGroup
-        onGroupChange(nextGroup)
-        sendGroupStateSync(nextGroup)
-        playUiSound('success')
-      }
+      applyBackgroundOrder(dragState.orderedIds)
     }
     setDraggedBackgroundId('')
     setBackgroundDragPreview(null)
@@ -5331,8 +5587,333 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     backgroundSuppressClickRef.current = false
   }
 
+  const getFullPlaybackOrderForAppearance = (
+    orderedVisibleIds: string[],
+    visibleIds: string[],
+    sourceGroup = latestGroupRef.current
+  ) => {
+    const visibleIdSet = new Set(visibleIds)
+    let visibleIndex = 0
+    const fallbackVisibleIds = [...visibleIds]
+    const replacementIds = orderedVisibleIds.length > 0 ? orderedVisibleIds : fallbackVisibleIds
+    return [...sourceGroup.items]
+      .sort((left, right) => left.order - right.order)
+      .map((item) => {
+        if (!visibleIdSet.has(item.id)) return item.id
+        const nextId = replacementIds[visibleIndex]
+        visibleIndex += 1
+        return nextId ?? item.id
+      })
+  }
+
+  const applyAppearanceOrderLocally = (
+    orderedVisibleIds: string[],
+    visibleIds: string[]
+  ) => {
+    const fullPlaybackIds = getFullPlaybackOrderForAppearance(orderedVisibleIds, visibleIds)
+    const layerOrderIds = convertDynamicPlaybackOrderToLayerOrder(
+      fullPlaybackIds,
+      latestGroupRef.current.items.map((item) => item.id)
+    )
+    const orderById = new Map(
+      layerOrderIds.map((itemId, index) => [itemId, layerOrderIds.length - 1 - index])
+    )
+    const currentGroup = latestGroupRef.current
+    const nextGroup: DynamicGroup = {
+      ...currentGroup,
+      items: currentGroup.items.map((item) => ({
+        ...item,
+        order: orderById.get(item.id) ?? item.order
+      })),
+      updatedAt: Date.now()
+    }
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+  }
+
+  const clearAppearanceDragActivationTimer = () => {
+    if (appearanceDragActivationTimerRef.current === null) return
+    window.clearTimeout(appearanceDragActivationTimerRef.current)
+    appearanceDragActivationTimerRef.current = null
+  }
+
+  const stopAppearanceAutoScroll = () => {
+    if (appearanceAutoScrollFrameRef.current === null) return
+    window.cancelAnimationFrame(appearanceAutoScrollFrameRef.current)
+    appearanceAutoScrollFrameRef.current = null
+  }
+
+  const detachAppearancePointerListeners = () => {
+    const listeners = appearancePointerListenersRef.current
+    if (!listeners) return
+    window.removeEventListener('pointermove', listeners.move)
+    window.removeEventListener('pointerup', listeners.end)
+    window.removeEventListener('pointercancel', listeners.cancel)
+    appearancePointerListenersRef.current = null
+  }
+
+  const updateAppearanceDragOrderAtPoint = (clientY: number) => {
+    const dragState = appearanceDragRef.current
+    const appearanceList = appearanceListRef.current
+    if (!dragState?.active || !appearanceList) return
+
+    const cards = Array.from(appearanceList.querySelectorAll<HTMLElement>('[data-appearance-item-id]'))
+      .filter((card) => card.dataset.appearanceItemId !== dragState.itemId)
+    if (cards.length === 0) {
+      setAppearanceDropHint(null)
+      return
+    }
+
+    let targetCard = cards[cards.length - 1]
+    let placement: AppearanceDropHint['placement'] = 'after'
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) {
+        targetCard = card
+        placement = 'before'
+        break
+      }
+    }
+    const targetItemId = targetCard.dataset.appearanceItemId
+    if (!targetItemId) return
+    setAppearanceDropHint((currentHint) => (
+      currentHint?.itemId === targetItemId && currentHint.placement === placement
+        ? currentHint
+        : { itemId: targetItemId, placement }
+    ))
+
+    const nextIds = dragState.orderedIds.filter((itemId) => itemId !== dragState.itemId)
+    const targetIndex = nextIds.indexOf(targetItemId)
+    if (targetIndex < 0) return
+    nextIds.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, dragState.itemId)
+    if (nextIds.every((itemId, index) => itemId === dragState.orderedIds[index])) return
+    dragState.orderedIds = nextIds
+    dragState.changed = true
+    applyAppearanceOrderLocally(nextIds, dragState.visibleIds)
+  }
+
+  const runAppearanceAutoScroll = () => {
+    const dragState = appearanceDragRef.current
+    const appearanceList = appearanceListRef.current
+    if (!dragState?.active || !appearanceList) {
+      appearanceAutoScrollFrameRef.current = null
+      return
+    }
+    const rect = appearanceList.getBoundingClientRect()
+    const distanceFromTop = dragState.lastPoint.y - rect.top
+    const distanceFromBottom = rect.bottom - dragState.lastPoint.y
+    let scrollDelta = 0
+    if (distanceFromTop < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromTop) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = -Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    } else if (distanceFromBottom < LAYER_AUTO_SCROLL_EDGE) {
+      const ratio = clamp((LAYER_AUTO_SCROLL_EDGE - distanceFromBottom) / LAYER_AUTO_SCROLL_EDGE, 0, 1)
+      scrollDelta = Math.max(2, LAYER_AUTO_SCROLL_MAX_SPEED * ratio)
+    }
+    if (scrollDelta !== 0) {
+      const previousScrollTop = appearanceList.scrollTop
+      appearanceList.scrollTop += scrollDelta
+      if (appearanceList.scrollTop !== previousScrollTop) {
+        updateAppearanceDragOrderAtPoint(dragState.lastPoint.y)
+      }
+    }
+    appearanceAutoScrollFrameRef.current = window.requestAnimationFrame(runAppearanceAutoScroll)
+  }
+
+  const activateAppearanceDrag = (dragState: AppearanceDragState) => {
+    if (appearanceDragRef.current !== dragState || dragState.active) return
+    clearAppearanceDragActivationTimer()
+    dragState.active = true
+    appearanceSuppressClickRef.current = true
+    try {
+      dragState.sourceElement.setPointerCapture(dragState.pointerId)
+    } catch {
+      // Pointer capture can be unavailable in older iPad WebViews.
+    }
+    setDraggedAppearanceItemId(dragState.itemId)
+    setPressedAppearanceItemId('')
+    setAppearanceDropHint(null)
+    if (appearanceAutoScrollFrameRef.current === null) {
+      appearanceAutoScrollFrameRef.current = window.requestAnimationFrame(runAppearanceAutoScroll)
+    }
+  }
+
+  const handleAppearanceCardPointerDown = (event: React.PointerEvent<HTMLElement>, itemId: string) => {
+    if (playbackActive || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    const target = event.target as HTMLElement
+    if (target.closest('.dynamic-appearance-item-wheel, input, button')) return
+    const visibleIds = appearanceItems.map((item) => item.id)
+    const dragState: AppearanceDragState = {
+      itemId,
+      orderedIds: [...visibleIds],
+      visibleIds,
+      originalGroup: latestGroupRef.current,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      sourceElement: event.currentTarget,
+      startPoint: { x: event.clientX, y: event.clientY },
+      lastPoint: { x: event.clientX, y: event.clientY },
+      active: false,
+      changed: false
+    }
+    appearanceDragRef.current = dragState
+    setPressedAppearanceItemId(itemId)
+    detachAppearancePointerListeners()
+    const listeners = {
+      move: handleAppearanceCardPointerMove,
+      end: handleAppearanceCardPointerEnd,
+      cancel: handleAppearanceCardPointerCancel
+    }
+    appearancePointerListenersRef.current = listeners
+    window.addEventListener('pointermove', listeners.move, { passive: false })
+    window.addEventListener('pointerup', listeners.end)
+    window.addEventListener('pointercancel', listeners.cancel)
+    if (event.pointerType !== 'mouse') {
+      clearAppearanceDragActivationTimer()
+      appearanceDragActivationTimerRef.current = window.setTimeout(() => {
+        activateAppearanceDrag(dragState)
+      }, LAYER_TOUCH_HOLD_MS)
+    }
+  }
+
+  const handleAppearanceCardPointerMove = (event: PointerEvent) => {
+    const dragState = appearanceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    dragState.lastPoint = { x: event.clientX, y: event.clientY }
+    const distance = Math.hypot(
+      event.clientX - dragState.startPoint.x,
+      event.clientY - dragState.startPoint.y
+    )
+    if (!dragState.active) {
+      if (dragState.pointerType === 'mouse' && distance >= LAYER_MOUSE_DRAG_THRESHOLD) {
+        activateAppearanceDrag(dragState)
+      } else if (dragState.pointerType !== 'mouse' && distance >= LAYER_TOUCH_SCROLL_THRESHOLD) {
+        clearAppearanceDragActivationTimer()
+        appearanceDragRef.current = null
+        setPressedAppearanceItemId('')
+        detachAppearancePointerListeners()
+      }
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    updateAppearanceDragOrderAtPoint(event.clientY)
+  }
+
+  const handleAppearanceCardPointerEnd = (event: PointerEvent) => {
+    const dragState = appearanceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    clearAppearanceDragActivationTimer()
+    stopAppearanceAutoScroll()
+    detachAppearancePointerListeners()
+    try {
+      if (dragState.sourceElement.hasPointerCapture(dragState.pointerId)) {
+        dragState.sourceElement.releasePointerCapture(dragState.pointerId)
+      }
+    } catch {
+      // Pointer capture may already be released.
+    }
+    appearanceDragRef.current = null
+    setPressedAppearanceItemId('')
+    if (!dragState.active) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (dragState.changed) {
+      const fullPlaybackIds = getFullPlaybackOrderForAppearance(
+        dragState.orderedIds,
+        dragState.visibleIds,
+        latestGroupRef.current
+      )
+      const layerOrderIds = convertDynamicPlaybackOrderToLayerOrder(
+        fullPlaybackIds,
+        latestGroupRef.current.items.map((item) => item.id)
+      )
+      const nextGroup = reorderDynamicItems(group.id, layerOrderIds, latestGroupRef.current)
+      if (nextGroup) {
+        latestGroupRef.current = nextGroup
+        onGroupChange(nextGroup)
+        sendGroupStateSync(nextGroup)
+        playUiSound('success')
+      }
+    }
+    setDraggedAppearanceItemId('')
+    setAppearanceDropHint(null)
+    appearanceSuppressClickRef.current = true
+    window.setTimeout(() => {
+      appearanceSuppressClickRef.current = false
+    }, 0)
+  }
+
+  const handleAppearanceCardPointerCancel = (event: PointerEvent) => {
+    const dragState = appearanceDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    clearAppearanceDragActivationTimer()
+    stopAppearanceAutoScroll()
+    detachAppearancePointerListeners()
+    appearanceDragRef.current = null
+    setPressedAppearanceItemId('')
+    if (dragState.active && dragState.changed) {
+      latestGroupRef.current = dragState.originalGroup
+      onGroupChange(dragState.originalGroup)
+    }
+    setDraggedAppearanceItemId('')
+    setAppearanceDropHint(null)
+  }
+
+  const applyBackgroundOrder = (orderedIds: string[]) => {
+    if (playbackActive) return
+    const currentGroup = latestGroupRef.current
+    const nextGroup = reorderDynamicBackgrounds(currentGroup.id, orderedIds, currentGroup)
+    if (!nextGroup) return
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendGroupStateSync(nextGroup)
+    playUiSound('success')
+  }
+
+  const handleAppearanceCardClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    if (!appearanceSuppressClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    appearanceSuppressClickRef.current = false
+  }
+
+  const handleAppearanceKeyboardMove = (itemId: string, offset: -1 | 1) => {
+    if (playbackActive) return
+    const visibleIds = appearanceItems.map((item) => item.id)
+    const currentIndex = visibleIds.indexOf(itemId)
+    const nextIndex = currentIndex + offset
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visibleIds.length) return
+    const nextVisibleIds = [...visibleIds]
+    const [movedId] = nextVisibleIds.splice(currentIndex, 1)
+    nextVisibleIds.splice(nextIndex, 0, movedId)
+    const fullPlaybackIds = getFullPlaybackOrderForAppearance(nextVisibleIds, visibleIds)
+    const layerOrderIds = convertDynamicPlaybackOrderToLayerOrder(
+      fullPlaybackIds,
+      latestGroupRef.current.items.map((item) => item.id)
+    )
+    const nextGroup = reorderDynamicItems(group.id, layerOrderIds, latestGroupRef.current)
+    if (!nextGroup) return
+    latestGroupRef.current = nextGroup
+    onGroupChange(nextGroup)
+    sendGroupStateSync(nextGroup)
+    playUiSound('success')
+  }
+
+  const handleBackgroundKeyboardMove = (backgroundId: string, offset: -1 | 1) => {
+    if (playbackActive) return
+    const currentIds = getBackgrounds(latestGroupRef.current).map((background) => background.id)
+    const currentIndex = currentIds.indexOf(backgroundId)
+    const nextIndex = currentIndex + offset
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentIds.length) return
+    const nextIds = [...currentIds]
+    const [movedId] = nextIds.splice(currentIndex, 1)
+    nextIds.splice(nextIndex, 0, movedId)
+    applyBackgroundOrder(nextIds)
+  }
+
   const handleLayerKeyboardMove = (itemId: string, offset: -1 | 1) => {
-    if (previewMode) return
+    if (playbackActive) return
     const visibleIds = layerItems.map((item) => item.id)
     const visibleIndex = visibleIds.indexOf(itemId)
     const nextVisibleIndex = visibleIndex + offset
@@ -5562,7 +6143,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   })
 
   const setCreationFlowStep = (step: DynamicCreationFlowStepId, itemId?: string) => {
-    if (previewMode) return
+    if (playbackActive) return
     const stepDefinition = DYNAMIC_CREATION_FLOW_STEPS.find((entry) => entry.id === step)
     if (!stepDefinition || (stepDefinition.requiresItems && sortedItems.length === 0)) return
 
@@ -5731,10 +6312,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const flowNextDisabled = sortedItems.length === 0
 
   const getLayerSummary = (item: DynamicItem) => {
-    const appearanceSeconds = Number((
-      getResolvedAppearanceTiming(item, displayedBackgroundId).appearanceDelayMs / 1000
-    ).toFixed(1))
-    const primary = [t('control.layerAppearanceTime', { value: appearanceSeconds })]
+    const appearanceOrder = appearanceOrderIndexById.get(item.id)
+    const primary = displayedAppearMode === 'all' || !appearanceOrder
+      ? [t('control.layerAppearanceSimultaneous')]
+      : [t('control.layerAppearanceOrder', { value: appearanceOrder })]
     if (item.targetMode === 'target' && item.targetPosition) {
       primary.push(t('control.layerMoveTime', {
         value: Number((getTargetMotionDurationMs(getItemMoveSpeed(item)) / 1000).toFixed(1))
@@ -5851,16 +6432,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
   return (
     <main
-      className={`ipad-screen dynamic-control-screen apple-container ${editorExperience === 'flow' ? 'dynamic-flow-mode' : ''} ${previewMode ? 'dynamic-previewing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} ${appearancePanelOpen ? 'dynamic-appearance-open' : ''} ${transitionPreparing ? 'dynamic-transition-prepared' : ''} dynamic-right-panel-${rightPanelMode}`}
+      className={`ipad-screen dynamic-control-screen apple-container ${editorExperience === 'flow' ? 'dynamic-flow-mode' : ''} ${previewMode ? 'dynamic-previewing' : ''} ${stagePlaybackActive ? 'dynamic-stage-playing' : ''} ${backgroundPanelOpen ? 'dynamic-background-open' : ''} ${appearancePanelOpen ? 'dynamic-appearance-open' : ''} ${transitionPreparing ? 'dynamic-transition-prepared' : ''} dynamic-right-panel-${rightPanelMode}`}
       aria-hidden={transitionPreparing || undefined}
     >
       <header className="ipad-topbar dynamic-control-topbar">
-        {previewMode ? (
+        {playbackActive ? (
           <div className="dynamic-preview-lock-actions">
             <button
               type="button"
               className="ipad-button preview-action secondary-button preview-stop-button"
-              onClick={() => setPreviewModeEnabled(false)}
+              onClick={() => previewMode ? setPreviewModeEnabled(false) : setStagePlaybackEnabled(false)}
             >
               {t('control.stopPreview')}
             </button>
@@ -6029,7 +6610,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       )}
 
       <section className="dynamic-control-workspace">
-        <div className={`dynamic-editor-row ${previewMode ? 'preview-only' : ''} ${rightPanelVisible ? 'right-panel-open' : 'right-panel-collapsed'}`}>
+        <div className={`dynamic-editor-row ${playbackActive ? 'preview-only' : ''} ${rightPanelVisible ? 'right-panel-open' : 'right-panel-collapsed'}`}>
           <div className={`dynamic-stage-shell ${showBackgroundQuickSwitcher ? 'has-background-quick-switcher' : ''}`}>
             {showBackgroundQuickSwitcher && (
               <section
@@ -6044,9 +6625,22 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         <button
                           key={background.id}
                           type="button"
-                          className={`dynamic-background-quick-card ${active ? 'active' : ''}`}
+                          data-background-id={background.id}
+                          className={`dynamic-background-quick-card ${active ? 'active' : ''} ${pressedBackgroundId === background.id ? 'is-pressed' : ''} ${draggedBackgroundId === background.id ? 'dragging' : ''} ${backgroundDropHint?.backgroundId === background.id ? `drop-${backgroundDropHint.placement}` : ''}`}
+                          onPointerDown={(event) => handleBackgroundCardPointerDown(event, background.id)}
+                          onClickCapture={handleBackgroundCardClickCapture}
                           onClick={() => void handleBackgroundSelect(background.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'ArrowLeft') {
+                              event.preventDefault()
+                              handleBackgroundKeyboardMove(background.id, -1)
+                            } else if (event.key === 'ArrowRight') {
+                              event.preventDefault()
+                              handleBackgroundKeyboardMove(background.id, 1)
+                            }
+                          }}
                           aria-pressed={active}
+                          aria-grabbed={draggedBackgroundId === background.id}
                           aria-label={t('common.selectNamed', { name: background.name })}
                           title={background.name}
                         >
@@ -6267,27 +6861,27 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             })()}
 
             {displayedItems.map((item, index) => {
-              if (previewMode && item.isVisible === false) return null
+              if (playbackActive && item.isVisible === false) return null
               const appearanceTiming = getResolvedAppearanceTiming(item, displayedBackgroundId)
               const isManipulating = manipulatingItemId === item.id
               const resolvedMoveMode = resolvePreviewMotionMode(item, group.id, previewReplayId)
-              const resolvedAnimationId = previewMode
+              const resolvedAnimationId = playbackActive
                 ? getResolvedPreviewAnimationId(item, group.id, previewReplayId)
                 : 0
               const isAmplitudeStatic = resolvedMoveMode !== 'left' && resolvedMoveMode !== 'right' && item.movePercent <= 0
               const targetEnabled = advancedFeaturesEnabled
                 && item.targetMode === 'target'
                 && Boolean(item.targetPosition)
-              const shouldPlayMotion = previewMode && !isManipulating && !isAmplitudeStatic && !targetEnabled
+              const shouldPlayMotion = playbackActive && !isManipulating && !isAmplitudeStatic && !targetEnabled
               const motionMode = shouldPlayMotion ? resolvedMoveMode : 'none'
               const appearDelayMs = appearanceTiming.appearanceDelayMs ?? (
-                previewMode && displayedAppearMode === 'sequence' ? index * appearIntervalMs : 0
+                playbackActive && displayedAppearMode === 'sequence' ? index * appearIntervalMs : 0
               )
-              const playbackEpoch = advancedFeaturesEnabled && previewMode
+              const playbackEpoch = advancedFeaturesEnabled && playbackActive
                 ? itemPlaybackEpochs[item.id]
                 : undefined
               const appearanceSchedule = playbackEpoch?.schedule
-                ?? (advancedFeaturesEnabled && previewMode ? baseAppearanceTimeline[item.id] : undefined)
+                ?? (advancedFeaturesEnabled && playbackActive ? baseAppearanceTimeline[item.id] : undefined)
               const timelineElapsedMs = playbackEpoch
                 ? Math.max(0, performance.now() - playbackEpoch.startedAt)
                 : 0
@@ -6321,7 +6915,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   replayId={previewReplayId}
                   schedule={appearanceSchedule}
                   epochStartedAt={playbackEpoch?.startedAt}
-                  stageEntering={stageEntryActive && !previewMode}
+                  stageEntering={stageEntryActive && !playbackActive}
                   stageEntryDelayMs={Math.min(index * 55, 550)}
                   style={{
                     ...getMotionPreviewStyle(item, motionMode, !shouldPlayMotion, stageSize),
@@ -6332,7 +6926,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 >
                   <div className="dynamic-stage-item-wave">
                     <DynamicStageAppearance
-                      previewing={previewMode}
+                      previewing={playbackActive}
                       ready={itemReady}
                       appearDelayMs={appearDelayMs}
                       appearAnimation={displayedAppearAnimation}
@@ -6345,7 +6939,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       epochStartedAt={playbackEpoch?.startedAt}
                     >
                       <DynamicStageTarget
-                        previewing={previewMode}
+                        previewing={playbackActive}
                         ready={itemReady}
                         enabled={targetEnabled}
                         loop={targetEditingItemId === item.id ? targetDraftLoop : item.targetLoop === true}
@@ -6371,7 +6965,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         <DynamicStageItemAnimation
                           animationId={resolvedAnimationId}
                           itemId={item.id}
-                          enabled={previewMode
+                          enabled={playbackActive
                             && resolvedAnimationId >= 1
                             && resolvedAnimationId <= 8}
                           coordinateScale={animationCoordinateScale}
@@ -6393,10 +6987,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                               {isDynamicBubbleItem(item) ? (
                                 <DynamicBubbleVisual
                                   bubble={toDynamicBubbleDraft(item.bubble)}
-                                  animate={previewMode}
+                                  animate={playbackActive}
                                   playbackKey={playbackEpoch?.key ?? previewReplayId}
                                   revealDelayMs={Math.max(0, motionDelayMs)}
-                                  className={`dynamic-stage-bubble-visual ${!previewMode && selectedItem?.id === item.id ? 'is-active' : ''} ${copyFeedbackItemId === item.id ? 'is-copy-pulse' : ''}`}
+                                  className={`dynamic-stage-bubble-visual ${!playbackActive && selectedItem?.id === item.id ? 'is-active' : ''} ${copyFeedbackItemId === item.id ? 'is-copy-pulse' : ''}`}
                                   ariaLabel={item.name}
                                 />
                               ) : (
@@ -6405,12 +6999,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                                   name={item.name}
                                   mediaId={item.media.id}
                                   animationId={resolvedAnimationId}
-                                  previewMode={previewMode}
+                                  previewMode={playbackActive}
                                   replayId={previewReplayId}
                                   playbackKey={playbackEpoch?.key}
                                   animationStartedAtMs={animationStartedAtMs}
                                   renderScale={item.scale}
-                                  active={!previewMode && selectedItem?.id === item.id}
+                                  active={!playbackActive && selectedItem?.id === item.id}
                                   copyPulse={copyFeedbackItemId === item.id}
                                   onImageLoad={handleItemImageLoad}
                                   onImageError={handleItemImageError}
@@ -6470,19 +7064,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <rect x="0" y="0" width="1920" height="1080" fill="white" />
                     <rect
                       className="dynamic-stage-watermark-safe-zone"
-                      x="660"
-                      y="420"
-                      width="600"
-                      height="240"
-                      rx="52"
+                      x="620"
+                      y="370"
+                      width="680"
+                      height="360"
+                      rx="64"
                       fill="black"
                     />
                     <line
                       className="dynamic-stage-watermark-upper-right-mask-notch"
-                      x1="1082.021"
-                      y1="471.363"
-                      x2="1173.333"
-                      y2="420"
+                      x1="1060"
+                      y1="483.75"
+                      x2="1200"
+                      y2="405"
                       stroke="white"
                       strokeWidth="64"
                       strokeLinecap="butt"
@@ -6501,12 +7095,20 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <image
                     className="dynamic-stage-watermark-logo"
                     href={RIGHT_LOGO_URL}
-                    x="660"
-                    y="420"
-                    width="600"
-                    height="240"
+                    x="680"
+                    y="395"
+                    width="560"
+                    height="220"
                     preserveAspectRatio="xMidYMid meet"
                   />
+                  <text
+                    className="dynamic-stage-watermark-caption"
+                    x="960"
+                    y="684"
+                    textAnchor="middle"
+                  >
+                    preview only
+                  </text>
                 </g>
               </svg>
             )}
@@ -6546,8 +7148,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             onAddRelation={() => undefined}
             onEditRelation={() => undefined}
             onSetItemBackgrounds={handleFlowSetItemBackgrounds}
+            onReorderBackgrounds={applyBackgroundOrder}
             onManageBackgrounds={openBackgroundEditor}
             onUploadAudio={() => flowAudioInputRef.current?.click()}
+            onRecordAudio={() => openAudioRecorder('flow')}
             onPreviewAudio={handleFlowAudioPreview}
             onSetItemAudio={handleFlowSetItemAudio}
             onSetItemAudioTrigger={handleFlowSetItemAudioTrigger}
@@ -7202,15 +7806,26 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     <strong>{t('control.objectAudio')}</strong>
                     <span>{selectedItem.audioId ? t('control.audioAssigned') : t('control.audioNotAssigned')}</span>
                   </div>
-                  <button
-                    type="button"
-                    className="dynamic-audio-upload-button"
-                    disabled={isAddingAudio}
-                    onClick={() => itemAudioInputRef.current?.click()}
-                  >
-                    <Upload size={17} strokeWidth={2.3} aria-hidden="true" />
-                    <span>{isAddingAudio ? t('control.audioUploading') : t('control.uploadAudio')}</span>
-                  </button>
+                  <div className="dynamic-audio-source-actions">
+                    <button
+                      type="button"
+                      className="dynamic-audio-upload-button"
+                      disabled={isAddingAudio}
+                      onClick={() => itemAudioInputRef.current?.click()}
+                    >
+                      <Upload size={17} strokeWidth={2.3} aria-hidden="true" />
+                      <span>{isAddingAudio ? t('control.audioUploading') : t('control.uploadAudio')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="dynamic-audio-record-button"
+                      disabled={isAddingAudio}
+                      onClick={() => openAudioRecorder('item')}
+                    >
+                      <Mic size={17} strokeWidth={2.3} aria-hidden="true" />
+                      <span>{t('control.recordAudio')}</span>
+                    </button>
+                  </div>
                 </section>
 
                 <div className="dynamic-audio-library" role="radiogroup" aria-label={t('control.objectAudio')}>
@@ -7342,12 +7957,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </section>
 
                 {(selectedItem.backgroundIds ?? []).length > 0 && (
-                  <div className="dynamic-object-background-list">
+                  <div className={`dynamic-object-background-list ${draggedBackgroundId ? 'is-reordering' : ''}`}>
                     {backgrounds.map((background) => {
                       const checked = selectedItem.backgroundIds?.includes(background.id) ?? false
                       const onlySelected = checked && selectedItem.backgroundIds?.length === 1
                       return (
-                        <label key={background.id} className={`dynamic-object-background-card ${checked ? 'active' : ''} ${onlySelected ? 'is-required' : ''}`}>
+                        <label
+                          key={background.id}
+                          data-background-id={background.id}
+                          className={`dynamic-object-background-card ${checked ? 'active' : ''} ${onlySelected ? 'is-required' : ''} ${pressedBackgroundId === background.id ? 'is-pressed' : ''} ${draggedBackgroundId === background.id ? 'dragging' : ''} ${backgroundDropHint?.backgroundId === background.id ? `drop-${backgroundDropHint.placement}` : ''}`}
+                          onPointerDown={(event) => handleBackgroundCardPointerDown(event, background.id)}
+                          onClickCapture={handleBackgroundCardClickCapture}
+                          onContextMenu={(event) => event.preventDefault()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'ArrowUp') {
+                              event.preventDefault()
+                              handleBackgroundKeyboardMove(background.id, -1)
+                            } else if (event.key === 'ArrowDown') {
+                              event.preventDefault()
+                              handleBackgroundKeyboardMove(background.id, 1)
+                            }
+                          }}
+                          aria-grabbed={draggedBackgroundId === background.id}
+                        >
                           {background.type === 'video' ? (
                             <video src={background.url} muted playsInline />
                           ) : (
@@ -7469,7 +8101,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           )
         })(), document.body)}
 
-        {editorExperience === 'flow' && !previewMode && (
+        {editorExperience === 'flow' && !playbackActive && (
           <footer className="dynamic-flow-footer" aria-label={t('flow.modeGuided')}>
             <button
               type="button"
@@ -7517,7 +8149,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         </div>
       </section>
 
-      {!previewMode && appearancePanelOpen && (
+      {!playbackActive && appearancePanelOpen && (
         <div
           className="dynamic-background-modal-backdrop dynamic-appearance-modal-backdrop"
           role="presentation"
@@ -7560,17 +8192,46 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       {t('control.appearanceObjects')}
                       <span>{t('control.appearanceObjectCount', { count: appearanceItems.length })}</span>
                     </h3>
+                    <small className="dynamic-appearance-drag-hint">{t('control.dragAppearanceHint')}</small>
                   </div>
                 </div>
 
-                <div className="dynamic-appearance-item-list">
+                <div ref={appearanceListRef} className={`dynamic-appearance-item-list ${draggedAppearanceItemId ? 'is-reordering' : ''}`}>
                   {appearanceItems.map((item, index) => {
                     const appearanceTiming = getResolvedAppearanceTiming(item, displayedBackgroundId)
                     const appearanceSeconds = Number((appearanceTiming.appearanceDelayMs / 1000).toFixed(1))
                     const showIndividualWheel = appearanceEditorMode === 'sequence'
                       && appearanceSequenceTimingMode === 'individual'
+                    const appearanceCardSummary = appearanceEditorMode === 'all'
+                      ? t('control.layerAppearanceSimultaneous')
+                      : appearanceSequenceTimingMode === 'uniform'
+                        ? t('control.appearanceOrderTimeSummary', {
+                            order: index + 1,
+                            seconds: appearanceSeconds
+                          })
+                        : t('control.layerAppearanceOrder', { value: index + 1 })
                     return (
-                      <article key={item.id} className="dynamic-appearance-item-card">
+                      <article
+                        key={item.id}
+                        data-appearance-item-id={item.id}
+                        className={`dynamic-appearance-item-card ${pressedAppearanceItemId === item.id ? 'is-pressed' : ''} ${draggedAppearanceItemId === item.id ? 'dragging' : ''} ${appearanceDropHint?.itemId === item.id ? `drop-${appearanceDropHint.placement}` : ''}`}
+                        onPointerDown={(event) => handleAppearanceCardPointerDown(event, item.id)}
+                        onClickCapture={handleAppearanceCardClickCapture}
+                        onContextMenu={(event) => event.preventDefault()}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            handleAppearanceKeyboardMove(item.id, -1)
+                          } else if (event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            handleAppearanceKeyboardMove(item.id, 1)
+                          }
+                        }}
+                        tabIndex={0}
+                        role="listitem"
+                        aria-grabbed={draggedAppearanceItemId === item.id}
+                        aria-label={`${item.name}, ${appearanceCardSummary}`}
+                      >
                         <span className="dynamic-appearance-item-order">
                           {String(index + 1).padStart(2, '0')}
                         </span>
@@ -7581,11 +8242,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         />
                         <span className="dynamic-appearance-item-copy">
                           <strong>{item.name}</strong>
-                          <small>
-                            {appearanceEditorMode === 'all'
-                              ? t('control.appearanceImmediate')
-                              : t('control.appearanceTimeSummary', { value: appearanceSeconds })}
-                          </small>
+                          <small>{appearanceCardSummary}</small>
                         </span>
                         {showIndividualWheel && (
                           <IntervalWheel
@@ -7739,7 +8396,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         </div>
       )}
 
-      {!previewMode && backgroundPanelOpen && (
+      {!playbackActive && backgroundPanelOpen && (
         <div
           className="dynamic-background-modal-backdrop"
           role="presentation"
@@ -7825,7 +8482,20 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     />
                     <span aria-hidden="true" />
                   </label>
-                  <button type="button" className="background-preview-button" onClick={() => handleBackgroundSelect(background.id)}>
+                  <button
+                    type="button"
+                    className="background-preview-button"
+                    onClick={() => handleBackgroundSelect(background.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        handleBackgroundKeyboardMove(background.id, -1)
+                      } else if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        handleBackgroundKeyboardMove(background.id, 1)
+                      }
+                    }}
+                  >
                     <span className="background-order">{String(index + 1).padStart(2, '0')}</span>
                     {background.type === 'video' ? (
                       <video src={background.url} muted playsInline />
@@ -7933,6 +8603,26 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           </span>
                         </div>
                       )}
+                      <label
+                        className={`dynamic-background-loop-toggle ${group.backgroundPlayMode === 'fixed' ? 'is-disabled' : ''}`}
+                        title={group.backgroundPlayMode === 'fixed' ? t('control.backgroundLoopFixedHint') : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={group.backgroundPlaybackLoop !== false}
+                          disabled={group.backgroundPlayMode === 'fixed'}
+                          onChange={(event) => setBackgroundPlaybackLoop(event.target.checked)}
+                        />
+                        <span className="dynamic-background-loop-switch" aria-hidden="true" />
+                        <span className="dynamic-background-loop-copy">
+                          <strong>{group.backgroundPlaybackLoop !== false
+                            ? t('control.backgroundPlaybackLoop')
+                            : t('control.backgroundPlaybackOnce')}</strong>
+                          <small>{group.backgroundPlayMode === 'fixed'
+                            ? t('control.backgroundLoopFixedHint')
+                            : t('control.backgroundLoopHint')}</small>
+                        </span>
+                      </label>
                     </div>
                   </section>
 
@@ -8018,6 +8708,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       >
                         <Upload size={16} strokeWidth={2.3} aria-hidden="true" />
                         {t('control.uploadAudio')}
+                      </button>
+                      <button
+                        type="button"
+                        className="ipad-button secondary-button"
+                        onClick={() => openAudioRecorder('background')}
+                        disabled={isAddingAudio}
+                      >
+                        <Mic size={16} strokeWidth={2.3} aria-hidden="true" />
+                        {t('control.recordAudio')}
                       </button>
                       <button
                         type="button"
@@ -8293,6 +8992,26 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           </section>
         </div>
       )}
+
+      <DynamicAudioRecorderDialog
+        open={audioRecorderContext !== null}
+        title={audioRecorderContext === 'background'
+          ? t('control.recordBackgroundAudioTitle')
+          : audioRecorderContext === 'item' || audioRecorderContext === 'flow'
+            ? t('control.recordObjectAudioTitle')
+            : t('control.recordAudio')}
+        description={audioRecorderContext === 'background'
+          ? t('control.recordBackgroundAudioDescription')
+          : audioRecorderContext === 'item' || audioRecorderContext === 'flow'
+            ? t('control.recordObjectAudioDescription')
+            : t('control.audioRecordDescription')}
+        filename={audioRecorderContext === 'item' || audioRecorderContext === 'flow'
+          ? `${latestGroupRef.current.items.find((item) => item.id === audioRecorderItemId)?.name ?? 'object'} recording`
+          : 'background recording'}
+        busy={isAddingAudio}
+        onCancel={closeAudioRecorder}
+        onSave={handleRecordedAudioSave}
+      />
 
       <DynamicBubbleEditor
         open={bubbleEditorOpen}

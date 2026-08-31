@@ -1,5 +1,12 @@
 export type DynamicBackgroundPlaybackMode = 'fixed' | 'random' | 'sequence'
 
+export const DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP: true
+
+export function normalizeDynamicBackgroundPlaybackLoop(
+  value: unknown,
+  fallback?: boolean
+): boolean
+
 export interface DynamicBackgroundPlaybackEntry {
   id?: string
   assetId?: string
@@ -14,6 +21,28 @@ export function getDynamicBackgroundPlaybackStartIndex(
   backgrounds?: DynamicBackgroundPlaybackEntry[],
   activeBackgroundId?: string,
   mode?: DynamicBackgroundPlaybackMode
+): number
+
+export function getDynamicBackgroundPlaybackOrder(
+  backgrounds?: DynamicBackgroundPlaybackEntry[],
+  activeBackgroundId?: string,
+  mode?: DynamicBackgroundPlaybackMode,
+  seed?: string,
+  round?: number
+): number[]
+
+export function getDynamicBackgroundPlaybackRoundLength(
+  backgrounds?: DynamicBackgroundPlaybackEntry[],
+  mode?: DynamicBackgroundPlaybackMode
+): number
+
+export function getDynamicBackgroundPlaybackIndexAtCycle(
+  backgrounds?: DynamicBackgroundPlaybackEntry[],
+  activeBackgroundId?: string,
+  mode?: DynamicBackgroundPlaybackMode,
+  cycle?: number,
+  loop?: boolean,
+  seed?: string
 ): number
 
 export interface DynamicFixedBackgroundEpoch {

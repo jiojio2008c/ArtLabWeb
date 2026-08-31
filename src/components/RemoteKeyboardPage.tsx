@@ -561,7 +561,6 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
             >
               <span className="remote-scale-volume remote-scale-volume-low"><Volume1 /></span>
               <span className="remote-scale-volume remote-scale-volume-high"><Volume2 /></span>
-              <span className="remote-scale-arc" />
             </RotaryControl>
 
             <RotaryControl
@@ -575,7 +574,6 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
             >
               <span className="remote-scale-arrow remote-scale-arrow-up"><ArrowUp /></span>
               <span className="remote-scale-arrow remote-scale-arrow-down"><ArrowDown /></span>
-              <span className="remote-scale-ticks" />
             </RotaryControl>
 
             <RotaryControl

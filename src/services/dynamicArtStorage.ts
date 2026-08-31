@@ -16,6 +16,10 @@ import {
   normalizeDynamicLinkedAppearance,
   wouldCreateDynamicLinkedAppearanceCycle
 } from '../../desktop-runtime/renderer/advanced-appearance-timeline.js'
+import {
+  DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP,
+  normalizeDynamicBackgroundPlaybackLoop
+} from '../../desktop-runtime/renderer/background-playback-core.js'
 
 const DYNAMIC_GROUPS_KEY = 'magicfloor_dynamic_groups_v1'
 const DYNAMIC_DB_NAME = 'magicfloor_dynamic_media'
@@ -79,6 +83,7 @@ type DynamicMoveTrack = 'top' | 'middle' | 'bottom'
 type DynamicAppearMode = 'sequence' | 'all'
 type DynamicAppearAnimation = 'none' | 'drop' | 'trackSlide'
 type DynamicBackgroundPlayMode = 'fixed' | 'random' | 'sequence'
+type DynamicBackgroundPlaybackLoop = boolean
 type DynamicBackgroundTransition = 'none' | 'curtain' | 'cameraFlash' | 'shadowPlay'
 type DynamicTargetMode = 'loop' | 'target'
 type DynamicItemAudioTrigger = 'appearance' | 'appearanceDelay' | 'targetArrival'
@@ -260,6 +265,7 @@ interface DynamicGroup {
   activeBackgroundId?: string
   backgroundPlayMode: DynamicBackgroundPlayMode
   backgroundIntervalMs: number
+  backgroundPlaybackLoop?: boolean
   appearMode: DynamicAppearMode
   appearIntervalMs: number
   appearAnimation?: DynamicAppearAnimation
@@ -550,6 +556,13 @@ const getDynamicBackgroundPlayModeFromGroup = (group: DynamicGroup): DynamicBack
   }
   return 'fixed'
 }
+
+const getDynamicBackgroundPlaybackLoopFromGroup = (group: DynamicGroup): boolean => (
+  normalizeDynamicBackgroundPlaybackLoop(
+    group.backgroundPlaybackLoop,
+    DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP
+  )
+)
 
 const getDynamicAppearAnimationFromGroup = (group: DynamicGroup): DynamicAppearAnimation => {
   return normalizeDynamicAppearAnimation(group.appearAnimation)
@@ -1043,6 +1056,7 @@ const normalizeDynamicGroupAppearance = (group: DynamicGroup): DynamicGroup => {
     backgrounds,
     background: activeBackground,
     activeBackgroundId: activeBackground?.id ?? group.activeBackgroundId,
+    backgroundPlaybackLoop: getDynamicBackgroundPlaybackLoopFromGroup(group),
     items: normalizeDynamicIndependentAppearance(
       Array.isArray(group.items) ? group.items.map(normalizeDynamicItemKind) : []
     )
@@ -1190,6 +1204,7 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
     activeBackgroundId: background?.id,
     backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(group),
     backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(group),
+    backgroundPlaybackLoop: getDynamicBackgroundPlaybackLoopFromGroup(group),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(group),
     appearAnimation: groupAppearAnimation,
     backgroundTransition: groupBackgroundTransition,
@@ -1413,6 +1428,7 @@ const createDynamicGroup = async (
     activeBackgroundId: background?.id,
     backgroundPlayMode: 'fixed',
     backgroundIntervalMs: DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+    backgroundPlaybackLoop: DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP,
     appearMode: 'all',
     appearIntervalMs: DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
     appearAnimation: 'none',
@@ -1501,6 +1517,7 @@ const upsertDynamicGroup = (group: DynamicGroup) => {
     ...normalizedGroup,
     backgroundPlayMode: getDynamicBackgroundPlayModeFromGroup(normalizedGroup),
     backgroundIntervalMs: getDynamicBackgroundIntervalFromGroup(normalizedGroup),
+    backgroundPlaybackLoop: getDynamicBackgroundPlaybackLoopFromGroup(normalizedGroup),
     appearIntervalMs: getDynamicAppearIntervalFromGroup(normalizedGroup),
     appearAnimation: getDynamicAppearAnimationFromGroup(normalizedGroup),
     backgroundTransition: getDynamicBackgroundTransitionFromGroup(normalizedGroup),
@@ -2122,7 +2139,8 @@ const updateDynamicGroupAppearMode = (
 const updateDynamicBackgroundPlayback = (
   groupId: string,
   backgroundPlayMode: DynamicBackgroundPlayMode,
-  backgroundIntervalMs?: number
+  backgroundIntervalMs?: number,
+  backgroundPlaybackLoop?: boolean
 ) => {
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
@@ -2132,6 +2150,10 @@ const updateDynamicBackgroundPlayback = (
   group.backgroundIntervalMs = getDynamicBackgroundIntervalFromGroup({
     ...group,
     backgroundIntervalMs: backgroundIntervalMs ?? group.backgroundIntervalMs
+  })
+  group.backgroundPlaybackLoop = getDynamicBackgroundPlaybackLoopFromGroup({
+    ...group,
+    backgroundPlaybackLoop: backgroundPlaybackLoop ?? group.backgroundPlaybackLoop
   })
   group.updatedAt = Date.now()
   saveDynamicGroups(groups)
@@ -2261,6 +2283,7 @@ export type {
   DynamicBackground,
   DynamicBackgroundAppearance,
   DynamicBackgroundPlayMode,
+  DynamicBackgroundPlaybackLoop,
   DynamicBackgroundTransition,
   DynamicBubbleContent,
   DynamicBubbleInput,
@@ -2294,6 +2317,7 @@ export {
   DEFAULT_DYNAMIC_APPEAR_INTERVAL_MS,
   DEFAULT_DYNAMIC_BUBBLE_REVEAL_INTERVAL_MS,
   DEFAULT_DYNAMIC_BACKGROUND_INTERVAL_MS,
+  DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP,
   MAX_DYNAMIC_BACKGROUND_INTERVAL_MS,
   MAX_DYNAMIC_APPEAR_INTERVAL_MS,
   MAX_DYNAMIC_ITEMS_PER_GROUP,
@@ -2318,6 +2342,7 @@ export {
   isDynamicBubbleItem,
   isDynamicMediaItem,
   loadDynamicGroups,
+  normalizeDynamicBackgroundPlaybackLoop,
   normalizeDynamicAudioFile,
   persistDynamicAudio,
   persistDynamicMedia,

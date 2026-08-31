@@ -36,8 +36,10 @@ import {
 } from './advanced-appearance-timeline.js'
 import {
   getDynamicBackgroundPlaybackStartIndex,
+  getDynamicBackgroundPlaybackIndexAtCycle,
   getDynamicStageItemsForBackground,
   getDynamicFixedBackgroundEpochKey,
+  normalizeDynamicBackgroundPlaybackLoop,
   resolveDynamicFixedBackgroundEpoch,
   resolveDynamicBackgroundPlaybackEpoch
 } from './background-playback-core.js'
@@ -141,11 +143,13 @@ let runtimeState = {
     enabled: false,
     advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
     replayId: 0,
+    backgroundId: null,
     startedAt: Date.now(),
     appearMode: 'all',
     intervalMs: 800,
     backgroundPlayMode: 'fixed',
-    backgroundIntervalMs: 5000
+    backgroundIntervalMs: 5000,
+    backgroundPlaybackLoop: true
   },
   server: {
     status: 'starting',
@@ -162,7 +166,6 @@ let stageOffsetY = 0
 let lastPreviewKey = ''
 let previewStartTime = performance.now()
 let lastDrawnBackgroundAssetId = ''
-let randomBackgroundState = { key: '', indices: [] }
 let backgroundPlaybackScheduleState = { key: '', entries: [], startedAt: 0 }
 let fixedBackgroundEpochState = { key: '', changedAt: 0 }
 let lastStateEventSequence = 0
@@ -276,6 +279,36 @@ const resizeCanvas = () => {
 const getActiveGroup = () => {
   if (!runtimeState.activeGroupId) return null
   return runtimeState.groups[runtimeState.activeGroupId] ?? null
+}
+
+const getPreviewBackgroundId = (group, preview = runtimeState.preview) => {
+  const backgrounds = Array.isArray(group?.backgrounds) ? group.backgrounds : []
+  const requestedBackgroundId = String(preview?.backgroundId ?? '').trim()
+  if (
+    requestedBackgroundId
+    && backgrounds.some((background) => background?.assetId === requestedBackgroundId)
+  ) {
+    return requestedBackgroundId
+  }
+
+  const activeBackgroundId = String(group?.activeBackgroundId ?? '').trim()
+  if (
+    activeBackgroundId
+    && backgrounds.some((background) => background?.assetId === activeBackgroundId)
+  ) {
+    return activeBackgroundId
+  }
+
+  return String(backgrounds.find((background) => background?.assetId)?.assetId ?? '')
+}
+
+const getPreviewPlaybackStartBackground = (group, preview = runtimeState.preview) => {
+  const backgrounds = Array.isArray(group?.backgrounds) ? group.backgrounds : []
+  if (backgrounds.length === 0) return null
+  const mode = preview?.backgroundPlayMode ?? group?.backgroundPlayMode ?? 'fixed'
+  const backgroundId = getPreviewBackgroundId(group, preview)
+  const startIndex = getDynamicBackgroundPlaybackStartIndex(backgrounds, backgroundId, mode)
+  return backgrounds[startIndex] ?? backgrounds[0]
 }
 
 const isArchiveView = () => runtimeState.view?.mode !== 'stage'
@@ -655,7 +688,7 @@ const preloadBackground = (background) => {
 const getPreviewPresentationKey = () => {
   const preview = runtimeState.preview ?? {}
   if (preview.enabled !== true || isArchiveView()) return ''
-  return `${runtimeState.activeGroupId ?? preview.groupId ?? ''}:${preview.replayId ?? 0}`
+  return `${runtimeState.activeGroupId ?? preview.groupId ?? ''}:${preview.replayId ?? 0}:${String(preview.backgroundId ?? '').trim()}`
 }
 
 const isAssetReadyForPreview = (assetId) => {
@@ -670,15 +703,12 @@ const isAssetReadyForPreview = (assetId) => {
 
 const arePreviewVisualsReady = (group) => {
   if (!group) return false
-  const backgrounds = group.backgrounds ?? []
-  const activeBackground = backgrounds.find((background) => (
-    background.assetId === group.activeBackgroundId
-  )) ?? backgrounds[0]
-  if (activeBackground?.assetId && !isAssetReadyForPreview(activeBackground.assetId)) return false
+  const previewBackground = getPreviewPlaybackStartBackground(group)
+  if (previewBackground?.assetId && !isAssetReadyForPreview(previewBackground.assetId)) return false
 
   const visibleItems = getDynamicStageItemsForBackground(
     getOrderedItems(group),
-    activeBackground
+    previewBackground
   )
   return visibleItems.every((item) => {
     if (item.isVisible === false) return true
@@ -692,15 +722,12 @@ const arePreviewVisualsReady = (group) => {
 
 const primePreviewAssets = (group) => {
   if (!group) return
-  const backgrounds = group.backgrounds ?? []
-  const activeBackground = backgrounds.find((background) => (
-    background.assetId === group.activeBackgroundId
-  )) ?? backgrounds[0]
-  if (activeBackground?.assetId) preloadBackground(activeBackground)
+  const previewBackground = getPreviewPlaybackStartBackground(group)
+  if (previewBackground?.assetId) preloadBackground(previewBackground)
 
   const visibleItems = getDynamicStageItemsForBackground(
     getOrderedItems(group),
-    activeBackground
+    previewBackground
   )
   visibleItems.forEach((item) => {
     const assetId = isBubbleItem(item)
@@ -793,7 +820,6 @@ const resetAdvancedPlaybackSession = (sessionKey = '') => {
   advancedPlaybackState.appearanceBackgroundEpochKey = ''
   advancedPlaybackState.appearanceEpochCounter = 0
   advancedPlaybackState.itemEpochs.clear()
-  randomBackgroundState = { key: '', indices: [] }
   backgroundPlaybackScheduleState = { key: '', entries: [], startedAt: 0 }
   fixedBackgroundEpochState = { key: '', changedAt: 0 }
 }
@@ -1002,43 +1028,40 @@ const getBackgroundTransitionTiming = (transition) => (
   BACKGROUND_TRANSITION_TIMINGS[transition] ?? { closeMs: 0, openMs: 0 }
 )
 
-const getRandomBackgroundIndex = (group, backgrounds, activeIndex, cycle) => {
-  if (backgrounds.length <= 1 || cycle <= 0) return activeIndex
-
+const getBackgroundAtCycle = (group, backgrounds, activeIndex, mode, cycle, loop = true) => {
   const preview = runtimeState.preview ?? {}
-  const key = `${group.groupId}:${preview.replayId}:${activeIndex}:${backgrounds.map((item) => item.assetId).join(',')}`
-  if (randomBackgroundState.key !== key) {
-    randomBackgroundState = { key, indices: [activeIndex] }
-  }
-
-  while (randomBackgroundState.indices.length <= cycle) {
-    const nextCycle = randomBackgroundState.indices.length
-    const previousIndex = randomBackgroundState.indices[nextCycle - 1]
-    const offset = 1 + (hashString(`${key}:${nextCycle}`) % (backgrounds.length - 1))
-    randomBackgroundState.indices.push((previousIndex + offset) % backgrounds.length)
-  }
-  return randomBackgroundState.indices[cycle]
+  const activeBackgroundId = backgrounds[activeIndex]?.assetId ?? ''
+  const seed = `${group.groupId}:${preview.replayId}:${activeIndex}:${backgrounds.map((item) => item.assetId).join(',')}`
+  const index = getDynamicBackgroundPlaybackIndexAtCycle(
+    backgrounds,
+    activeBackgroundId,
+    mode,
+    cycle,
+    loop,
+    seed
+  )
+  return index >= 0 ? backgrounds[index] : null
 }
 
-const getBackgroundAtCycle = (group, backgrounds, activeIndex, mode, cycle) => {
-  const safeCycle = Math.max(0, cycle)
-  if (mode === 'sequence') {
-    return backgrounds[(activeIndex + safeCycle) % backgrounds.length]
-  }
-  if (mode === 'random') {
-    return backgrounds[getRandomBackgroundIndex(group, backgrounds, activeIndex, safeCycle)]
-  }
-  return backgrounds[activeIndex] ?? backgrounds[0]
-}
-
-const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, intervalMs, preview, now) => {
+const getBackgroundPlaybackSchedule = (
+  group,
+  backgrounds,
+  activeIndex,
+  mode,
+  intervalMs,
+  preview,
+  now,
+  loop = true
+) => {
+  const playbackStartBackgroundId = backgrounds[activeIndex]?.assetId ?? ''
   const key = [
     group.groupId,
     preview.replayId,
-    group.activeBackgroundId ?? '',
+    playbackStartBackgroundId,
     activeIndex,
     mode,
     intervalMs,
+    loop,
     isAdvancedPreviewEnabled(),
     preview.backgroundTransition ?? '',
     group.backgroundTransition ?? 'none',
@@ -1054,10 +1077,20 @@ const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, in
     backgroundPlaybackScheduleState.entries = []
   }
 
+  const maxTransitions = loop ? Number.POSITIVE_INFINITY : Math.max(0, backgrounds.length - 1)
   const getEntry = (ordinal) => {
+    if (!Number.isFinite(Number(ordinal)) || ordinal < 1 || ordinal > maxTransitions) return null
     while (backgroundPlaybackScheduleState.entries.length < ordinal) {
       const nextOrdinal = backgroundPlaybackScheduleState.entries.length + 1
-      const targetBackground = getBackgroundAtCycle(group, backgrounds, activeIndex, mode, nextOrdinal)
+      const targetBackground = getBackgroundAtCycle(
+        group,
+        backgrounds,
+        activeIndex,
+        mode,
+        nextOrdinal,
+        loop
+      )
+      if (!targetBackground) return null
       const transitionType = isAdvancedPreviewEnabled()
         ? targetBackground?.backgroundTransition ?? preview.backgroundTransition ?? group.backgroundTransition ?? 'none'
         : 'none'
@@ -1076,7 +1109,7 @@ const getBackgroundPlaybackSchedule = (group, backgrounds, activeIndex, mode, in
     return backgroundPlaybackScheduleState.entries[ordinal - 1]
   }
 
-  return { getEntry }
+  return { getEntry, maxTransitions }
 }
 
 const getBackgroundPlaybackFrame = (group, now) => {
@@ -1088,15 +1121,21 @@ const getBackgroundPlaybackFrame = (group, now) => {
       nextBackground: null,
       cycle: 0,
       changedAt: previewStartTime,
-      transition: null
+      transition: null,
+      playbackComplete: false
     }
   }
 
   const preview = runtimeState.preview ?? {}
   const mode = preview.backgroundPlayMode ?? group.backgroundPlayMode ?? 'fixed'
+  const loop = normalizeDynamicBackgroundPlaybackLoop(
+    preview.backgroundPlaybackLoop,
+    group.backgroundPlaybackLoop
+  )
+  const previewBackgroundId = getPreviewBackgroundId(group, preview)
   const activeIndex = getDynamicBackgroundPlaybackStartIndex(
     backgrounds,
-    group.activeBackgroundId,
+    previewBackgroundId,
     'fixed'
   )
   if (!preview.enabled || mode === 'fixed' || backgrounds.length === 1) {
@@ -1117,7 +1156,18 @@ const getBackgroundPlaybackFrame = (group, now) => {
       nextBackground: null,
       cycle: 0,
       changedAt: fixedBackgroundEpochState.changedAt || previewStartTime,
-      transition: null
+      transition: null,
+      playbackComplete: Boolean(
+        preview.enabled
+        && mode !== 'fixed'
+        && backgrounds.length === 1
+        && !loop
+        && now - previewStartTime >= clamp(
+          Number(preview.backgroundIntervalMs ?? group.backgroundIntervalMs ?? 5000),
+          1000,
+          600000
+        )
+      )
     }
   }
 
@@ -1128,7 +1178,7 @@ const getBackgroundPlaybackFrame = (group, now) => {
   )
   const playbackStartIndex = getDynamicBackgroundPlaybackStartIndex(
     backgrounds,
-    group.activeBackgroundId,
+    previewBackgroundId,
     mode
   )
   const schedule = getBackgroundPlaybackSchedule(
@@ -1138,19 +1188,71 @@ const getBackgroundPlaybackFrame = (group, now) => {
     mode,
     intervalMs,
     preview,
-    now
+    now,
+    loop
   )
   const scheduleStartedAt = backgroundPlaybackScheduleState.startedAt || previewStartTime
   const elapsedMs = Math.max(0, now - scheduleStartedAt)
+  const finalTransitionOrdinal = Math.max(1, backgrounds.length - 1)
+  const finalEntry = !loop
+    ? schedule.getEntry(finalTransitionOrdinal)
+    : null
+  const finalEndAtMs = finalEntry?.nextStartsAtMs ?? intervalMs
+  if (!loop && finalEntry && elapsedMs >= finalEndAtMs) {
+    const finalBackground = getBackgroundAtCycle(
+      group,
+      backgrounds,
+      playbackStartIndex,
+      mode,
+      backgrounds.length - 1,
+      false
+    ) ?? backgrounds[backgrounds.length - 1]
+    return {
+      background: finalBackground,
+      nextBackground: null,
+      cycle: backgrounds.length - 1,
+      changedAt: scheduleStartedAt
+        + finalEntry.startsAtMs
+        + finalEntry.timing.closeMs,
+      transition: null,
+      playbackComplete: true
+    }
+  }
   let transitionOrdinal = 1
   let entry = schedule.getEntry(transitionOrdinal)
-  while (elapsedMs >= entry.nextStartsAtMs) {
+  while (entry && elapsedMs >= entry.nextStartsAtMs) {
     transitionOrdinal += 1
     entry = schedule.getEntry(transitionOrdinal)
   }
 
+  if (!entry) {
+    const fallbackBackground = getBackgroundAtCycle(
+      group,
+      backgrounds,
+      playbackStartIndex,
+      mode,
+      Math.max(0, backgrounds.length - 1),
+      loop
+    ) ?? backgrounds[0]
+    return {
+      background: fallbackBackground,
+      nextBackground: null,
+      cycle: Math.max(0, backgrounds.length - 1),
+      changedAt: scheduleStartedAt,
+      transition: null,
+      playbackComplete: !loop
+    }
+  }
+
   const previousEntry = transitionOrdinal > 1 ? schedule.getEntry(transitionOrdinal - 1) : null
-  const fromBackground = getBackgroundAtCycle(group, backgrounds, playbackStartIndex, mode, transitionOrdinal - 1)
+  const fromBackground = getBackgroundAtCycle(
+    group,
+    backgrounds,
+    playbackStartIndex,
+    mode,
+    transitionOrdinal - 1,
+    loop
+  )
   const toBackground = entry.targetBackground
 
   if (elapsedMs < entry.startsAtMs) {
@@ -1161,7 +1263,8 @@ const getBackgroundPlaybackFrame = (group, now) => {
       changedAt: previousEntry
         ? scheduleStartedAt + previousEntry.startsAtMs + previousEntry.timing.closeMs
         : scheduleStartedAt,
-      transition: null
+      transition: null,
+      playbackComplete: false
     }
   }
 
@@ -1194,7 +1297,8 @@ const getBackgroundPlaybackFrame = (group, now) => {
           toBackground,
           startedAt: transitionStartedAt
         }
-      : null
+      : null,
+    playbackComplete: false
   }
 }
 
@@ -2311,19 +2415,30 @@ const receiveState = (state) => {
     ? state.watermarkEnabled
     : previousState.watermarkEnabled
   const previousPreview = previousState.preview ?? {}
-  const nextPreview = {
-    ...(state.preview ?? {}),
-    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED
-  }
   const normalizedGroups = Object.fromEntries(
     Object.entries(state.groups ?? {}).map(([groupId, group]) => [
       groupId,
       {
         ...(group ?? {}),
+        backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
+          group?.backgroundPlaybackLoop
+        ),
         advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED
       }
     ])
   )
+  const activeGroupForPreview = normalizedGroups[state.activeGroupId]
+  const nextPreview = {
+    ...(state.preview ?? {}),
+    backgroundId: state.preview?.enabled === true && typeof state.preview?.backgroundId === 'string'
+      ? state.preview.backgroundId.trim()
+      : null,
+    backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
+      state.preview?.backgroundPlaybackLoop,
+      activeGroupForPreview?.backgroundPlaybackLoop
+    ),
+    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED
+  }
   const activeGroupChanged = previousState.activeGroupId !== state.activeGroupId
   const previewRestarted = Boolean(nextPreview.enabled) && (
     !previousPreview.enabled
@@ -2362,7 +2477,7 @@ const receiveState = (state) => {
   }
 
   const preview = runtimeState.preview ?? {}
-  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${preview.appearMode}:${preview.intervalMs}:${preview.appearAnimation}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}:${preview.backgroundTransition}:${preview.advancedFeaturesEnabled}`
+  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${String(preview.backgroundId ?? '').trim()}:${preview.appearMode}:${preview.intervalMs}:${preview.appearAnimation}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}:${preview.backgroundPlaybackLoop}:${preview.backgroundTransition}:${preview.advancedFeaturesEnabled}`
   if (key !== lastPreviewKey) {
     lastPreviewKey = key
     previewStartTime = performance.now()

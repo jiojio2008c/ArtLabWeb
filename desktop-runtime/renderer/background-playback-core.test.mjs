@@ -2,8 +2,13 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 import {
+  DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP,
+  getDynamicBackgroundPlaybackIndexAtCycle,
+  getDynamicBackgroundPlaybackOrder,
+  getDynamicBackgroundPlaybackRoundLength,
   getDynamicFixedBackgroundEpochKey,
   getDynamicStageItemsForBackground,
+  normalizeDynamicBackgroundPlaybackLoop,
   resolveDynamicFixedBackgroundEpoch,
   resolveDynamicBackgroundPlaybackEpoch
 } from './background-playback-core.js'
@@ -119,5 +124,99 @@ assert.equal(
   resolveDynamicBackgroundPlaybackEpoch(playbackEpoch, 'sequence-b', 9800).startedAt,
   9800
 )
+
+assert.equal(DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP, true)
+assert.equal(normalizeDynamicBackgroundPlaybackLoop(undefined), true)
+assert.equal(normalizeDynamicBackgroundPlaybackLoop('false'), false)
+assert.equal(normalizeDynamicBackgroundPlaybackLoop(0), false)
+assert.equal(normalizeDynamicBackgroundPlaybackLoop('on'), true)
+
+const playbackBackgrounds = [
+  { id: 'background-a' },
+  { id: 'background-b' },
+  { id: 'background-c' },
+  { id: 'background-d' }
+]
+assert.equal(getDynamicBackgroundPlaybackRoundLength(playbackBackgrounds, 'sequence'), 4)
+assert.equal(getDynamicBackgroundPlaybackRoundLength(playbackBackgrounds, 'fixed'), 1)
+assert.deepEqual(
+  [...Array(4)].map((entry, cycle) => getDynamicBackgroundPlaybackIndexAtCycle(
+    playbackBackgrounds,
+    'background-b',
+    'sequence',
+    cycle,
+    false
+  )),
+  [0, 1, 2, 3],
+  'A finite sequence must visit each persisted background once in order.'
+)
+assert.equal(
+  getDynamicBackgroundPlaybackIndexAtCycle(
+    playbackBackgrounds,
+    'background-b',
+    'sequence',
+    4,
+    false
+  ),
+  -1,
+  'A finite sequence must report no next background after its final entry.'
+)
+
+const randomRound = getDynamicBackgroundPlaybackOrder(
+  playbackBackgrounds,
+  'background-c',
+  'random',
+  'round-seed',
+  0
+)
+assert.equal(randomRound[0], 2)
+assert.equal(new Set(randomRound).size, playbackBackgrounds.length)
+assert.deepEqual(
+  [...Array(playbackBackgrounds.length)].map((entry, cycle) => getDynamicBackgroundPlaybackIndexAtCycle(
+    playbackBackgrounds,
+    'background-c',
+    'random',
+    cycle,
+    false,
+    'round-seed'
+  )),
+  randomRound,
+  'A finite random round must use a deterministic shuffle bag without repeats.'
+)
+assert.equal(
+  getDynamicBackgroundPlaybackIndexAtCycle(
+    playbackBackgrounds,
+    'background-c',
+    'random',
+    playbackBackgrounds.length,
+    false,
+    'round-seed'
+  ),
+  -1
+)
+const loopingRandomIndexes = [...Array(playbackBackgrounds.length * 3)].map((entry, cycle) => (
+  getDynamicBackgroundPlaybackIndexAtCycle(
+    playbackBackgrounds,
+    'background-c',
+    'random',
+    cycle,
+    true,
+    'round-seed'
+  )
+))
+for (let round = 0; round < 3; round += 1) {
+  const roundIndexes = loopingRandomIndexes.slice(
+    round * playbackBackgrounds.length,
+    (round + 1) * playbackBackgrounds.length
+  )
+  assert.equal(new Set(roundIndexes).size, playbackBackgrounds.length)
+  if (round > 0) {
+    assert.notEqual(
+      roundIndexes[0],
+      loopingRandomIndexes[round * playbackBackgrounds.length - 1],
+      'Looping random rounds should avoid an immediate boundary repeat.'
+    )
+  }
+}
 
 console.log('Fixed-background appearance epoch continuity verified.')

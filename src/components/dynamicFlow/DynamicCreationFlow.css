@@ -1133,6 +1133,14 @@
   gap: 8px;
 }
 
+.dynamic-flow-panel .dynamic-flow-background-choice-hint {
+  margin: 10px 0 0;
+  color: var(--flow-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .dynamic-flow-panel .dynamic-flow-background-choice-grid > button {
   min-width: 0;
   border: 1px solid var(--flow-line);
@@ -1143,7 +1151,47 @@
   gap: 7px;
   background: rgba(255, 255, 255, 0.72);
   text-align: left;
+  touch-action: pan-y;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid.is-reordering {
+  cursor: grabbing;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.is-dragging {
+  opacity: 0.58;
+  transform: scale(0.97);
+  cursor: grabbing;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-before,
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-after {
+  position: relative;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-before::before,
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-after::after {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--flow-accent);
+  box-shadow: 0 0 0 3px rgba(8, 127, 153, 0.14);
+  content: '';
+  pointer-events: none;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-before::before {
+  left: -5px;
+}
+
+.dynamic-flow-panel .dynamic-flow-background-choice-grid > button.drop-after::after {
+  right: -5px;
 }
 
 .dynamic-flow-panel .dynamic-flow-background-choice-grid > button.is-selected {
@@ -1499,6 +1547,15 @@
   gap: 10px;
 }
 
+.dynamic-flow-panel .dynamic-flow-audio-source-actions {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .dynamic-flow-panel .dynamic-flow-audio-upload {
   min-width: 44px;
   min-height: 44px;
@@ -1740,6 +1797,7 @@
 .dynamic-flow-panel .dynamic-flow-audio-background-button:active:not(:disabled),
 .dynamic-flow-panel .dynamic-flow-audio-object-rail > button:active:not(:disabled),
 .dynamic-flow-panel .dynamic-flow-audio-upload:active:not(:disabled),
+.dynamic-flow-panel .dynamic-flow-audio-record:active:not(:disabled),
 .dynamic-flow-panel .dynamic-flow-audio-source-select:active:not(:disabled),
 .dynamic-flow-panel .dynamic-flow-audio-source-preview:active,
 .dynamic-flow-panel .dynamic-flow-audio-trigger-options button:active:not(:disabled) {

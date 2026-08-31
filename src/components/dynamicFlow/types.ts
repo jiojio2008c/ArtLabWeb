@@ -99,8 +99,10 @@ export interface DynamicCreationFlowPanelProps {
   onAddRelation: (sourceId: string) => void
   onEditRelation: (targetId: string) => void
   onSetItemBackgrounds: (itemId: string, backgroundIds: string[]) => void
+  onReorderBackgrounds?: (backgroundIds: string[]) => void
   onManageBackgrounds: () => void
   onUploadAudio: () => void
+  onRecordAudio?: () => void
   onPreviewAudio: (audioId: string) => void
   onSetItemAudio: (itemId: string, audioId?: string) => void
   onSetItemAudioTrigger: (itemId: string, trigger: DynamicCreationItemAudioTrigger) => void

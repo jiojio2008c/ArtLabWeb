@@ -35,7 +35,7 @@ test('state caching, stage standby, and preview activation remain separate', () 
   assert.match(fullStateSource, /eventName === 'GroupSelectAndSync'/)
   assert.match(fullStateSource, /runtimeState\.preview\.enabled = false/)
   assert.doesNotMatch(fullStateSource, /eventName === 'GroupStateSync'[\s\S]*?setActiveGroup/)
-  assert.match(previewSource, /enabled:\s*Boolean\(payload\.enabled\)/)
+  assert.match(previewSource, /(?:enabled:\s*Boolean\(payload\.enabled\)|const previewEnabled = Boolean\(payload\.enabled\)[\s\S]*?enabled:\s*previewEnabled)/)
   assert.match(playerSource, /const getPreviewPresentationKey = \(\) =>/)
   assert.match(playerSource, /if \(preview\.enabled !== true \|\| isArchiveView\(\)\) return ''/)
   assert.match(playerSource, /displayRoot\?\.classList\.toggle\('is-stage-standby', standbyActive\)/)
@@ -171,17 +171,21 @@ test('iPad preview starts locally and forwards transient options after sync', ()
   assert.doesNotMatch(previewEntrySource, /sendPreviewModeState\(true/)
   assert.match(
     previewEntrySource,
-    /startPreviewReceiverSync\(requestId, replayId, options\.backgroundPlayMode\)/
+    /startPreviewReceiverSync\(requestId, replayId, options\.backgroundPlayMode(?:,\s*targetBackgroundId)?\)/
   )
   assert.match(
     receiverSyncSource,
-    /syncDynamicGroupToReceiver\([\s\S]*?\.then\([\s\S]*?sendPreviewModeState\(true,\s*\{ replayId, backgroundPlayMode \}\)/
+    /syncDynamicGroupToReceiver\([\s\S]*?\.then\([\s\S]*?sendPreviewModeState\(true,\s*\{ replayId, backgroundPlayMode, backgroundId \}\)/
   )
   assert.match(
     previewEntrySource,
-    /setPreviewModeEnabled\(true,\s*\{\s*backgroundId: selectedBackground\.id,\s*backgroundPlayMode: 'fixed'\s*\}\)/
+    /setStagePlaybackEnabled\(true,\s*\{\s*backgroundId: selectedBackground\.id,\s*backgroundPlayMode: 'fixed'\s*\}\)/
   )
   assert.doesNotMatch(previewEntrySource, /updateDynamicBackgroundPlayback/)
+  assert.match(controlSource, /backgroundPlaybackLoop:\s*options\.backgroundPlaybackLoop\s*\?\?\s*previewGroup\.backgroundPlaybackLoop\s*\?\?\s*true/)
+  assert.match(controlSource, /getDynamicBackgroundPlaybackIndexAtCycle\(/)
+  assert.match(controlSource, /if \(!playbackLoop && nextCycle >= roundLength\) return/)
+  assert.match(controlSource, /if \(playbackLoop \|\| cycle < roundLength - 1\)/)
   assert.match(controlSource, /PREVIEW_RECEIVER_SYNC_TIMEOUT_MS/)
 })
 
@@ -204,6 +208,63 @@ test('background deletion clears deleted scopes in the desktop cache', () => {
   )
   assert.match(deleteSource, /backgroundIds:\s*Array\.isArray\(item\.backgroundIds\)/)
   assert.match(deleteSource, /filter\(\(backgroundId\) => !deleteIds\.has\(backgroundId\)\)/)
+})
+
+test('desktop background playback preserves loop policy and finite completion', () => {
+  const fullStateSource = mainSource.slice(
+    mainSource.indexOf("case 'GroupSelectAndSync':"),
+    mainSource.indexOf("case 'GroupAppearMode':")
+  )
+  const previewSource = mainSource.slice(
+    mainSource.indexOf("case 'PreviewMode':"),
+    mainSource.indexOf("case 'BackgroundSet':")
+  )
+  const playbackSource = mainSource.slice(
+    mainSource.indexOf("case 'BackgroundPlayback':"),
+    mainSource.indexOf("case 'ItemCreate':")
+  )
+
+  assert.match(fullStateSource, /group\.backgroundPlaybackLoop\s*=\s*normalizeBackgroundPlaybackLoop/)
+  assert.match(previewSource, /backgroundPlaybackLoop:\s*normalizeBackgroundPlaybackLoop/)
+  assert.match(playbackSource, /payload\.backgroundPlaybackLoop/)
+  assert.match(playerSource, /backgroundPlaybackLoop/)
+  assert.match(playerSource, /playbackComplete:\s*true/)
+  assert.match(playerSource, /nextBackground:\s*null,[\s\S]*?playbackComplete:\s*true/)
+})
+
+test('preview target backgrounds stay transient and drive desktop playback', () => {
+  const previewSource = mainSource.slice(
+    mainSource.indexOf("case 'PreviewMode':"),
+    mainSource.indexOf("case 'BackgroundSet':")
+  )
+  assert.match(
+    previewSource,
+    /backgroundId:\s*previewEnabled\s*[\s\S]*?resolvePreviewBackgroundId\(previewGroup, payload\.backgroundId\)/
+  )
+  assert.match(mainSource, /const resolvePreviewBackgroundId = \(group, backgroundId\) =>/)
+  assert.match(mainSource, /const clearPreviewTargetBackground = \(\) => \{[\s\S]*?backgroundId = null/)
+  assert.match(
+    mainSource,
+    /case 'GroupSelect':\s*\{[\s\S]*?previousActiveGroupId[\s\S]*?clearPreviewTargetBackground\(\)/
+  )
+
+  assert.match(playerSource, /const getPreviewBackgroundId = \(group, preview = runtimeState\.preview\) =>/)
+  assert.match(
+    playerSource,
+    /const activeIndex = getDynamicBackgroundPlaybackStartIndex\(\s*backgrounds,\s*previewBackgroundId,\s*'fixed'\s*\)/
+  )
+  assert.match(
+    playerSource,
+    /const playbackStartIndex = getDynamicBackgroundPlaybackStartIndex\(\s*backgrounds,\s*previewBackgroundId,\s*mode\s*\)/
+  )
+  assert.match(
+    playerSource,
+    /getPreviewPresentationKey = \(\) => \{[\s\S]*?preview\.backgroundId/
+  )
+  assert.match(
+    playerSource,
+    /const key = `\$\{preview\.enabled\}:\$\{preview\.replayId\}:\$\{preview\.groupId\}:\$\{String\(preview\.backgroundId/
+  )
 })
 
 test('archive return accepts a newer capture even when the PNG data is identical', () => {
