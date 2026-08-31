@@ -51,6 +51,7 @@ const en = {
   'common.done': 'Done',
   'control.quickBackgroundSwitch': 'Quick Background Switch',
   'control.playSelectedBackground': 'Play Current Background',
+  'control.stopBackgroundPlayback': 'Stop Playback',
   'control.appearanceOrder': 'Entrance Order',
   'control.objectLinkage': 'Entrance Order',
   'control.linkageImmediate': 'Immediately After',

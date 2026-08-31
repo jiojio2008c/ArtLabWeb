@@ -1043,6 +1043,24 @@ const getGroupBackgrounds = (group: DynamicGroup) => {
   return group.background ? [group.background] : []
 }
 
+const normalizeInitialDynamicItemBackgroundIds = (
+  group: DynamicGroup,
+  initialBackgroundIds?: string | string[]
+) => {
+  if (initialBackgroundIds === undefined) return []
+
+  const validBackgroundIds = new Set(getGroupBackgrounds(group).map((background) => background.id))
+  const requestedBackgroundIds = Array.isArray(initialBackgroundIds)
+    ? initialBackgroundIds
+    : [initialBackgroundIds]
+
+  return Array.from(new Set(
+    requestedBackgroundIds
+      .map((backgroundId) => typeof backgroundId === 'string' ? backgroundId.trim() : '')
+      .filter((backgroundId) => backgroundId && validBackgroundIds.has(backgroundId))
+  ))
+}
+
 const normalizeDynamicGroupAppearance = (group: DynamicGroup): DynamicGroup => {
   const sourceBackgrounds = getGroupBackgrounds(group)
   const backgrounds = sourceBackgrounds.map((background) => ({
@@ -1674,7 +1692,12 @@ const reorderDynamicBackgrounds = (
   return group
 }
 
-const addDynamicItem = async (groupId: string, file: File, itemName?: string) => {
+const addDynamicItem = async (
+  groupId: string,
+  file: File,
+  itemName?: string,
+  initialBackgroundIds?: string | string[]
+) => {
   const media = await persistDynamicMedia(file, `${groupId}/items`)
   const groups = loadRawGroups()
   const group = groups.find((item) => item.id === groupId)
@@ -1708,7 +1731,7 @@ const addDynamicItem = async (groupId: string, file: File, itemName?: string) =>
     hideAfterTarget: false,
     audioTrigger: 'appearance',
     audioDelayMs: 0,
-    backgroundIds: [],
+    backgroundIds: normalizeInitialDynamicItemBackgroundIds(group, initialBackgroundIds),
     isVisible: true,
     order: group.items.length,
     createdAt: now,
@@ -1763,7 +1786,8 @@ const updateDynamicItemMeta = async (
 const createDynamicItemBase = (
   group: DynamicGroup,
   name: string,
-  now: number
+  now: number,
+  initialBackgroundIds?: string | string[]
 ): DynamicItemBase => ({
   id: generateId('item'),
   name,
@@ -1786,14 +1810,18 @@ const createDynamicItemBase = (
   hideAfterTarget: false,
   audioTrigger: 'appearance',
   audioDelayMs: 0,
-  backgroundIds: [],
+  backgroundIds: normalizeInitialDynamicItemBackgroundIds(group, initialBackgroundIds),
   isVisible: true,
   order: group.items.length,
   createdAt: now,
   updatedAt: now
 })
 
-const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
+const addDynamicBubble = async (
+  groupId: string,
+  input: DynamicBubbleInput,
+  initialBackgroundIds?: string | string[]
+) => {
   const bubbleType = normalizeDynamicBubbleType(input.bubbleType)
   let image: DynamicMedia | undefined
   if (bubbleType === 'thought' && input.imageFile) {
@@ -1816,7 +1844,12 @@ const addDynamicBubble = async (groupId: string, input: DynamicBubbleInput) => {
     ? input.bodyText.trim() || input.title.trim()
     : input.title.trim()
   const item: DynamicBubbleItem = {
-    ...createDynamicItemBase(group, input.name?.trim() || nameFallback || '气泡', now),
+    ...createDynamicItemBase(
+      group,
+      input.name?.trim() || nameFallback || '气泡',
+      now,
+      initialBackgroundIds
+    ),
     kind: 'bubble',
     bubble: normalizeDynamicBubbleContent({
       schemaVersion: 2,

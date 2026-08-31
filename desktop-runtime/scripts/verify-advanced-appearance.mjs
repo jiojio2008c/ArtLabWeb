@@ -647,6 +647,10 @@ const dynamicControlSource = await readFile(
   new URL('../../src/components/DynamicControlPage.tsx', import.meta.url),
   'utf8'
 )
+const dynamicControlAudioScheduler = dynamicControlSource.slice(
+  dynamicControlSource.indexOf('const sessionKey = playbackActive && advancedFeaturesEnabled'),
+  dynamicControlSource.indexOf('useLayoutEffect(() => {\n    const stage = stageRef.current')
+)
 assert.match(
   dynamicControlSource,
   /getDynamicAppearanceAnimationSeekMs/,
@@ -661,6 +665,25 @@ assert.match(
   dynamicControlSource,
   /DYNAMIC_APPEARANCE_EASING/,
   'The Web appearance component must use the shared desktop easing.'
+)
+assert.doesNotMatch(
+  dynamicControlAudioScheduler,
+  /sampleDynamicAppearanceTimeline\([^\n]+\)\.active/,
+  'Zero-delay Web object audio must not be rejected while the entrance alpha is still zero.'
+)
+
+const desktopPlayerSource = await readFile(
+  new URL('../renderer/player.js', import.meta.url),
+  'utf8'
+)
+const desktopObjectAudioScheduler = desktopPlayerSource.slice(
+  desktopPlayerSource.indexOf('const updateAdvancedAudioPlayback ='),
+  desktopPlayerSource.indexOf('const drawCover =')
+)
+assert.doesNotMatch(
+  desktopObjectAudioScheduler,
+  /sampleDynamicAppearanceTimeline/,
+  'Desktop object audio must trigger from elapsed time without an entrance-alpha veto.'
 )
 
 console.log('Advanced appearance timeline verification passed.')

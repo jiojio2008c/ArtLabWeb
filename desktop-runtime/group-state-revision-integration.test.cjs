@@ -154,7 +154,7 @@ test('stale uploads are rejected before file or runtime mutations', () => {
   assert.ok(ensureIndex > gateIndex)
 })
 
-test('iPad preview starts locally and forwards transient options after sync', () => {
+test('iPad preview syncs remotely while current-stage playback stays local', () => {
   const controlSource = fs.readFileSync(
     path.join(runtimeDir, '..', 'src', 'components', 'DynamicControlPage.tsx'),
     'utf8'
@@ -178,9 +178,19 @@ test('iPad preview starts locally and forwards transient options after sync', ()
     /syncDynamicGroupToReceiver\([\s\S]*?\.then\([\s\S]*?sendPreviewModeState\(true,\s*\{ replayId, backgroundPlayMode, backgroundId \}\)/
   )
   assert.match(
-    previewEntrySource,
-    /setStagePlaybackEnabled\(true,\s*\{\s*backgroundId: selectedBackground\.id,\s*backgroundPlayMode: 'fixed'\s*\}\)/
+    receiverSyncSource,
+    /previewReplayIdRef\.current !== replayId\s*\|\| !previewModeRef\.current/
   )
+  assert.match(
+    previewEntrySource,
+    /setStagePlaybackEnabled\(true,\s*\{\s*backgroundId: selectedBackground\.id\s*\}\)/
+  )
+  const stagePlaybackSource = previewEntrySource.slice(
+    previewEntrySource.indexOf('const setStagePlaybackEnabled'),
+    previewEntrySource.indexOf('const handleCurrentBackgroundPlayback')
+  )
+  assert.match(stagePlaybackSource, /setStagePlaybackActive\(true\)/)
+  assert.doesNotMatch(stagePlaybackSource, /startPreviewReceiverSync|sendPreviewModeState/)
   assert.doesNotMatch(previewEntrySource, /updateDynamicBackgroundPlayback/)
   assert.match(controlSource, /backgroundPlaybackLoop:\s*options\.backgroundPlaybackLoop\s*\?\?\s*previewGroup\.backgroundPlaybackLoop\s*\?\?\s*true/)
   assert.match(controlSource, /getDynamicBackgroundPlaybackIndexAtCycle\(/)

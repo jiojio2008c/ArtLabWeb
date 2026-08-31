@@ -25,6 +25,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Shuffle,
+  Square,
   Target,
   Trash2,
   Upload,
@@ -1709,7 +1710,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const previewBackgroundPlayMode = previewSelectedBackgroundOnly
     ? 'fixed'
     : group.backgroundPlayMode ?? 'fixed'
-  const showBackgroundQuickSwitcher = !playbackActive && backgrounds.length >= 2
+  const showBackgroundQuickSwitcher = !previewMode && backgrounds.length > 0
   const backgroundIntervalDisplayValue = Number(backgroundIntervalDraft)
   const backgroundWheelValue = Number.isFinite(backgroundIntervalDisplayValue) && backgroundIntervalDisplayValue > 0
     ? backgroundIntervalDisplayValue
@@ -1728,7 +1729,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     || (flowStep === 'backgrounds' && flowDetailSection !== 'background')
     || (flowStep === 'audio' && flowDetailSection !== 'audio')
   )
-  const rightPanelMode = playbackActive
+  const rightPanelMode = previewMode
     ? 'preview'
     : flowCustomPanelVisible
       ? 'flow'
@@ -1737,7 +1738,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       : toolOpen && selectedItem
         ? 'object'
         : 'layers'
-  const rightPanelVisible = !playbackActive && rightPanelMode !== 'collapsed'
+  const rightPanelVisible = !previewMode && rightPanelMode !== 'collapsed'
   const availablePropertyTabs = propertyTabOptions.filter(({ id }) => (
     (advancedFeaturesEnabled ? advancedPropertyTabIds : basicPropertyTabIds).includes(id)
   ))
@@ -2563,7 +2564,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         if (!currentEpoch || currentEpoch.key !== epoch.key) return
         const elapsedMs = Math.max(0, performance.now() - currentEpoch.startedAt)
         if (currentEpoch.schedule.hideStartMs !== null && elapsedMs >= currentEpoch.schedule.hideStartMs) return
-        if (!sampleDynamicAppearanceTimeline(currentEpoch.schedule, elapsedMs).active) return
         playObjectAudio(item.audioId)
       }, Math.max(0, playAt - performance.now()))
       objectAudioTimersRef.current.set(item.id, timer)
@@ -2993,7 +2993,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         if (
           previewStartRequestRef.current !== requestId
           || previewReplayIdRef.current !== replayId
-          || (!previewModeRef.current && !stagePlaybackActiveRef.current)
+          || !previewModeRef.current
         ) return
         setReceiverSyncError(false)
         if (synced) {
@@ -3095,7 +3095,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     enabled: boolean,
     options: {
       backgroundId?: string
-      backgroundPlayMode?: DynamicBackgroundPlayMode
     } = {}
   ) => {
     if (enabled) {
@@ -3106,19 +3105,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         ?? ''
       if (!selectedBackgroundId) return
 
-      const requestId = previewStartRequestRef.current + 1
-      previewStartRequestRef.current = requestId
+      previewStartRequestRef.current += 1
       previewStartPendingRef.current = false
       clearTargetEditing()
       clearPreviewPlayback(false)
-      const replayId = nextPreviewReplayId()
+      nextPreviewReplayId()
       stagePlaybackActiveRef.current = true
       previewBackgroundIdRef.current = selectedBackgroundId
       setPreviewSelectedBackgroundOnly(true)
       setPreviewBackgroundId(selectedBackgroundId)
       setStagePlaybackActive(true)
+      setReceiverSyncStatus(null)
       setReceiverSyncError(false)
-      startPreviewReceiverSync(requestId, replayId, options.backgroundPlayMode ?? 'fixed', selectedBackgroundId)
       return
     }
 
@@ -3136,10 +3134,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setReceiverSyncStatus(null)
     setReceiverSyncError(false)
     clearPreviewPlayback(false)
-    sendPreviewModeState(false, { replayId: previewReplayIdRef.current, backgroundId: '' })
   }
 
-  const handleSelectedBackgroundPreview = () => {
+  const handleCurrentBackgroundPlayback = () => {
     if (stagePlaybackActiveRef.current) {
       setStagePlaybackEnabled(false)
       return
@@ -3149,8 +3146,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!selectedBackground) return
 
     setStagePlaybackEnabled(true, {
-      backgroundId: selectedBackground.id,
-      backgroundPlayMode: 'fixed'
+      backgroundId: selectedBackground.id
     })
   }
 
@@ -3657,7 +3653,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setIsAddingLayerItem(true)
     try {
       flushPendingTransformPersist()
-      const nextGroup = await addDynamicItem(currentGroup.id, file, file.name)
+      const initialBackgroundId = getActiveBackgroundForGroup(currentGroup)?.id
+      const nextGroup = await addDynamicItem(
+        currentGroup.id,
+        file,
+        file.name,
+        initialBackgroundId
+      )
       if (!nextGroup) return
 
       const previousItemIds = new Set(currentGroup.items.map((item) => item.id))
@@ -3688,6 +3690,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         name: createdItem.name,
         order: createdItem.order,
         gridIndex: createdItem.gridIndex,
+        backgroundIds: createdItem.backgroundIds,
         stateRevision
       })
 
@@ -6031,9 +6034,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               : t('bubbleEditor.defaultName.dialogue'))
       }
       const currentGroup = latestGroupRef.current
+      const initialBackgroundId = getActiveBackgroundForGroup(currentGroup)?.id
       const nextGroup = editingBubbleItem
         ? await updateDynamicBubble(currentGroup.id, editingBubbleItem.id, input)
-        : await addDynamicBubble(currentGroup.id, input)
+        : await addDynamicBubble(currentGroup.id, input, initialBackgroundId)
       if (!nextGroup) throw new Error('Unable to save bubble')
 
       const itemId = editingBubbleItem?.id
@@ -6436,12 +6440,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       aria-hidden={transitionPreparing || undefined}
     >
       <header className="ipad-topbar dynamic-control-topbar">
-        {playbackActive ? (
+        {previewMode ? (
           <div className="dynamic-preview-lock-actions">
             <button
               type="button"
               className="ipad-button preview-action secondary-button preview-stop-button"
-              onClick={() => previewMode ? setPreviewModeEnabled(false) : setStagePlaybackEnabled(false)}
+              onClick={() => setPreviewModeEnabled(false)}
             >
               {t('control.stopPreview')}
             </button>
@@ -6610,7 +6614,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       )}
 
       <section className="dynamic-control-workspace">
-        <div className={`dynamic-editor-row ${playbackActive ? 'preview-only' : ''} ${rightPanelVisible ? 'right-panel-open' : 'right-panel-collapsed'}`}>
+        <div className={`dynamic-editor-row ${previewMode ? 'preview-only' : ''} ${rightPanelVisible ? 'right-panel-open' : 'right-panel-collapsed'}`}>
           <div className={`dynamic-stage-shell ${showBackgroundQuickSwitcher ? 'has-background-quick-switcher' : ''}`}>
             {showBackgroundQuickSwitcher && (
               <section
@@ -6659,13 +6663,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </div>
                 <button
                   type="button"
-                  className="ipad-button dynamic-background-quick-play"
-                  onClick={handleSelectedBackgroundPreview}
-                  aria-label={t('control.playSelectedBackground')}
-                  title={t('control.playSelectedBackground')}
+                  className={`ipad-button dynamic-background-quick-play ${stagePlaybackActive ? 'is-playing' : ''}`}
+                  onClick={handleCurrentBackgroundPlayback}
+                  aria-label={t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}
+                  aria-pressed={stagePlaybackActive}
+                  title={t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}
                 >
-                  <Play size={18} fill="currentColor" aria-hidden="true" />
-                  <span>{t('control.playSelectedBackground')}</span>
+                  {stagePlaybackActive ? (
+                    <Square size={18} fill="currentColor" aria-hidden="true" />
+                  ) : (
+                    <Play size={18} fill="currentColor" aria-hidden="true" />
+                  )}
+                  <span>{t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}</span>
                 </button>
               </section>
             )}

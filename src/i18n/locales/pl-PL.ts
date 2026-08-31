@@ -51,6 +51,7 @@ const plPL = {
   'common.done': 'Gotowe',
   'control.quickBackgroundSwitch': 'Szybka zmiana tła',
   'control.playSelectedBackground': 'Odtwórz bieżące tło',
+  'control.stopBackgroundPlayback': 'Zatrzymaj odtwarzanie',
   'control.appearanceOrder': 'Kolejność wejścia',
   'control.objectLinkage': 'Kolejność wejścia',
   'control.linkageImmediate': 'Bezpośrednio po',

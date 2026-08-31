@@ -13699,9 +13699,11 @@ button.ui-pressed {
 .remote-knob-center-button {
   position: absolute;
   top: 50%;
-  right: 11.76%;
+  right: 21.5%;
   z-index: 5;
-  width: 55.48%;
+  width: 36%;
+  min-width: 44px;
+  min-height: 44px;
   aspect-ratio: 1;
   padding: 0;
   border: 0;
@@ -13759,12 +13761,7 @@ button.ui-pressed {
 }
 
 .remote-knob-control[data-control="volume"] .remote-scale-volume-low {
-  left: 2%;
-  top: 43%;
-}
-
-.remote-knob-control[data-control="volume"] .remote-scale-volume-high {
-  right: 2%;
+  left: 23%;
   top: 43%;
 }
 
@@ -21178,6 +21175,14 @@ button.ui-pressed {
   -webkit-line-clamp: 2;
 }
 
+.dynamic-background-quick-play.is-playing {
+  border-color: rgba(127, 29, 29, 0.34);
+  background: #c62828;
+  box-shadow:
+    0 8px 18px rgba(127, 29, 29, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
 .dynamic-background-quick-card:active,
 .dynamic-background-quick-play:active {
   transform: scale(0.96);
@@ -21192,6 +21197,11 @@ button.ui-pressed {
   .dynamic-background-quick-play:hover {
     background: #087f8d;
     box-shadow: 0 10px 22px rgba(8, 89, 95, 0.24);
+  }
+
+  .dynamic-background-quick-play.is-playing:hover {
+    background: #b71c1c;
+    box-shadow: 0 10px 22px rgba(127, 29, 29, 0.32);
   }
 }
 

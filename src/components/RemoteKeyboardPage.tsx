@@ -10,7 +10,6 @@ import {
   RotateCcw,
   Undo2,
   Volume1,
-  Volume2,
   X,
   type LucideIcon
 } from 'lucide-react'
@@ -251,6 +250,12 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
     lastAngle: number
     carry: number
   } | null>(null)
+  const centerGestureRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    rotating: boolean
+  } | null>(null)
   const centerPressedRef = useRef(false)
   const [dragging, setDragging] = useState(false)
   const [centerPressed, setCenterPressed] = useState(false)
@@ -269,6 +274,7 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (dragRef.current || centerGestureRef.current) return
     const point = pointAngle(event.currentTarget, event.clientX, event.clientY)
     if (point.radius < point.minimumRadius) return
 
@@ -326,17 +332,90 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
 
   const handleCenterPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (centerGestureRef.current || dragRef.current) return
     event.stopPropagation()
     event.preventDefault()
     primeRemoteKeyboardAudio()
     event.currentTarget.setPointerCapture(event.pointerId)
+    centerGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      rotating: false
+    }
     centerPressedRef.current = true
     setCenterPressed(true)
     playRemoteKeyDown(centerWeight)
   }
 
-  const handleCenterPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleCenterPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const gesture = centerGestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+
     event.stopPropagation()
+    event.preventDefault()
+    if (!gesture.rotating) {
+      const travel = Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY)
+      if (travel < 8) return
+
+      const knob = knobRef.current
+      if (!knob) return
+      const point = pointAngle(knob, event.clientX, event.clientY)
+      gesture.rotating = true
+      releaseCenterPress(true)
+      dragRef.current = {
+        pointerId: event.pointerId,
+        lastAngle: point.angle,
+        carry: 0
+      }
+      setDragging(true)
+      return
+    }
+
+    const drag = dragRef.current
+    const knob = knobRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !knob) return
+    const point = pointAngle(knob, event.clientX, event.clientY)
+    if (point.radius < point.minimumRadius) return
+
+    const delta = normalizeAngleDelta(point.angle - drag.lastAngle)
+    drag.lastAngle = point.angle
+    if (Math.abs(delta) > 72) return
+
+    updateVisualRotation(delta)
+    drag.carry += delta
+    const detents = Math.trunc(drag.carry / KNOB_DETENT_DEGREES)
+    if (detents === 0) return
+
+    drag.carry -= detents * KNOB_DETENT_DEGREES
+    const steps = Math.abs(detents)
+    playRemoteKnobTick(size, steps)
+    onTurn(control, detents < 0 ? negativeKey : positiveKey, steps)
+  }
+
+  const finishCenterRotation = (pointerId: number) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== pointerId) return false
+    dragRef.current = null
+    setDragging(false)
+    playRemoteKnobRelease(size)
+    onTurnEnd()
+    return true
+  }
+
+  const handleCenterPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const gesture = centerGestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    const wasRotating = finishCenterRotation(event.pointerId)
+    centerGestureRef.current = null
+    if (wasRotating) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      if (event.pointerType !== 'mouse') event.currentTarget.blur()
+      return
+    }
     if (!centerPressedRef.current) return
     const target = document.elementFromPoint(event.clientX, event.clientY)
     const shouldActivate = Boolean(target && event.currentTarget.contains(target))
@@ -349,8 +428,12 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
   }
 
   const handleCenterPointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const gesture = centerGestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
     event.stopPropagation()
-    releaseCenterPress(true)
+    const wasRotating = finishCenterRotation(event.pointerId)
+    centerGestureRef.current = null
+    if (!wasRotating) releaseCenterPress(true)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
@@ -403,8 +486,8 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointerInteraction}
         onPointerCancel={finishPointerInteraction}
-        onLostPointerCapture={() => {
-          if (!dragRef.current) return
+        onLostPointerCapture={(event) => {
+          if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return
           dragRef.current = null
           setDragging(false)
           onTurnEnd()
@@ -433,11 +516,16 @@ const RotaryControl: React.FC<RotaryControlProps> = ({
           title={centerLabel ?? label}
           data-ui-feedback="none"
           onPointerDown={handleCenterPointerDown}
+          onPointerMove={handleCenterPointerMove}
           onPointerUp={handleCenterPointerUp}
           onPointerCancel={handleCenterPointerCancel}
           onLostPointerCapture={(event) => {
+            const gesture = centerGestureRef.current
+            if (!gesture || gesture.pointerId !== event.pointerId) return
             event.stopPropagation()
-            releaseCenterPress(true)
+            const wasRotating = finishCenterRotation(event.pointerId)
+            centerGestureRef.current = null
+            if (!wasRotating) releaseCenterPress(true)
           }}
           onClick={handleCenterClick}
           onContextMenu={(event) => event.preventDefault()}
@@ -560,7 +648,6 @@ const RemoteKeyboardPage: React.FC<RemoteKeyboardPageProps> = ({ wsIp, port, onB
               onTurnEnd={flushPendingTurn}
             >
               <span className="remote-scale-volume remote-scale-volume-low"><Volume1 /></span>
-              <span className="remote-scale-volume remote-scale-volume-high"><Volume2 /></span>
             </RotaryControl>
 
             <RotaryControl

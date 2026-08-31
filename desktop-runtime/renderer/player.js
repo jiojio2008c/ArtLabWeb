@@ -962,8 +962,7 @@ const updateAdvancedAudioPlayback = (group, items, backgroundFrame, now) => {
     const timelineElapsedMs = Math.max(0, now - itemEpoch.startedAt)
     if (triggerElapsedMs === null || timelineElapsedMs < triggerElapsedMs) return
     if (itemEpoch.schedule.hideStartMs !== null && triggerElapsedMs >= itemEpoch.schedule.hideStartMs) return
-    const sample = sampleDynamicAppearanceTimeline(itemEpoch.schedule, timelineElapsedMs)
-    if (!sample.active) return
+    if (itemEpoch.schedule.hideStartMs !== null && timelineElapsedMs >= itemEpoch.schedule.hideStartMs) return
     advancedPlaybackState.triggeredAudioCycles.set(triggerKey, now)
     playObjectAudio(item.audioId)
   })

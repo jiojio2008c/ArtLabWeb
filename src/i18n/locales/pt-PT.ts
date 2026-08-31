@@ -51,6 +51,7 @@ const ptPT = {
   'common.done': 'Concluir',
   'control.quickBackgroundSwitch': 'Mudança rápida de fundo',
   'control.playSelectedBackground': 'Reproduzir fundo atual',
+  'control.stopBackgroundPlayback': 'Parar reprodução',
   'control.appearanceOrder': 'Ordem de entrada',
   'control.objectLinkage': 'Ordem de entrada',
   'control.linkageImmediate': 'Logo a seguir',

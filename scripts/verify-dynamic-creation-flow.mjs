@@ -21,6 +21,7 @@ import {
   updateDynamicCreationFlowSession
 } from '../src/services/dynamicCreationFlowStorage.ts'
 import {
+  addDynamicBubble,
   DYNAMIC_GROUPS_KEY,
   setDynamicBackgroundBgm
 } from '../src/services/dynamicArtStorage.ts'
@@ -727,6 +728,57 @@ assert.deepEqual(
   'Persisting cleared BGM assignments must not delete audio-library records.'
 )
 
+const itemBackgroundStorage = createMemoryStorage()
+const itemBackgroundStages = [makeStoredMedia('stage-a'), makeStoredMedia('stage-b')]
+const itemBackgroundGroup = makeGroup([], {
+  background: itemBackgroundStages[1],
+  backgrounds: itemBackgroundStages,
+  activeBackgroundId: 'stage-b'
+})
+itemBackgroundStorage.setItem(DYNAMIC_GROUPS_KEY, JSON.stringify([itemBackgroundGroup]))
+globalThis.localStorage = itemBackgroundStorage
+let scopedBubbleGroup
+let legacyBubbleGroup
+try {
+  const bubbleInput = {
+    name: 'Scoped bubble',
+    bubbleType: 'dialogue',
+    styleId: 'dialogue-rounded-right',
+    title: '',
+    bodyText: 'Hello',
+    revealMode: 'instant',
+    revealIntervalMs: 80,
+    fontSizePx: 42,
+    textColor: '#111111',
+    paletteId: 'ocean',
+    maskColor: '#ffffff',
+    maskOpacity: 0.92,
+    widthPx: 520,
+    heightPx: 280
+  }
+  scopedBubbleGroup = await addDynamicBubble(itemBackgroundGroup.id, bubbleInput, 'stage-b')
+  legacyBubbleGroup = await addDynamicBubble(itemBackgroundGroup.id, {
+    ...bubbleInput,
+    name: 'Legacy bubble'
+  })
+} finally {
+  if (previousLocalStorage === undefined) {
+    delete globalThis.localStorage
+  } else {
+    globalThis.localStorage = previousLocalStorage
+  }
+}
+assert.deepEqual(
+  scopedBubbleGroup?.items[0]?.backgroundIds,
+  ['stage-b'],
+  'A stage-created object must default to the explicitly supplied current background.'
+)
+assert.deepEqual(
+  legacyBubbleGroup?.items[1]?.backgroundIds,
+  [],
+  'Creation calls without stage context must remain compatible with the all-background default.'
+)
+
 const memoryStorage = createMemoryStorage()
 memoryStorage.setItem(DYNAMIC_CREATION_FLOW_STORAGE_KEY, '{broken json')
 const recoveredStoredSession = loadDynamicCreationFlowSession('group-1', {
@@ -804,9 +856,97 @@ const dynamicStorageSource = readFileSync(
   new URL('../src/services/dynamicArtStorage.ts', import.meta.url),
   'utf8'
 )
+const remoteKeyboardSource = readFileSync(
+  new URL('../src/components/RemoteKeyboardPage.tsx', import.meta.url),
+  'utf8'
+)
 const desktopPlayerSource = readFileSync(
   new URL('../desktop-runtime/renderer/player.js', import.meta.url),
   'utf8'
+)
+
+for (const [locale, resource] of localizedFlowCopy) {
+  assert.equal(
+    typeof resource['control.stopBackgroundPlayback'] === 'string'
+      && resource['control.stopBackgroundPlayback'].trim().length > 0,
+    true,
+    `${locale} must provide user-facing copy for stopping current-stage playback.`
+  )
+}
+
+assert.match(
+  dynamicControlSource,
+  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0/,
+  'Every stage with a background must keep the background rail and its play/stop button available.'
+)
+assert.match(
+  dynamicControlSource,
+  /className={`ipad-button dynamic-background-quick-play \$\{stagePlaybackActive \? 'is-playing' : ''\}`}/,
+  'The current-background button must expose a dedicated playing state.'
+)
+const stagePlaybackHandler = dynamicControlSource.match(
+  /const setStagePlaybackEnabled = \([\s\S]*?\n  const handleCurrentBackgroundPlayback/
+)?.[0]
+assert.ok(stagePlaybackHandler, 'The current-stage playback handler must remain available.')
+assert.doesNotMatch(
+  stagePlaybackHandler,
+  /startPreviewReceiverSync|sendPreviewModeState/,
+  'Current-stage playback must not switch the receiver into remote preview mode.'
+)
+assert.match(
+  dynamicControlSource,
+  /previewReplayIdRef\.current !== replayId\s*\|\| !previewModeRef\.current[\s\S]*?sendPreviewModeState\(true/,
+  'A completed receiver sync must only enter remote preview while full preview is still active.'
+)
+assert.match(
+  dynamicControlSource,
+  /addDynamicItem\([\s\S]*?file\.name,[\s\S]*?initialBackgroundId[\s\S]*?\)/,
+  'Media objects created on the stage must receive the current background ID.'
+)
+assert.match(
+  dynamicControlSource,
+  /sendDynamicEvent\(wsIp, dynamicPort, 'ItemCreate',[\s\S]*?backgroundIds: createdItem\.backgroundIds/,
+  'New media object events must preserve the current-background assignment on the receiver.'
+)
+assert.match(
+  dynamicControlSource,
+  /addDynamicBubble\(currentGroup\.id, input, initialBackgroundId\)/,
+  'Bubble objects created on the stage must receive the current background ID.'
+)
+assert.equal(
+  (remoteKeyboardSource.match(/<Volume1\s*\/>/g) ?? []).length,
+  1,
+  'The volume knob must show one speaker icon in the shared icon column.'
+)
+assert.doesNotMatch(
+  remoteKeyboardSource,
+  /<Volume2\s*\/>/,
+  'The volume knob must not restore the second speaker icon.'
+)
+assert.match(
+  remoteKeyboardSource,
+  /const travel = Math\.hypot[\s\S]*?if \(travel < 8\) return[\s\S]*?gesture\.rotating = true/,
+  'Dragging from the center control must hand off to rotary input after a short threshold.'
+)
+assert.match(
+  remoteKeyboardSource,
+  /if \(dragRef\.current \|\| centerGestureRef\.current\) return/,
+  'The rotary surface must ignore a second pointer while one gesture is active.'
+)
+assert.match(
+  remoteKeyboardSource,
+  /if \(centerGestureRef\.current \|\| dragRef\.current\) return/,
+  'The center control must not replace an active rotary pointer.'
+)
+assert.match(
+  remoteKeyboardSource,
+  /onLostPointerCapture=\{\(event\) => \{\s*if \(!dragRef\.current \|\| dragRef\.current\.pointerId !== event\.pointerId\) return/,
+  'Lost pointer capture must only finish the matching rotary gesture.'
+)
+assert.match(
+  indexCss,
+  /\.remote-knob-center-button\s*{[\s\S]*?width:\s*36%;[\s\S]*?min-width:\s*44px;/,
+  'The center press target must stay compact while preserving an accessible minimum size.'
 )
 
 assert.doesNotMatch(
@@ -979,13 +1119,13 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !playbackActive && backgrounds\.length >= 2/,
-  'The stage background switcher must stay hidden for zero or one background and while previewing.'
+  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0/,
+  'The current-background controls must stay hidden only with no background or during full preview.'
 )
 assert.match(
   dynamicControlSource,
   /className=\{`dynamic-stage-shell \$\{showBackgroundQuickSwitcher \? 'has-background-quick-switcher' : ''\}`\}[\s\S]*?\{showBackgroundQuickSwitcher && \([\s\S]*?className="dynamic-background-quick-switcher"/,
-  'Two or more backgrounds must render the compact switcher above the editable stage.'
+  'One or more backgrounds must render the compact switcher above the editable stage.'
 )
 assert.match(
   dynamicControlSource,
@@ -994,8 +1134,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /className="ipad-button dynamic-background-quick-play"[\s\S]*?onClick=\{handleSelectedBackgroundPreview\}[\s\S]*?aria-label=\{t\('control\.playSelectedBackground'\)\}/,
-  'The quick switcher must reserve an accessible action for playing the selected background.'
+  /className=\{`ipad-button dynamic-background-quick-play \$\{stagePlaybackActive \? 'is-playing' : ''\}`\}[\s\S]*?onClick=\{handleCurrentBackgroundPlayback\}[\s\S]*?aria-pressed=\{stagePlaybackActive\}/,
+  'The quick switcher must keep one accessible play/stop action in place during current-stage playback.'
 )
 assert.match(
   indexCss,

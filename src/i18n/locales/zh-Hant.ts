@@ -500,6 +500,7 @@ const zhHant = {
   'control.backgroundLoopFixedHint': '固定背景模式不會切換',
   'control.quickBackgroundSwitch': '快捷切換背景',
   'control.playSelectedBackground': '播放目前背景',
+  'control.stopBackgroundPlayback': '停止播放',
   'control.appearanceOrder': '出場排序',
   'control.objectLinkage': '出場排序',
   'control.linkageImmediate': '緊隨其後',
