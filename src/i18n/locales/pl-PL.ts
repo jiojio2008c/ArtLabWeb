@@ -1,6 +1,8 @@
 import type { TranslationResource } from './zh-Hant.ts'
 
 const plPL = {
+  'control.previewAudioOff': 'Dźwięk iPada: wyłączony',
+  'control.previewAudioOn': 'Dźwięk iPada: włączony',
   'control.appearanceTime': 'Czas wejścia', 'control.layerAppearanceTime': 'Wejście {{value}} s', 'control.layerMoveTime': 'Ruch {{value}} s', 'control.layerAudioTime': 'Dźwięk {{value}} s', 'control.hideAfterTarget': 'Ukryj po dotarciu', 'control.hideAfterTargetShort': 'Ukrywa po dotarciu',
   'control.closeAppearanceSettings': 'Zamknij ustawienia wejścia',
   'control.appearanceMode': 'Tryb wejścia',

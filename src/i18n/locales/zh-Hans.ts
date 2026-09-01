@@ -1,6 +1,8 @@
 import type { TranslationResource } from './zh-Hant.ts'
 
 const zhHans = {
+  'control.previewAudioOff': 'iPad 声音：关',
+  'control.previewAudioOn': 'iPad 声音：开',
   'control.appearanceTime': '出场时间', 'control.layerAppearanceTime': '出场 {{value}} 秒', 'control.layerMoveTime': '移动 {{value}} 秒', 'control.layerAudioTime': '音源 {{value}} 秒', 'control.hideAfterTarget': '到达后隐藏', 'control.hideAfterTargetShort': '到达后隐藏',
   'control.closeAppearanceSettings': '关闭出场设定',
   'control.appearanceMode': '出场方式',

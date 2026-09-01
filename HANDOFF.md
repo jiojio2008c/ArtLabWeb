@@ -4061,3 +4061,63 @@ dist/assets/web-3ui0Ni4Z.js
 - 两个 `app.asar` 均成功解包；`main.js`、`renderer/player.js`、`renderer/advanced-appearance-timeline.js` 和 `renderer/assets/Right_Logo.png` 与当前源码/素材 SHA-256 完全匹配。
 - `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、`test:presentation`（38 项）、`test:item-copy`、三个运行时 `node --check` 与 `git diff --check` 全部通过。
 - 已在清除开发终端遗留的 `ELECTRON_RUN_AS_NODE=1` 后分别冷启动两套 EXE；两套 `/status` 均返回 `server.status=listening`、`port=8080`、`view.mode=archive` 和 `watermarkVisible=false`，随后已正常退出并释放端口。`8080` 和 `5173` 当前均无监听。EXE 仍为 `NotSigned`，正式分发前需要 Windows 代码签名证书；真实 iPad、舞台硬件联调和 Xcode Archive 仍需在目标设备／macOS 上验证。
+
+## 67. 2026-08-31 iPad 透明物件动画稳定性与完整预览声音隔离
+
+### Git 回退点与素材核查
+
+- 修改前已提交 Git 回退点 `d8e610cc`，提交说明为 `chore: checkpoint before iPad preview stability fixes`。根目录 `1 (1).png` 至 `1 (9).png` 九张参考素材继续保持未跟踪，没有纳入该提交或后续构建。
+- 九张参考图均为正常的 `1728 × 2304`、8-bit RGBA、非交错 PNG，并非文件本身损坏，也不是用户描述中的 `8 × 1736`。九张图完整解码后的基础像素内存约为 `136.69 MiB`，实际播放时还会叠加原图、Canvas 位图与 GPU 合成面的占用。
+
+### WebKit 根因与稳定性修复
+
+- iPad 的问题主要来自 WKWebView 合成路径而非动画 `1～17` 的参数：动画 `1～8` 同时叠加移动、出场、目标点、动画变换、用户旋转缩放、`drop-shadow`、隐藏 backface 与多层 `will-change`；极端长宽比素材的真实 DOM 宽度可能低于 `1 CSS px`，在内存压力下容易被 WebKit 剔除。Windows EXE 使用单一舞台 Canvas，因此相同素材能持续完整绘制。
+- 媒体物件的可合成外框现在至少为 `32 × 32 CSS px`，图片仍以 `object-fit: contain` 按原始比例绘制，所以物件的视觉尺寸、位置、缩放、旋转和同步协议参数不变；气泡物件继续使用原有 `itemPreviewSize`，不会被最小媒体合成面放大。
+- 完整预览和“播放目前背景”期间会移除透明媒体的 `drop-shadow`、恢复可见 backface，并释放静态内层不必要的 `will-change`；真正负责动画的外层变换仍保留。Walk／Unity Canvas 在播放态同时取消原有 `80ms` opacity transition，避免原图隐藏后 Canvas 仍处于淡入过程形成空白；Unity 的 `155% × 172%` overscan 明确使用 `max-width: none`、`max-height: none`，不再被通用媒体尺寸规则截断。
+- Walk／Unity Canvas 每两帧进行一次 alpha 探测、最多探测八次，并且每次探针必须至少采到 `4` 个非透明样本、alpha 总和至少为 `128`；只有连续两次探针有效才隐藏原图，不再由一个孤立像素或一次任意首帧结果决定 ready。Canvas 尺寸变化或绘制失败会恢复原图；context lost、`getContext()` 为空、`isContextLost()` 为真或绘制抛错时，都会通过 `requestCanvasRebuild` 请求使用新 React `key` 重建 Canvas。自动重建上限为 `2` 次，出现首个连续有效帧后清零计数，避免永久重建循环。
+- 舞台播放会把已经加载、已经解码的 DOM `<img>` 直接作为 `sourceImage` 传给 Walk／Unity Canvas，不会再为同一舞台物件创建第二个 `Image` 解码；动画选择器等没有现成 DOM 图像的独立调用场景仍使用共享图片租约缓存。位图计算使用独立的 `scaleX`／`scaleY`，在倍率上限 `12`、iPad `4MP` 总像素和 `3072px` 边长预算内，尽量保证极端比例素材经过 contain 后的短轴至少拥有 `12` 个位图像素；Unity 使用扣除 overscan 后的实际内容宽高计算同一预算。
+
+### 完整预览声音边界
+
+- 完整“预览”顶栏新增 iPad 声音开关，每次进入完整预览默认关闭；按钮以 `aria-pressed` 暴露状态，简体中文、繁体中文、英文、葡萄牙文和波兰文均有独立的开／关文案。用户在预览中主动开启时，会在同一次点击手势内恢复当前 BGM、物件音频和背景视频播放，兼容 iOS 的媒体手势限制。
+- 静音条件严格为 `previewModeRef.current && !previewAudioEnabledRef.current`，只覆盖完整预览中的 iPad 本地 BGM、淡出中的 BGM、物件音频、背景视频和背景转场声音。“播放目前背景”不是完整预览，不会被该开关静音；退出预览、切换作品或卸载页面后会恢复本地转场音效状态。
+- 声音开关不写入 `PreviewMode` 消息，也没有修改任何 iPad／EXE 同步协议；EXE 的 BGM、物件音频、视频原声和背景转场声音全部保持原行为。按钮点击反馈使用独立 UI 音效通道，没有被预览静音开关关闭。
+
+### 静态回归
+
+- `test:creation-flow` 已锁定五语文案、完整预览专属顶栏与 `aria-pressed`、严格静音条件、新建 BGM／物件 Audio 的首播前静音、转场音效隔离、接收端消息边界、背景视频统一状态、媒体／气泡合成面、播放态 CSS、Walk／Unity transition 清除、Unity overscan、DOM 图像复用、独立双轴位图比例、八次上限／两帧间隔／每次至少四样本且 alpha 总和达标／连续两次可见的判定、`onFrameUnavailable` 回退、四类 Canvas 故障入口、最多两次的 generation 重建及 iPad Canvas 倍率／像素／边长预算。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:transition-audio`、`test:appearance`、`test:presentation`（40 项）、两个转场音效脚本的 `node --check` 与 `git diff --check`；后者只报告仓库既有的 LF→CRLF 工作区换行提示，没有空白错误。
+- 已执行 `npm run build` 与 `npm run sync:ios`。当前 Web/iOS 资源为 `index-Tn1C4z8-.js`、`index-CXE3gOZZ.css` 与 `web-CRwpcCX5.js`；`dist/index.html` 和 `ios/App/App/public/index.html` SHA-256 均为 `BDC51739E4E9F7F90DB2B4F6F08A132CC68F851DD21039CE6939C8DAA4D84951`，`dist` 的 60 个文件与 iOS 公共目录逐文件一致。Xcode Debug/Release 的 Bundle ID 均保持 `com.magicfloor.artlab`。Vite 只报告既有主 bundle 超过 `500kB` 的非阻塞提示。
+- 当前 Windows 环境无法代替 iPad Pro/Air 的真实 WKWebView 合成与音频策略验证；必须安装包含上述最新 bundle 的新 iOS 包，并用 `8 × 1736` 极窄素材、九张 `1728 × 2304` PNG、多物件同时播放、完整预览默认静音／手势开启声音和“播放目前背景”保留声音这几组场景做最终真机回归。
+
+## 68. 2026-09-01 舞台控制页首次入场定位稳定
+
+### 根因与修复
+
+- 舞台物件的 `left`／`top` 表示中心坐标，外层 `.dynamic-stage-item-motion` 必须长期保留 `translate(-50%, -50%)`。旧的 `is-stage-entering` 直接挂在该外层，并用 `translate3d(0, -120px, 0) → translate3d(0, 0, 0)` 覆盖完整 `transform`；配合 `fill: both` 和页面固定 `1400ms` 清理时间，会在单个物件动画结束后暂时把其左上角放到中心坐标，随后 class 清除才恢复正确位置。
+- `DynamicStageMotion` 现在保留稳定的外层定位与运动动画层，新增始终存在的 `.dynamic-stage-item-entry` 内层承载首次进入页面的纵向位移和透明度动画。入场动画完成前后都不会再修改外层中心定位，也不会与预览移动、目标点、旋转缩放或 Canvas 动画争用同一个 `transform`。
+- `prefers-reduced-motion` 规则已同步切换到新的内层选择器；物件保存坐标、舞台比例、EXE 同步协议和既有入场节奏均未修改。
+
+### 回归
+
+- `test:creation-flow` 新增静态约束：外层必须保留 `style={style}` 和中心定位，`stageEntering` 只能控制内层 `.dynamic-stage-item-entry`，CSS 不得重新出现 `.dynamic-stage-item-motion.is-stage-entering`。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow` 与 `git diff --check`；空白检查仅报告仓库既有的 LF→CRLF 工作区提示。
+- 已执行 `npm run sync:ios`。当前 Web/iOS 资源为 `index-B4zQ6XKf.js`、`index-DbDWAtgA.css` 与 `web-CpUtInzI.js`；`dist/index.html` 和 `ios/App/App/public/index.html` SHA-256 均为 `962D2C5AEF7BD6F6904F04EE48E9196674F100491F39982CBBCC126AD87C6ADE`，`dist` 的 60 个文件与 iOS 公共目录逐文件一致（0 个差异）。
+
+## 69. 2026-09-01 EXE 左右进场与退场倒飞修复
+
+### 根因与桌面端修复
+
+- 本轮按要求只修改 Windows EXE 播放端，没有修改 `src/`、iPad 控制页、同步协议或 iOS 构建资源。动画 `09` 继续只负责物件内部的行走网格形变，不参与舞台坐标计算。
+- EXE 原本用纵向 `moveTrack` 判断横向进场方向：中轨一律从右侧进入，上／下轨一律从左侧进入。左侧起点物件若位于中轨，会先被放到舞台最右侧外，再横穿到左侧起点，随后才继续目标点路径。
+- 新增桌面专用 `renderer/desktop-appearance-motion-core.js`。`position.x < 0.5` 的物件从舞台左边界外进入，`position.x >= 0.5` 的物件从右边界外进入；方向不再受上／中／下轨道影响。中心点 `0.5` 使用稳定的右侧默认值。
+- EXE 原本把包含入场渐显与退场渐隐的总 `alpha` 同时当作入场位移进度；退场时 `alpha` 下降会倒放侧滑或掉落位移。桌面端现按 `entranceStartMs`／`entranceDurationMs` 独立采样只增不减的入场进度，退场只改变透明度，不再横向倒飞或向上回弹。
+- 目标点、移动速度、顺序出场时间、动画 `09`、点击动画、图片旋转缩放及标准版／翻转版显示规则均保持原行为。
+
+### 回归、构建与交付
+
+- 新增九物件回归：`1／3／5／7／9` 的右侧起点从右边界外进入，`2／4／6／8` 的左侧起点从左边界外进入；同时覆盖动画 `09`、入场完成后的原始坐标和退场中途不得倒放位移。`test:appearance` 的 3 项新增测试全部通过。
+- 已通过桌面 `test:appearance`、`test:target-motion`、`test:motion`、`test:presentation`（40 项）、`test:item-copy`、`test:transition-audio`、`test:background-order`、两个运行时 `node --check` 与 `git diff --check`；独立只读审查未发现数学或集成阻断问题。
+- 已执行 `npm --prefix desktop-runtime run pack:all`，打包前自动清理旧 `release` 与 `release-vertical-flip`。标准版为 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,327,243` bytes，SHA-256 `D369D60FCD250A00C5E0E651F4257A61E3925F759A0F91E4BD1891DA8BC85F26`。
+- 翻转版为 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,314,163` bytes，SHA-256 `B0AEC8DD924B25A65D3AAB9449A74BE6102E2C02617267DA183765ABB6A3C37C`。
+- 两份 `app.asar` 内的 `renderer/player.js` 与 `renderer/desktop-appearance-motion-core.js` 均和当前源码 SHA-256 完全一致。两套 `win-unpacked` 已分别冷启动，`/status` 均返回 `server.status=listening`、`port=8080`、`view.mode=archive`、`watermarkVisible=false`；退出后端口已释放。两份 EXE 仍为 `NotSigned`。

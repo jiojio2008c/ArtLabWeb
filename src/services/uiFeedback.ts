@@ -30,6 +30,10 @@ const stopBackgroundTransitionSound = () => {
   backgroundTransitionAudio.stop()
 }
 
+const setBackgroundTransitionSoundMuted = (muted: boolean) => {
+  backgroundTransitionAudio.setMuted(muted)
+}
+
 const playUiSound = (kind: UiSoundKind = 'tap') => {
   try {
     const context = getAudioContext()
@@ -148,5 +152,6 @@ export {
   handleGlobalButtonPointerDown,
   playBackgroundTransitionSound,
   playUiSound,
+  setBackgroundTransitionSoundMuted,
   stopBackgroundTransitionSound
 }

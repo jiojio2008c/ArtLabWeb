@@ -3194,6 +3194,9 @@ code {
 }
 
 .dynamic-library-icon-card.folder .dynamic-library-icon-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #f8faf9;
 }
 
@@ -4271,9 +4274,16 @@ code {
     grid-template-rows: minmax(0, 1fr) 54px;
   }
 
-  .dynamic-library-icon-card.folder .dynamic-library-icon-preview > svg {
+  .dynamic-library-icon-card.folder .dynamic-folder-artwork:not(.compact) {
     width: 72px;
-    height: 72px;
+    height: 57px;
+  }
+
+  .dynamic-library-icon-card.folder .dynamic-folder-artwork:not(.compact) .dynamic-folder-shape {
+    width: 78px;
+    height: 62px;
+    transform: scale(0.92);
+    transform-origin: center;
   }
 
   .dynamic-control-screen .dynamic-editor-row.right-panel-collapsed:not(.preview-only) {
@@ -18247,7 +18257,14 @@ button.ui-pressed {
   -webkit-filter: none !important;
 }
 
-.dynamic-control-screen .dynamic-stage-item-motion.is-stage-entering {
+.dynamic-control-screen .dynamic-stage-item-entry {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.dynamic-control-screen .dynamic-stage-item-entry.is-stage-entering {
   animation: dynamic-control-stage-item-enter 620ms calc(90ms + var(--stage-entry-delay, 0ms)) cubic-bezier(0.2, 0.82, 0.28, 1.18) both;
 }
 
@@ -18280,7 +18297,7 @@ button.ui-pressed {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dynamic-control-screen .dynamic-stage-item-motion.is-stage-entering {
+  .dynamic-control-screen .dynamic-stage-item-entry.is-stage-entering {
     animation: none;
   }
 }
@@ -21275,5 +21292,110 @@ button.ui-pressed {
   .dynamic-background-quick-card,
   .dynamic-background-quick-play {
     transition-duration: 1ms !important;
+  }
+}
+
+/* Full preview keeps local media sound opt-in without affecting UI feedback or the receiver. */
+.dynamic-preview-lock-actions {
+  gap: 10px;
+}
+
+.dynamic-preview-lock-actions .preview-stop-button {
+  min-height: 44px;
+}
+
+.dynamic-control-screen .preview-audio-toggle,
+.dynamic-control-screen .preview-audio-toggle:hover,
+.dynamic-control-screen .preview-audio-toggle:active,
+.dynamic-control-screen .preview-audio-toggle:focus,
+.dynamic-control-screen .preview-audio-toggle:focus-visible {
+  box-sizing: border-box;
+  min-width: 168px;
+  max-width: min(240px, 55vw);
+  min-height: 44px;
+  padding: 9px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  background: #29332f;
+  box-shadow: 0 7px 18px rgba(12, 20, 17, 0.22);
+}
+
+.dynamic-control-screen .preview-audio-toggle.is-enabled,
+.dynamic-control-screen .preview-audio-toggle.is-enabled:hover,
+.dynamic-control-screen .preview-audio-toggle.is-enabled:active,
+.dynamic-control-screen .preview-audio-toggle.is-enabled:focus,
+.dynamic-control-screen .preview-audio-toggle.is-enabled:focus-visible {
+  border-color: rgba(94, 229, 207, 0.54);
+  background: #087f75;
+  box-shadow: 0 7px 18px rgba(5, 89, 80, 0.3);
+}
+
+.dynamic-control-screen .preview-audio-toggle > svg {
+  width: 19px;
+  height: 19px;
+  min-width: 19px;
+  flex: 0 0 19px;
+}
+
+.dynamic-control-screen .preview-audio-toggle > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.dynamic-control-screen .preview-audio-toggle:active {
+  transform: scale(0.97);
+}
+
+.dynamic-control-screen .preview-audio-toggle:focus-visible {
+  outline: 3px solid rgba(94, 229, 207, 0.42);
+  outline-offset: 2px;
+}
+
+/* Keep WebKit's animated PNG compositor surface stable during local playback. */
+.dynamic-control-screen:is(.dynamic-previewing, .dynamic-stage-playing) .dynamic-stage-item-user-transform {
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  will-change: auto;
+}
+
+.dynamic-control-screen:is(.dynamic-previewing, .dynamic-stage-playing) .dynamic-stage-item-visual {
+  filter: none;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+.dynamic-control-screen:is(.dynamic-previewing, .dynamic-stage-playing) :is(
+  .dynamic-stage-item-walk,
+  .dynamic-stage-item-unity
+) {
+  transition: none;
+}
+
+.dynamic-control-screen:is(.dynamic-previewing, .dynamic-stage-playing) .dynamic-stage-item-unity {
+  max-width: none;
+  max-height: none;
+}
+
+.dynamic-control-screen:is(.dynamic-previewing, .dynamic-stage-playing) .dynamic-stage-item-motion.move-none .dynamic-stage-item-wave {
+  transform: none;
+  will-change: auto;
+}
+
+@media (max-width: 1100px), (max-height: 760px) {
+  .dynamic-control-screen .preview-audio-toggle {
+    min-width: 148px;
+    padding-inline: 11px;
+  }
+
+  .dynamic-control-screen .preview-audio-toggle > span {
+    font-size: 12px;
   }
 }

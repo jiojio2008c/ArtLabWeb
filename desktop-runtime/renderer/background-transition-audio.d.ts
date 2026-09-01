@@ -5,6 +5,7 @@ export const BACKGROUND_TRANSITION_SOUND_DURATION_MS: Readonly<Record<Background
 export interface BackgroundTransitionAudio {
   play: (kind: BackgroundTransitionSoundKind) => number
   stop: () => void
+  setMuted: (muted: boolean) => void
   getDuration: (kind: BackgroundTransitionSoundKind) => number
 }
 

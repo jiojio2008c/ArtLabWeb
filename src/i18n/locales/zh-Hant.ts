@@ -1,4 +1,6 @@
 const zhHant = {
+  'control.previewAudioOff': 'iPad 聲音：關',
+  'control.previewAudioOn': 'iPad 聲音：開',
   'control.appearanceTime': '出場時間', 'control.layerAppearanceTime': '出場 {{value}} 秒', 'control.layerMoveTime': '移動 {{value}} 秒', 'control.layerAudioTime': '音訊 {{value}} 秒', 'control.hideAfterTarget': '到達後隱藏', 'control.hideAfterTargetShort': '到達後隱藏',
   'control.closeAppearanceSettings': '關閉出場設定',
   'control.appearanceMode': '出場方式',

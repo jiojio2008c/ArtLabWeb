@@ -48,6 +48,10 @@ import {
   sampleTargetMotionState
 } from './target-motion-core.js'
 import {
+  getDesktopTrackSlideOffsetX,
+  sampleDesktopEntranceProgress
+} from './desktop-appearance-motion-core.js'
+import {
   sampleDynamicHorizontalMotion,
   sampleDynamicOrbitMotion,
   getDynamicVerticalWaveOffsets,
@@ -1768,7 +1772,14 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
 
   const schedule = appearanceSample.schedule
   const appearAnimation = schedule?.appearAnimation ?? 'none'
-  const appearanceProgress = appearanceSample.alpha
+  const appearanceElapsedMs = appearanceSample.epoch
+    ? Math.max(0, now - appearanceSample.epoch.startedAt)
+    : undefined
+  const appearanceProgress = sampleDesktopEntranceProgress(
+    schedule,
+    appearanceElapsedMs,
+    appearanceSample.alpha
+  )
   const size = getItemBaseSize(item, image)
   const numericScale = Number(item.scale ?? 1)
   const itemScale = Number.isFinite(numericScale) ? Math.max(Math.abs(numericScale), 0.05) : 1
@@ -1783,11 +1794,13 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
     const fromY = -(positionY * STAGE_HEIGHT + halfHeight + 72)
     appearanceY = lerp(fromY, 0, appearanceProgress)
   } else if (appearAnimation === 'trackSlide') {
-    const fromRight = getMoveTrack(item) === 'middle'
-    const fromX = fromRight
-      ? (1 - positionX) * STAGE_WIDTH + halfWidth + 72
-      : -(positionX * STAGE_WIDTH + halfWidth + 72)
-    appearanceX = lerp(fromX, 0, appearanceProgress)
+    appearanceX = getDesktopTrackSlideOffsetX({
+      positionX,
+      stageWidth: STAGE_WIDTH,
+      halfWidth,
+      edgePadding: 72,
+      entranceProgress: appearanceProgress
+    })
   }
 
   const targetActive = item.targetMode === 'target' && item.targetPosition

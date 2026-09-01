@@ -835,6 +835,22 @@ const dynamicControlSource = readFileSync(
   new URL('../src/components/DynamicControlPage.tsx', import.meta.url),
   'utf8'
 )
+const walkAnimationCanvasSource = readFileSync(
+  new URL('../src/components/WalkAnimationCanvas.tsx', import.meta.url),
+  'utf8'
+)
+const unityAnimationCanvasSource = readFileSync(
+  new URL('../src/components/UnityAnimationCanvas.tsx', import.meta.url),
+  'utf8'
+)
+const canvasRenderSupportSource = readFileSync(
+  new URL('../src/services/canvasRenderSupport.ts', import.meta.url),
+  'utf8'
+)
+const canvasRenderQualitySource = readFileSync(
+  new URL('../src/services/canvasRenderQuality.ts', import.meta.url),
+  'utf8'
+)
 const brandLogoSource = readFileSync(
   new URL('../src/components/BrandLogo.tsx', import.meta.url),
   'utf8'
@@ -1592,6 +1608,321 @@ assert.match(
   desktopPlayerSource,
   /case 'orbit':\s*{[\s\S]*?sampleDynamicOrbitMotion[\s\S]*?return\s*{\s*x:\s*point\.x,\s*y:\s*point\.y,\s*scale:\s*1,\s*rotation:\s*0\s*}/,
   'Desktop orbit playback must preserve the same configured object size as the editor and web preview.'
+)
+
+for (const [locale, resource] of localizedAppearanceEditorResources) {
+  for (const key of ['control.previewAudioOff', 'control.previewAudioOn']) {
+    assert.equal(
+      typeof resource[key] === 'string' && resource[key].trim().length > 0,
+      true,
+      `${locale} must provide full-preview iPad sound copy for ${key}.`
+    )
+  }
+}
+
+const dynamicControlTopbarStart = dynamicControlSource.indexOf(
+  '<header className="ipad-topbar dynamic-control-topbar">'
+)
+const dynamicControlTopbarEnd = dynamicControlSource.indexOf('</header>', dynamicControlTopbarStart)
+const dynamicControlTopbarSource = dynamicControlTopbarStart >= 0
+  && dynamicControlTopbarEnd > dynamicControlTopbarStart
+  ? dynamicControlSource.slice(dynamicControlTopbarStart, dynamicControlTopbarEnd)
+  : ''
+assert.ok(dynamicControlTopbarSource, 'The stage control top bar must remain available for preview checks.')
+assert.match(
+  dynamicControlTopbarSource,
+  /{previewMode \? \([\s\S]*?className={`ipad-button preview-action preview-audio-toggle[\s\S]*?aria-pressed={previewAudioEnabled}[\s\S]*?control\.previewAudioOn[\s\S]*?control\.previewAudioOff/,
+  'The iPad sound toggle must render inside the full-preview-only top-bar branch and expose its pressed state.'
+)
+assert.equal(
+  (dynamicControlSource.match(/preview-audio-toggle/g) ?? []).length,
+  1,
+  'The iPad sound toggle must not be duplicated outside the full preview top bar.'
+)
+
+const previewBgmSource = dynamicControlSource.match(
+  /const playPreviewBgm = useCallback\([\s\S]*?\n  const stopObjectAudioPlayback/
+)?.[0]
+assert.ok(previewBgmSource, 'The preview BGM playback handler must remain available.')
+assert.match(
+  previewBgmSource,
+  /current\.element\.muted = previewModeRef\.current && !previewAudioEnabledRef\.current/,
+  'An already active BGM must use the full-preview-only mute condition.'
+)
+assert.match(
+  previewBgmSource,
+  /const createdElement = new Audio\(audio\.url\)[\s\S]*?createdElement\.muted = previewModeRef\.current && !previewAudioEnabledRef\.current[\s\S]*?void createdElement\.play\(\)/,
+  'A newly created BGM element must receive the full-preview mute state before playback starts.'
+)
+
+const objectAudioSource = dynamicControlSource.match(
+  /const playObjectAudio = useCallback\([\s\S]*?\n  const updatePreviewAudioEnabled/
+)?.[0]
+assert.ok(objectAudioSource, 'The object-audio playback handler must remain available.')
+assert.match(
+  objectAudioSource,
+  /const audio = new Audio\(audioMedia\.url\)[\s\S]*?audio\.muted = previewModeRef\.current && !previewAudioEnabledRef\.current[\s\S]*?void audio\.play\(\)/,
+  'A newly created object-audio element must receive the full-preview mute state before playback starts.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /\.muted\s*=\s*[^\n]*\bplaybackActive\b/,
+  'Local media muting must never use playbackActive, because current-stage playback must retain its sound.'
+)
+
+const previewAudioToggleHandler = dynamicControlSource.match(
+  /const updatePreviewAudioEnabled = useCallback\([\s\S]*?\n  const clearBackgroundTransitionPlayback/
+)?.[0]
+assert.ok(previewAudioToggleHandler, 'The full-preview sound toggle handler must remain available.')
+assert.match(
+  previewAudioToggleHandler,
+  /if \(!previewModeRef\.current\) return[\s\S]*?setBackgroundTransitionSoundMuted\(muted\)/,
+  'The full-preview sound toggle must control only the local background-transition audio instance.'
+)
+
+const previewModeStateSender = dynamicControlSource.match(
+  /const sendPreviewModeState = \([\s\S]*?\n  const restartPreviewPlayback/
+)?.[0]
+assert.ok(previewModeStateSender, 'The receiver preview-state sender must remain available.')
+assert.doesNotMatch(
+  previewModeStateSender,
+  /previewAudio|audioEnabled|soundMuted/i,
+  'The local iPad sound preference must never be added to the receiver PreviewMode payload.'
+)
+
+const previewModeHandler = dynamicControlSource.match(
+  /const setPreviewModeEnabled = \([\s\S]*?\n  const setStagePlaybackEnabled/
+)?.[0]
+assert.ok(previewModeHandler, 'The full-preview mode handler must remain available.')
+assert.match(
+  previewModeHandler,
+  /if \(enabled\) {[\s\S]*?previewAudioEnabledRef\.current = false[\s\S]*?setBackgroundTransitionSoundMuted\(true\)[\s\S]*?previewModeRef\.current = false[\s\S]*?setBackgroundTransitionSoundMuted\(false\)/,
+  'Full preview must default local transition sound off and restore it when preview exits.'
+)
+assert.match(
+  dynamicControlSource,
+  /const stageBackgroundVideoMuted = !\(previewMode && previewAudioEnabled\)/,
+  'The stage background video must derive one shared full-preview mute state.'
+)
+assert.match(
+  dynamicControlSource,
+  /const video = stageBackgroundVideoRef\.current[\s\S]*?video\.muted = stageBackgroundVideoMuted[\s\S]*?\}, \[[^\]]*stageBackgroundVideoMuted[^\]]*\]\)/,
+  'The background-video playback effect must apply and observe the shared mute state.'
+)
+assert.match(
+  dynamicControlSource,
+  /<video[\s\S]*?ref={stageBackgroundVideoRef}[\s\S]*?muted={stageBackgroundVideoMuted}[\s\S]*?className="dynamic-stage-background"/,
+  'The rendered background video must use the same mute state as its playback effect.'
+)
+
+assert.match(
+  dynamicControlSource,
+  /const visualFrameSize = isDynamicMediaItem\(item\) \? compositorSize : itemPreviewSize/,
+  'Media objects must use the minimum compositor surface while bubble objects preserve their measured preview size.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-stage-item-visual-frame"[\s\S]*?width: `\$\{visualFrameSize\.width}px`[\s\S]*?height: `\$\{visualFrameSize\.height}px`/,
+  'The selected media-or-bubble visual frame size must reach the rendered compositor element.'
+)
+
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen:is\(\.dynamic-previewing, \.dynamic-stage-playing\) \.dynamic-stage-item-user-transform\s*{(?=[^}]*backface-visibility:\s*visible;)(?=[^}]*-webkit-backface-visibility:\s*visible;)(?=[^}]*will-change:\s*auto;)[^}]*}/,
+  'Preview and current-stage playback must stop forcing a hidden backface or permanent user-transform layer.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen:is\(\.dynamic-previewing, \.dynamic-stage-playing\) \.dynamic-stage-item-visual\s*{(?=[^}]*filter:\s*none;)(?=[^}]*backface-visibility:\s*visible;)(?=[^}]*-webkit-backface-visibility:\s*visible;)[^}]*}/,
+  'Preview and current-stage playback must remove image filters and hidden backfaces from transparent media.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen:is\(\.dynamic-previewing, \.dynamic-stage-playing\) :is\(\s*\.dynamic-stage-item-walk,\s*\.dynamic-stage-item-unity\s*\)\s*{[^}]*transition:\s*none;[^}]*}/,
+  'Walk and Unity canvases must not expose an 80ms transparent transition during local playback.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen:is\(\.dynamic-previewing, \.dynamic-stage-playing\) \.dynamic-stage-item-unity\s*{(?=[^}]*max-width:\s*none;)(?=[^}]*max-height:\s*none;)[^}]*}/,
+  'Unity canvas overscan must not be clamped by the generic media max-size rule during playback.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen:is\(\.dynamic-previewing, \.dynamic-stage-playing\) \.dynamic-stage-item-motion\.move-none \.dynamic-stage-item-wave\s*{[^}]*will-change:\s*auto;[^}]*}/,
+  'Static playback waves must not reserve another unnecessary compositor layer.'
+)
+
+assert.match(
+  dynamicControlSource,
+  /const handleCanvasFrameUnavailable = useCallback\(\(\) => setAnimatedCanvasReady\(false\), \[\]\)/,
+  'A lost animation canvas frame must immediately restore the original media image.'
+)
+assert.equal(
+  (dynamicControlSource.match(/onFrameUnavailable={handleCanvasFrameUnavailable}/g) ?? []).length,
+  2,
+  'Both Walk and Unity canvas renderers must report unavailable frames back to media readiness.'
+)
+const dynamicStageMediaSource = dynamicControlSource.match(
+  /const DynamicStageMedia: React\.FC<DynamicStageMediaProps> = \([\s\S]*?\nconst DynamicStageMotion:/
+)?.[0]
+assert.ok(dynamicStageMediaSource, 'The shared dynamic-stage media renderer must remain available.')
+assert.match(
+  dynamicStageMediaSource,
+  /const \[canvasSource, setCanvasSource\] = useState<[\s\S]*?const handleImageLoad = \(image: HTMLImageElement\) => {[\s\S]*?setCanvasSource\({ src, image }\)[\s\S]*?onImageLoad\(mediaId, image\)/,
+  'The stage must retain its already decoded DOM image as the canvas animation source.'
+)
+assert.equal(
+  (dynamicStageMediaSource.match(/sourceImage={canvasSource\?\.src === src \? canvasSource\.image : null}/g) ?? []).length,
+  2,
+  'Both Walk and Unity stage canvases must receive the already loaded DOM image.'
+)
+assert.doesNotMatch(
+  dynamicStageMediaSource,
+  /new Image\(|acquireCanvasImage/,
+  'Stage playback must not start a second image decode for canvas animations.'
+)
+assert.match(
+  canvasRenderSupportSource,
+  /const MIN_VISIBLE_ALPHA_SAMPLES = 4[\s\S]*?const MIN_VISIBLE_ALPHA_TOTAL = 128[\s\S]*?const canvasHasVisibleAlpha = \(sourceCanvas: HTMLCanvasElement\) => {[\s\S]*?getImageData\([\s\S]*?let visibleSamples = 0[\s\S]*?let alphaTotal = 0[\s\S]*?visibleSamples \+= 1[\s\S]*?alphaTotal \+= alpha[\s\S]*?visibleSamples >= MIN_VISIBLE_ALPHA_SAMPLES[\s\S]*?alphaTotal >= MIN_VISIBLE_ALPHA_TOTAL/,
+  'Canvas readiness must require multiple visible samples and a minimum total alpha value.'
+)
+assert.doesNotMatch(
+  canvasRenderSupportSource,
+  /if \(pixels\[index\] > 0\) return true/,
+  'Canvas readiness must not accept one isolated non-transparent probe pixel.'
+)
+assert.match(
+  canvasRenderSupportSource,
+  /export { acquireCanvasImage, canvasHasVisibleAlpha }/,
+  'The shared visible-alpha probe must remain available to both canvas animation renderers.'
+)
+
+for (const [rendererName, rendererSource] of [
+  ['Walk', walkAnimationCanvasSource],
+  ['Unity', unityAnimationCanvasSource]
+]) {
+  assert.match(
+    rendererSource,
+    /sourceImage\?: HTMLImageElement \| null[\s\S]*?if \(sourceImage !== undefined\) {[\s\S]*?sourceImage\.naturalWidth > 0 && sourceImage\.naturalHeight > 0[\s\S]*?useImage\(sourceImage\)[\s\S]*?const imageLease = acquireCanvasImage\(src\)/,
+    `${rendererName} canvas must reuse a provided DOM image and reserve the shared lease for standalone callers.`
+  )
+  assert.match(
+    rendererSource,
+    /const bitmapScale = resolveCanvasBitmapScale\({[\s\S]*?sourceWidth: source\?\.naturalWidth,[\s\S]*?sourceHeight: source\?\.naturalHeight[\s\S]*?const bitmapWidth = Math\.max\(1, Math\.round\(width \* bitmapScale\.x\)\)[\s\S]*?const bitmapHeight = Math\.max\(1, Math\.round\(height \* bitmapScale\.y\)\)/,
+    `${rendererName} canvas must size each bitmap axis from the source image's natural dimensions.`
+  )
+  assert.match(
+    rendererSource,
+    /sizeRef\.current = { width, height, scaleX: bitmapScale\.x, scaleY: bitmapScale\.y }[\s\S]*?const { width, height, scaleX, scaleY } = sizeRef\.current[\s\S]*?context\.setTransform\(scaleX, 0, 0, scaleY, 0, 0\)/,
+    `${rendererName} canvas must preserve and apply independent horizontal and vertical bitmap scales.`
+  )
+  assert.match(
+    rendererSource,
+    /const invalidateFirstFrame = useCallback\(\(\) => {[\s\S]*?const wasReady = firstFrameDrawnRef\.current[\s\S]*?if \(wasReady\) {[\s\S]*?onFrameUnavailableRef\.current\?\.\(\)/,
+    `${rendererName} canvas must notify its parent when a previously visible frame becomes unavailable.`
+  )
+  assert.match(
+    rendererSource,
+    /canvas\.addEventListener\('contextlost', handleContextLost\)[\s\S]*?canvas\.addEventListener\('contextrestored', handleContextRestored\)[\s\S]*?removeEventListener\('contextlost', handleContextLost\)[\s\S]*?removeEventListener\('contextrestored', handleContextRestored\)/,
+    `${rendererName} canvas must recover readiness across WebKit canvas-context loss and restoration.`
+  )
+  assert.match(
+    rendererSource,
+    /const MAX_CANVAS_REBUILD_ATTEMPTS = 2[\s\S]*?const requestCanvasRebuild = useCallback\(\(\) => {[\s\S]*?canvasRebuildAttemptsRef\.current >= MAX_CANVAS_REBUILD_ATTEMPTS[\s\S]*?canvasRebuildAttemptsRef\.current \+= 1[\s\S]*?setCanvasGeneration\(\(current\) => current \+ 1\)/,
+    `${rendererName} canvas must cap automatic DOM-canvas rebuilds at two attempts.`
+  )
+  assert.match(
+    rendererSource,
+    /const handleContextLost = \(event: Event\) => {[\s\S]*?contextLostRef\.current = true[\s\S]*?invalidateFirstFrame\(\)[\s\S]*?requestCanvasRebuild\(\)[\s\S]*?<canvas\s*key={canvasGeneration}/,
+    `${rendererName} canvas must request a keyed DOM-canvas replacement after context loss.`
+  )
+  assert.match(
+    rendererSource,
+    /if \(!context \|\| recoverableContext\.isContextLost\?\.\(\)\) {[\s\S]*?invalidateFirstFrame\(\)[\s\S]*?requestCanvasRebuild\(\)[\s\S]*?} catch {[\s\S]*?invalidateFirstFrame\(\)[\s\S]*?requestCanvasRebuild\(\)/,
+    `${rendererName} canvas must rebuild after null or lost contexts and after draw exceptions.`
+  )
+  assert.equal(
+    (rendererSource.match(/requestCanvasRebuild\(\)/g) ?? []).length,
+    3,
+    `${rendererName} canvas must request rebuilds only from context loss, unavailable contexts, and draw failures.`
+  )
+  assert.match(
+    rendererSource,
+    /const FIRST_FRAME_VALIDATION_INTERVAL = 2[\s\S]*?const FIRST_FRAME_VALIDATION_ATTEMPTS = 8[\s\S]*?const FIRST_FRAME_VISIBLE_STREAK = 2/,
+    `${rendererName} canvas must use bounded, spaced, consecutive visible-frame validation.`
+  )
+  assert.match(
+    rendererSource,
+    /firstFrameValidationAttemptsRef\.current >= FIRST_FRAME_VALIDATION_ATTEMPTS[\s\S]*?firstFrameValidationFramesRef\.current \+= 1[\s\S]*?firstFrameValidationFramesRef\.current % FIRST_FRAME_VALIDATION_INTERVAL !== 0[\s\S]*?firstFrameValidationAttemptsRef\.current \+= 1[\s\S]*?if \(canvasHasVisibleAlpha\(canvas\)\) {[\s\S]*?firstFrameVisibleStreakRef\.current \+= 1[\s\S]*?firstFrameVisibleStreakRef\.current = 0[\s\S]*?firstFrameVisibleStreakRef\.current >= FIRST_FRAME_VISIBLE_STREAK[\s\S]*?canvasRebuildAttemptsRef\.current = 0[\s\S]*?firstFrameDrawnRef\.current = true[\s\S]*?onFirstFrameRef\.current\?\.\(\)/,
+    `${rendererName} canvas must require two consecutive visible probes and reset rebuild attempts after a valid frame.`
+  )
+  assert.doesNotMatch(
+    rendererSource,
+    /firstFrameValidationAttemptedRef/,
+    `${rendererName} canvas must not regress to a single arbitrary first-frame probe.`
+  )
+}
+
+assert.match(
+  canvasRenderQualitySource,
+  /const IOS_MAX_CANVAS_PIXEL_RATIO = 2[\s\S]*?const IOS_MAX_CANVAS_BITMAP_PIXELS = 4 \* 1024 \* 1024[\s\S]*?const IOS_MAX_CANVAS_BITMAP_EDGE = 3072[\s\S]*?const MIN_MESH_AXIS_BITMAP_PIXELS = 12[\s\S]*?const MAX_MESH_AXIS_SCALE_MULTIPLIER = 12/,
+  'iPad bitmap scaling must target a 12-pixel mesh axis within its multiplier, 4MP, and 3072-edge budgets.'
+)
+assert.match(
+  canvasRenderQualitySource,
+  /const resolveCanvasBitmapScale = \({[\s\S]*?const containScale = Math\.min\([\s\S]*?const containedWidth = sourceWidth \* containScale[\s\S]*?const containedHeight = sourceHeight \* containScale[\s\S]*?MIN_MESH_AXIS_BITMAP_PIXELS \/ Math\.max\(Number\.EPSILON, containedWidth\)[\s\S]*?MIN_MESH_AXIS_BITMAP_PIXELS \/ Math\.max\(Number\.EPSILON, containedHeight\)/,
+  'Bitmap scaling must derive independent axis boosts from the contained source dimensions.'
+)
+assert.match(
+  canvasRenderQualitySource,
+  /baseScale \* MAX_MESH_AXIS_SCALE_MULTIPLIER[\s\S]*?baseScale \* MAX_MESH_AXIS_SCALE_MULTIPLIER[\s\S]*?scaleX = Math\.min\(scaleX, maxBitmapEdge \/ safeWidth\)[\s\S]*?scaleY = Math\.min\(scaleY, maxBitmapEdge \/ safeHeight\)[\s\S]*?if \(bitmapPixels > maxBitmapPixels\) {[\s\S]*?Math\.sqrt\(maxBitmapPixels \/ bitmapPixels\)[\s\S]*?scaleX \*= budgetScale[\s\S]*?scaleY \*= budgetScale/,
+  'Axis boosts must remain constrained by the multiplier, device edge, and total bitmap-pixel budgets.'
+)
+assert.match(
+  canvasRenderQualitySource,
+  /export { resolveCanvasBitmapScale, resolveCanvasPixelRatio }/,
+  'The independent-axis bitmap scale resolver must remain exported for animation canvases.'
+)
+assert.equal(
+  (walkAnimationCanvasSource.match(/resolveCanvasBitmapScale\(/g) ?? []).length,
+  1,
+  'Walk canvas must use the independent-axis bitmap scale resolver.'
+)
+assert.equal(
+  (unityAnimationCanvasSource.match(/resolveCanvasBitmapScale\(/g) ?? []).length,
+  1,
+  'Unity canvas must use the independent-axis bitmap scale resolver.'
+)
+assert.match(
+  unityAnimationCanvasSource,
+  /resolveCanvasBitmapScale\({[\s\S]*?contentWidth: width \/ Math\.max\(1, overscanX\),[\s\S]*?contentHeight: height \/ Math\.max\(1, overscanY\)[\s\S]*?const contentWidth = width \/ Math\.max\(1, overscanX\)[\s\S]*?const contentHeight = height \/ Math\.max\(1, overscanY\)[\s\S]*?drawUnityAnimationImage\([\s\S]*?contentWidth,[\s\S]*?contentHeight/,
+  'Unity must calculate bitmap scale and drawing geometry from the same overscan-adjusted content size.'
+)
+
+assert.match(
+  dynamicControlSource,
+  /className={`dynamic-stage-item-motion move-\$\{motionMode\}[^`]*`}\s*style={style}[\s\S]*?className={`dynamic-stage-item-entry \$\{stageEntering \? 'is-stage-entering' : ''\}`}[\s\S]*?--stage-entry-delay/,
+  'Stage entry animation must run on an inner wrapper while the outer motion layer retains positioning styles.'
+)
+assert.doesNotMatch(
+  dynamicControlSource,
+  /dynamic-stage-item-motion move-\$\{motionMode\}[^`]*\$\{stageEntering \? 'is-stage-entering'/,
+  'The stage-entry class must never return to the center-positioning motion layer.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-stage-item-motion\s*{(?=[^}]*transform:\s*translate\(-50%, -50%\);)[^}]*}/,
+  'The stage motion layer must preserve center-based positioning.'
+)
+assert.match(
+  indexCss,
+  /\.dynamic-control-screen \.dynamic-stage-item-entry\s*{(?=[^}]*width:\s*100%;)(?=[^}]*height:\s*100%;)(?=[^}]*display:\s*grid;)(?=[^}]*place-items:\s*center;)[^}]*}[\s\S]*?\.dynamic-control-screen \.dynamic-stage-item-entry\.is-stage-entering\s*{[^}]*animation:\s*dynamic-control-stage-item-enter/,
+  'The dedicated stage-entry wrapper must carry the entrance animation without replacing outer positioning transforms.'
+)
+assert.doesNotMatch(
+  indexCss,
+  /\.dynamic-control-screen \.dynamic-stage-item-motion\.is-stage-entering/,
+  'CSS must not animate the same transform used to center stage objects.'
 )
 
 console.log('Dynamic creation flow verification passed.')

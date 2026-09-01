@@ -131,4 +131,29 @@ suspendedContext.resumeResolvers[0]()
 await Promise.resolve()
 assert.equal(suspendedContext.sources.length, 0, 'stopped pending audio must not start after resume')
 
+const mutedContext = createMockContext()
+const mutedAudio = createBackgroundTransitionAudio(() => mutedContext)
+mutedAudio.setMuted(true)
+assert.equal(mutedAudio.play('curtain'), expectedDurations.curtain)
+assert.equal(mutedContext.sources.length, 0, 'muted audio should preserve duration without creating sources')
+
+mutedAudio.setMuted(false)
+mutedAudio.play('cameraFlash')
+assert.ok(mutedContext.sources.length >= 4, 'unmuting should allow later transition sounds')
+
+const activeSources = [...mutedContext.sources]
+const scheduledStopCalls = activeSources.reduce((total, source) => total + source.stopCalls, 0)
+mutedAudio.setMuted(true)
+const mutedStopCalls = activeSources.reduce((total, source) => total + source.stopCalls, 0)
+assert.equal(mutedStopCalls, scheduledStopCalls + activeSources.length, 'muting should stop active transition sounds')
+
+const pendingMuteContext = createMockContext({ suspended: true })
+const pendingMuteAudio = createBackgroundTransitionAudio(() => pendingMuteContext)
+pendingMuteAudio.play('shadowPlay')
+pendingMuteAudio.setMuted(true)
+assert.equal(pendingMuteContext.resumeResolvers.length, 1)
+pendingMuteContext.resumeResolvers[0]()
+await Promise.resolve()
+assert.equal(pendingMuteContext.sources.length, 0, 'muting should cancel transition audio waiting for resume')
+
 console.log('Background transition audio verification passed.')

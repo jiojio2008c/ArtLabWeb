@@ -10,6 +10,7 @@ export const createBackgroundTransitionAudio = (getContext) => {
   let outputContext = null
   let output = null
   let playbackEpoch = 0
+  let muted = false
   const activeSources = new Set()
 
   const getOutput = (context) => {
@@ -299,6 +300,7 @@ export const createBackgroundTransitionAudio = (getContext) => {
   const play = (kind) => {
     const durationMs = BACKGROUND_TRANSITION_SOUND_DURATION_MS[kind] ?? 0
     if (!durationMs) return 0
+    if (muted) return durationMs
 
     try {
       const context = getContext()
@@ -321,9 +323,18 @@ export const createBackgroundTransitionAudio = (getContext) => {
     return durationMs
   }
 
+  const setMuted = (nextMuted) => {
+    const shouldMute = Boolean(nextMuted)
+    if (muted === shouldMute) return
+
+    muted = shouldMute
+    if (muted) stop()
+  }
+
   return {
     play,
     stop,
+    setMuted,
     getDuration: (kind) => BACKGROUND_TRANSITION_SOUND_DURATION_MS[kind] ?? 0
   }
 }

@@ -96,6 +96,7 @@ import {
 import {
   playBackgroundTransitionSound,
   playUiSound,
+  setBackgroundTransitionSoundMuted,
   stopBackgroundTransitionSound
 } from '../services/uiFeedback.ts'
 import {
@@ -1056,28 +1057,44 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
   const imageRef = useRef<HTMLImageElement>(null)
   const [retryToken, setRetryToken] = useState(0)
   const [animatedCanvasReady, setAnimatedCanvasReady] = useState(false)
+  const [canvasSource, setCanvasSource] = useState<{
+    src: string
+    image: HTMLImageElement
+  } | null>(null)
   const walkActive = previewMode && animationId === 9
   const unityActive = previewMode
     && animationId >= UNITY_EXTRA_ANIMATION_MIN_ID
     && animationId <= UNITY_EXTRA_ANIMATION_MAX_ID
   const canvasAnimationActive = walkActive || unityActive
+  const handleCanvasFirstFrame = useCallback(() => setAnimatedCanvasReady(true), [])
+  const handleCanvasFrameUnavailable = useCallback(() => setAnimatedCanvasReady(false), [])
 
   useEffect(() => {
     setRetryToken(0)
+    setCanvasSource(null)
   }, [src])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setAnimatedCanvasReady(false)
   }, [animationId, playbackKey, replayId, src, canvasAnimationActive])
 
   useLayoutEffect(() => {
     const image = imageRef.current
     if (image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      setCanvasSource((current) => (
+        current?.src === src && current.image === image ? current : { src, image }
+      ))
       onImageLoad(mediaId, image)
     }
-  }, [mediaId, onImageLoad, retryToken])
+  }, [mediaId, onImageLoad, retryToken, src])
+
+  const handleImageLoad = (image: HTMLImageElement) => {
+    setCanvasSource({ src, image })
+    onImageLoad(mediaId, image)
+  }
 
   const handleImageError = () => {
+    setCanvasSource(null)
     if (retryToken === 0) {
       setRetryToken(Date.now())
       return
@@ -1093,24 +1110,27 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
         alt={name}
         draggable={false}
         decoding="async"
-        onLoad={(event) => onImageLoad(mediaId, event.currentTarget)}
+        onLoad={(event) => handleImageLoad(event.currentTarget)}
         onError={handleImageError}
         className={`dynamic-stage-item-visual ${active ? 'active' : ''} ${copyPulse ? 'copy-pulse' : ''} ${canvasAnimationActive && animatedCanvasReady ? 'walk-source-hidden' : ''}`}
       />
       {walkActive && (
         <WalkAnimationCanvas
           src={src}
+          sourceImage={canvasSource?.src === src ? canvasSource.image : null}
           ariaLabel={t('animation.namedWalk', { name })}
           replayKey={playbackKey ?? replayId}
           startedAtMs={animationStartedAtMs}
           renderScale={renderScale}
-          onFirstFrame={() => setAnimatedCanvasReady(true)}
+          onFirstFrame={handleCanvasFirstFrame}
+          onFrameUnavailable={handleCanvasFrameUnavailable}
           className={`dynamic-stage-item-visual dynamic-stage-item-walk ${animatedCanvasReady ? 'is-ready' : ''}`}
         />
       )}
       {unityActive && (
         <UnityAnimationCanvas
           src={src}
+          sourceImage={canvasSource?.src === src ? canvasSource.image : null}
           animationId={animationId}
           ariaLabel={t('animation.namedPreview', {
             name,
@@ -1122,7 +1142,8 @@ const DynamicStageMedia: React.FC<DynamicStageMediaProps> = ({
           overscanY={1.72}
           forceLoop
           renderScale={renderScale}
-          onFirstFrame={() => setAnimatedCanvasReady(true)}
+          onFirstFrame={handleCanvasFirstFrame}
+          onFrameUnavailable={handleCanvasFrameUnavailable}
           className={`dynamic-stage-item-visual dynamic-stage-item-unity ${animatedCanvasReady ? 'is-ready' : ''}`}
         />
       )}
@@ -1212,13 +1233,17 @@ const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
       ref={elementRef}
       data-dynamic-item-id={item.id}
       data-dynamic-track={getItemTrack(item)}
-      className={`dynamic-stage-item-motion move-${motionMode} ${stageEntering ? 'is-stage-entering' : ''} ${isHorizontalMotion ? 'composed-horizontal-motion' : ''} ${isVerticalWaveMotion ? 'composed-vertical-wave-motion' : ''}`}
-      style={{
-        ...style,
-        '--stage-entry-delay': `${stageEntryDelayMs}ms`
-      } as React.CSSProperties}
+      className={`dynamic-stage-item-motion move-${motionMode} ${isHorizontalMotion ? 'composed-horizontal-motion' : ''} ${isVerticalWaveMotion ? 'composed-vertical-wave-motion' : ''}`}
+      style={style}
     >
-      {children}
+      <div
+        className={`dynamic-stage-item-entry ${stageEntering ? 'is-stage-entering' : ''}`}
+        style={{
+          '--stage-entry-delay': `${stageEntryDelayMs}ms`
+        } as React.CSSProperties}
+      >
+        {children}
+      </div>
     </div>
   )
 }
@@ -1457,6 +1482,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const previewStartRequestRef = useRef(0)
   const previewStartPendingRef = useRef(false)
   const previewModeRef = useRef(false)
+  const previewAudioEnabledRef = useRef(false)
   const stagePlaybackActiveRef = useRef(false)
   const previewBackgroundIdRef = useRef('')
   const previewPanelSnapshotRef = useRef<PreviewPanelSnapshot | null>(null)
@@ -1546,6 +1572,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [receiverSyncStatus, setReceiverSyncStatus] = useState<SyncStatus | 'complete' | null>(null)
   const [receiverSyncError, setReceiverSyncError] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
+  const [previewAudioEnabled, setPreviewAudioEnabled] = useState(false)
   const [stagePlaybackActive, setStagePlaybackActive] = useState(false)
   const [stageEntryActive, setStageEntryActive] = useState(true)
   const [previewReplayId, setPreviewReplayId] = useState(0)
@@ -1624,6 +1651,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const activeBackground = getActiveBackgroundForGroup(group)
   const activeBackgroundId = activeBackground?.id ?? ''
   const playbackActive = previewMode || stagePlaybackActive
+  const stageBackgroundVideoMuted = !(previewMode && previewAudioEnabled)
   const displayedBackground = playbackActive
     ? backgrounds.find((background) => background.id === previewBackgroundId) ?? activeBackground
     : activeBackground
@@ -1898,6 +1926,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const targetVolume = getPreviewBgmTargetVolume()
     if (current && audio && current.id === audio.id) {
       current.element.loop = true
+      current.element.muted = previewModeRef.current && !previewAudioEnabledRef.current
       void current.element.play().then(() => {
         if (bgmAudioRef.current?.element !== current.element) disposeBgmAudio(current.element)
       }).catch(() => undefined)
@@ -1915,10 +1944,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       createdElement.preload = 'auto'
       createdElement.loop = true
       createdElement.volume = 0
+      createdElement.muted = previewModeRef.current && !previewAudioEnabledRef.current
       bgmAudioRef.current = { id: audio.id, element: createdElement }
       void createdElement.play().then(() => {
         if (bgmAudioRef.current?.element !== createdElement) disposeBgmAudio(createdElement)
       }).catch(() => {
+        if (previewModeRef.current && !previewAudioEnabledRef.current) return
         if (bgmAudioRef.current?.element === createdElement) bgmAudioRef.current = null
         disposeBgmAudio(createdElement)
       })
@@ -1990,13 +2021,42 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
     audio.preload = 'auto'
     audio.volume = 1
+    audio.muted = previewModeRef.current && !previewAudioEnabledRef.current
     audio.addEventListener('ended', finish, { once: true })
     audio.addEventListener('error', finish, { once: true })
     objectAudioRefs.current.add(audio)
     bgmDuckCountRef.current += 1
     fadeCurrentBgmVolume(getPreviewBgmTargetVolume(), 140)
-    void audio.play().catch(finish)
+    void audio.play().catch(() => {
+      if (previewModeRef.current && !previewAudioEnabledRef.current) return
+      finish()
+    })
   }, [fadeCurrentBgmVolume, getPreviewBgmTargetVolume])
+
+  const updatePreviewAudioEnabled = useCallback((enabled: boolean) => {
+    if (!previewModeRef.current) return
+
+    previewAudioEnabledRef.current = enabled
+    setPreviewAudioEnabled(enabled)
+    const muted = !enabled
+    setBackgroundTransitionSoundMuted(muted)
+
+    const activeAudioElements = new Set<HTMLAudioElement>()
+    const currentBgm = bgmAudioRef.current?.element
+    if (currentBgm) activeAudioElements.add(currentBgm)
+    bgmFadingAudioRefs.current.forEach((audio) => activeAudioElements.add(audio))
+    objectAudioRefs.current.forEach((audio) => activeAudioElements.add(audio))
+    activeAudioElements.forEach((audio) => {
+      audio.muted = muted
+      if (enabled) void audio.play().catch(() => undefined)
+    })
+
+    const backgroundVideo = stageBackgroundVideoRef.current
+    if (!backgroundVideo) return
+    backgroundVideo.muted = muted
+    backgroundVideo.playsInline = true
+    if (enabled) void backgroundVideo.play().catch(() => undefined)
+  }, [])
 
   const clearBackgroundTransitionPlayback = useCallback(() => {
     if (backgroundCycleTimerRef.current !== null) {
@@ -2115,6 +2175,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       flushPendingTransformPersist()
     }
     clearPreviewPlayback(false)
+    previewAudioEnabledRef.current = false
+    setBackgroundTransitionSoundMuted(false)
     stopAudioPreview()
     clearTargetEditing()
     onBack()
@@ -2140,8 +2202,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     previewStartRequestRef.current += 1
     previewStartPendingRef.current = false
     previewModeRef.current = false
+    previewAudioEnabledRef.current = false
     stagePlaybackActiveRef.current = false
     clearPreviewPlayback(false)
+    setBackgroundTransitionSoundMuted(false)
     stopAudioPreview()
     const nextFlowSession = loadDynamicCreationFlowSession(group.id, {
       itemIds: group.items.map((item) => item.id),
@@ -2151,6 +2215,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setFlowDetailSection('')
     setSelectedItemId(getInitialItemId(group.items, initialItemId, nextFlowSession.selectedItemId))
     setPreviewMode(false)
+    setPreviewAudioEnabled(false)
     setStagePlaybackActive(false)
     setAudioRecorderContext(null)
     setAudioRecorderItemId('')
@@ -2410,7 +2475,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     let cancelled = false
     const playVideo = () => {
       if (cancelled) return
-      video.muted = true
+      video.muted = stageBackgroundVideoMuted
       video.playsInline = true
       const playPromise = video.play()
       if (playPromise) {
@@ -2435,7 +2500,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       video.removeEventListener('loadeddata', playVideo)
       video.removeEventListener('canplay', playVideo)
     }
-  }, [displayedBackground?.id, displayedBackground?.type, displayedBackground?.url, transitionPreparing])
+  }, [displayedBackground?.id, displayedBackground?.type, displayedBackground?.url, stageBackgroundVideoMuted, transitionPreparing])
 
   useEffect(() => {
     const explicitBackgroundId = previewSelectedBackgroundOnly
@@ -2744,9 +2809,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     previewStartRequestRef.current += 1
     previewStartPendingRef.current = false
     previewModeRef.current = false
+    previewAudioEnabledRef.current = false
     stagePlaybackActiveRef.current = false
     clearTargetEditing()
     clearPreviewPlayback(false)
+    setBackgroundTransitionSoundMuted(false)
     stopAudioPreview()
     if (copyFeedbackTimerRef.current !== null) {
       window.clearTimeout(copyFeedbackTimerRef.current)
@@ -3036,8 +3103,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       const requestId = previewStartRequestRef.current + 1
       previewStartRequestRef.current = requestId
       previewStartPendingRef.current = false
+      previewAudioEnabledRef.current = false
+      setPreviewAudioEnabled(false)
+      setBackgroundTransitionSoundMuted(true)
       clearTargetEditing()
       clearPreviewPlayback(false)
+      stopAudioPreview()
       previewPanelSnapshotRef.current = {
         mode: rightPanelCollapsed
           ? 'collapsed'
@@ -3073,6 +3144,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     previewStartPendingRef.current = false
     const wasPreviewing = previewModeRef.current
     previewModeRef.current = false
+    previewAudioEnabledRef.current = false
+    setPreviewAudioEnabled(false)
     setPreviewSelectedBackgroundOnly(false)
     if (!wasPreviewing) return
     setReceiverSyncStatus(null)
@@ -3086,6 +3159,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setToolOpen(snapshot?.mode === 'object')
     setBackgroundPanelOpen(false)
     clearPreviewPlayback(false)
+    setBackgroundTransitionSoundMuted(false)
     previewPanelSnapshotRef.current = null
     previewBackgroundIdRef.current = ''
     sendPreviewModeState(false, { replayId, backgroundId: '' })
@@ -3107,6 +3181,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
 
       previewStartRequestRef.current += 1
       previewStartPendingRef.current = false
+      previewAudioEnabledRef.current = false
+      setPreviewAudioEnabled(false)
+      setBackgroundTransitionSoundMuted(false)
       clearTargetEditing()
       clearPreviewPlayback(false)
       nextPreviewReplayId()
@@ -3134,6 +3211,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setReceiverSyncStatus(null)
     setReceiverSyncError(false)
     clearPreviewPlayback(false)
+    setBackgroundTransitionSoundMuted(false)
   }
 
   const handleCurrentBackgroundPlayback = () => {
@@ -6444,6 +6522,15 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           <div className="dynamic-preview-lock-actions">
             <button
               type="button"
+              className={`ipad-button preview-action preview-audio-toggle ${previewAudioEnabled ? 'is-enabled' : 'is-muted'}`}
+              onClick={() => updatePreviewAudioEnabled(!previewAudioEnabledRef.current)}
+              aria-pressed={previewAudioEnabled}
+            >
+              {previewAudioEnabled ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+              <span>{t(previewAudioEnabled ? 'control.previewAudioOn' : 'control.previewAudioOff')}</span>
+            </button>
+            <button
+              type="button"
               className="ipad-button preview-action secondary-button preview-stop-button"
               onClick={() => setPreviewModeEnabled(false)}
             >
@@ -6701,7 +6788,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   src={displayedBackground.url}
                   autoPlay={!transitionPreparing}
                   loop
-                  muted
+                  muted={stageBackgroundVideoMuted}
                   playsInline
                   preload="auto"
                   className="dynamic-stage-background"
@@ -6910,6 +6997,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 width: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.width),
                 height: Math.max(MIN_STAGE_ITEM_COMPOSITOR_SIZE, itemPreviewSize.height)
               }
+              const visualFrameSize = isDynamicMediaItem(item) ? compositorSize : itemPreviewSize
               const animationCoordinateScale = Math.min(
                 (stageSize.width || DEFAULT_STAGE_PREVIEW_WIDTH) / RUNTIME_STAGE_WIDTH,
                 (stageSize.height || DEFAULT_STAGE_PREVIEW_HEIGHT) / RUNTIME_STAGE_HEIGHT
@@ -6989,8 +7077,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                             <div
                               className="dynamic-stage-item-visual-frame"
                               style={{
-                                width: `${itemPreviewSize.width}px`,
-                                height: `${itemPreviewSize.height}px`
+                                width: `${visualFrameSize.width}px`,
+                                height: `${visualFrameSize.height}px`
                               }}
                             >
                               {isDynamicBubbleItem(item) ? (

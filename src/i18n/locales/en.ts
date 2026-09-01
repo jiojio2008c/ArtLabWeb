@@ -1,6 +1,8 @@
 import type { TranslationResource } from './zh-Hant.ts'
 
 const en = {
+  'control.previewAudioOff': 'iPad Sound: Off',
+  'control.previewAudioOn': 'iPad Sound: On',
   'control.appearanceTime': 'Appearance time', 'control.layerAppearanceTime': 'Appears {{value}} s', 'control.layerMoveTime': 'Moves {{value}} s', 'control.layerAudioTime': 'Audio {{value}} s', 'control.hideAfterTarget': 'Hide on arrival', 'control.hideAfterTargetShort': 'Hides on arrival',
   'control.closeAppearanceSettings': 'Close Entrance Setup',
   'control.appearanceMode': 'Entrance Mode',

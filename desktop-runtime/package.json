@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test:appearance": "node --no-warnings scripts/verify-advanced-appearance.mjs",
+    "test:appearance": "node --no-warnings scripts/verify-advanced-appearance.mjs && node --no-warnings --test renderer/desktop-appearance-motion-core.test.mjs",
     "test:item-copy": "node scripts/verify-item-settings-copy.cjs",
     "test:target-motion": "node --no-warnings scripts/verify-target-motion.mjs",
     "test:motion": "node --no-warnings renderer/dynamic-motion-core.test.mjs",
