@@ -4121,3 +4121,25 @@ dist/assets/web-3ui0Ni4Z.js
 - 已执行 `npm --prefix desktop-runtime run pack:all`，打包前自动清理旧 `release` 与 `release-vertical-flip`。标准版为 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`，`85,327,243` bytes，SHA-256 `D369D60FCD250A00C5E0E651F4257A61E3925F759A0F91E4BD1891DA8BC85F26`。
 - 翻转版为 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`，`85,314,163` bytes，SHA-256 `B0AEC8DD924B25A65D3AAB9449A74BE6102E2C02617267DA183765ABB6A3C37C`。
 - 两份 `app.asar` 内的 `renderer/player.js` 与 `renderer/desktop-appearance-motion-core.js` 均和当前源码 SHA-256 完全一致。两套 `win-unpacked` 已分别冷启动，`/status` 均返回 `server.status=listening`、`port=8080`、`view.mode=archive`、`watermarkVisible=false`；退出后端口已释放。两份 EXE 仍为 `NotSigned`。
+
+## 70. 2026-09-01 编辑背景与出场时间设置完善
+
+### 编辑背景与音源
+
+- 修改前已建立 Git 回退点：`95a4a4c2 chore: checkpoint before background and appearance refinements`。本轮保留编辑背景页原有的结构、顺序和命名：`固定背景`、`随机切换`、`全部切换`。
+- 物件属性的音源改为原生下拉选择，保留上传、录音、试听、删除和“无音源”；背景音乐区域同样使用下拉选择。延迟播放仍使用上下滑动选择，不允许直接输入。
+- 背景卡片描述去除图片类型与转场说明，只显示背景名称和已绑定的 BGM；新增“清除全部 BGM”按钮，执行前以本地化确认提示，确认后只解除全部背景的 BGM 关联，不删除音源库文件。
+- 固定背景模式只展示并播放背景列表第一张，切回随机切换或全部切换后恢复完整列表；快捷背景切换栏在可见背景少于两张时隐藏。
+
+### 转场与出场顺序
+
+- 选择舞台窗帘、拍照闪白或皮影戏后立即套用到全部背景，旧的“应用转场”按钮不再渲染。转场状态由选项的选中态表达。
+- 舞台窗帘和皮影戏新增上下滑动选择的“转场时长”（`0.2–60` 秒）；时长按原有收起／展开阶段比例同步到 iPad 与 EXE，Logo 和皮影物件阶段随总时长缩放。拍照闪白与直接切换不显示时长选择。
+- 逐个出场模式下，修改物件出场秒数会立即按时间稳定重排卡片与播放 `order`，不再要求用户额外拖动卡片；相同时间维持原相对顺序，其他背景范围不受影响。
+
+### 构建与验证
+
+- 已通过 `npx tsc --noEmit`、`npm run build`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:appearance`、`test:motion`、`test:target-motion`、`test:item-copy`、`test:transition-audio`、`test:background-order`、`test:presentation`（43 项）、三个运行时 `node --check` 与 `git diff --check`。Vite 仅报告既有主 bundle 体积提示；仓库没有 ESLint 配置，因此 `npm run lint` 无法启动。
+- 已确认 `dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `3B2AC4FFABB0427ADA3631BA3664688D56CEBA7CE137A3353654F0991643E224`；当前资源为 `index-CySvOjHQ.js`、`index-CyM4GOc8.css`、`web-BWIfaIa4.js`、`magic-floor-background-C-YGeMXK.webp`、`Right_Logo-NbNB79TN.png`、`466-DTcHxBId.mp3`。
+- 已清理并重新生成标准版与完整翻转版 EXE：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`（SHA-256 `D22EA35C313098ABCBABC77D8F12AD889CF23EA3ABB600B24691F280ABCF2200`）与 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（SHA-256 `5CBE534DE6A72519B2620468DF93329ACAEB7AF0FB8F270940D4F992FF881708`）。发布目录由脚本先清理，旧 EXE 不会保留。
+- 当前 Windows 环境无法替代真实 iPad WKWebView、投影机和舞台硬件联调；安装新的 iOS 包或复制上述 EXE 后再进行现场验证。EXE 仍为未签名构建，正式分发前需配置代码签名证书。

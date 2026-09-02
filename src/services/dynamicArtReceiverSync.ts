@@ -23,6 +23,12 @@ import {
   getDynamicAnimationMode,
   getDynamicClickAnimationIds
 } from '../../desktop-runtime/renderer/dynamic-animation-catalog.js'
+import {
+  getDynamicBackgroundTransitionDuration,
+  isDynamicBackgroundTransitionDurationType,
+  normalizeDynamicBackgroundTransitionDurations,
+  type DynamicBackgroundTransitionDurations
+} from '../../desktop-runtime/renderer/background-transition-core.js'
 
 const DYNAMIC_RECEIVER_SYNC_KEY = 'magicfloor_dynamic_receiver_sync_v1'
 
@@ -71,6 +77,7 @@ const cloneDynamicMedia = <T extends DynamicMedia | DynamicAudioMedia>(media: T)
 const cloneDynamicBackground = (background: DynamicBackground): DynamicBackground => ({
   ...cloneDynamicMedia(background),
   backgroundTransition: background.backgroundTransition,
+  backgroundTransitionDurationMs: background.backgroundTransitionDurationMs,
   appearance: background.appearance
     ? { ...background.appearance }
     : background.appearance
@@ -142,20 +149,32 @@ const getLegacyBackgroundAppearance = (group: DynamicGroup): DynamicBackgroundAp
 
 const toBackgroundPayload = (
   background?: DynamicBackground,
-  fallbackAppearance?: DynamicBackgroundAppearance
+  fallbackAppearance?: DynamicBackgroundAppearance,
+  fallbackTransitionDurations?: DynamicBackgroundTransitionDurations
 ) => (
   background
-    ? {
+    ? (() => {
+        const transition = background.backgroundTransition ?? 'none'
+        const duration = isDynamicBackgroundTransitionDurationType(transition)
+          ? getDynamicBackgroundTransitionDuration(
+              transition,
+              fallbackTransitionDurations,
+              background.backgroundTransitionDurationMs
+            )
+          : undefined
+        return {
         assetId: background.id,
         name: background.name,
         mediaType: background.type,
         mimeType: background.mimeType,
         bgmAudioId: background.bgmAudioId,
-        backgroundTransition: background.backgroundTransition ?? 'none',
+        backgroundTransition: transition,
+        ...(duration !== undefined ? { backgroundTransitionDurationMs: duration } : {}),
         appearance: background.appearance
           ? { ...background.appearance }
           : fallbackAppearance
-      }
+        }
+      })()
     : null
 )
 
@@ -246,6 +265,9 @@ const buildGroupSyncPayload = (
   const backgrounds = getBackgrounds(group)
   const activeBackground = getActiveBackground(group, backgrounds)
   const legacyBackgroundAppearance = getLegacyBackgroundAppearance(group)
+  const backgroundTransitionDurations = normalizeDynamicBackgroundTransitionDurations(
+    group.backgroundTransitionDurations
+  )
   const stateRevision = Number.isFinite(revisionOptions.stateRevision)
     && Number(revisionOptions.stateRevision) > 0
     ? Math.floor(Number(revisionOptions.stateRevision))
@@ -273,9 +295,26 @@ const buildGroupSyncPayload = (
       DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP
     ),
     backgroundTransition: group.backgroundTransition ?? 'none',
+    backgroundTransitionDurations,
+    ...(isDynamicBackgroundTransitionDurationType(group.backgroundTransition ?? 'none')
+      ? {
+          backgroundTransitionDurationMs: getDynamicBackgroundTransitionDuration(
+            group.backgroundTransition ?? 'none',
+            backgroundTransitionDurations
+          )
+        }
+      : {}),
     activeBackgroundId: activeBackground?.id ?? '',
-    background: toBackgroundPayload(activeBackground, legacyBackgroundAppearance),
-    backgrounds: backgrounds.map((background) => toBackgroundPayload(background, legacyBackgroundAppearance)),
+    background: toBackgroundPayload(
+      activeBackground,
+      legacyBackgroundAppearance,
+      backgroundTransitionDurations
+    ),
+    backgrounds: backgrounds.map((background) => toBackgroundPayload(
+      background,
+      legacyBackgroundAppearance,
+      backgroundTransitionDurations
+    )),
     audioLibrary: (group.audioLibrary ?? []).map((audio) => ({
       assetId: audio.id,
       name: audio.name,
@@ -368,6 +407,9 @@ const getAppearanceByBackgroundSignature = (
 
 const getGroupSyncSignature = (group: DynamicGroup) => {
   const legacyBackgroundAppearance = getLegacyBackgroundAppearance(group)
+  const backgroundTransitionDurations = normalizeDynamicBackgroundTransitionDurations(
+    group.backgroundTransitionDurations
+  )
   const backgroundParts = getBackgrounds(group)
     .map((background) => {
       const appearance = background.appearance ?? legacyBackgroundAppearance
@@ -376,6 +418,11 @@ const getGroupSyncSignature = (group: DynamicGroup) => {
         getMediaSignaturePart(background),
         background.bgmAudioId ?? '',
         background.backgroundTransition ?? 'none',
+        getDynamicBackgroundTransitionDuration(
+          background.backgroundTransition ?? 'none',
+          backgroundTransitionDurations,
+          background.backgroundTransitionDurationMs
+        ),
         appearance.appearMode,
         appearance.appearIntervalMs,
         appearance.appearAnimation
@@ -459,6 +506,7 @@ const getGroupSyncSignature = (group: DynamicGroup) => {
         DEFAULT_DYNAMIC_BACKGROUND_PLAYBACK_LOOP
       ),
       group.backgroundTransition ?? 'none',
+      JSON.stringify(backgroundTransitionDurations),
       group.linkedAppearanceModelVersion ?? 0
     ],
     backgrounds: backgroundParts,

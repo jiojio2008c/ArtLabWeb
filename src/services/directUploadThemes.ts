@@ -101,7 +101,13 @@ const DIRECT_MASKS_BY_PREFIX: Record<DirectMaskPrefix, UploadMaskOption[]> = {
   ]
 }
 
-const getDirectMasksForTheme = (theme: DirectUploadTheme) => DIRECT_MASKS_BY_PREFIX[theme.maskPrefix]
+const getDirectMasksForTheme = (theme: DirectUploadTheme) => {
+  const masks = DIRECT_MASKS_BY_PREFIX[theme.maskPrefix]
+  if (theme.id === 'forest-1' || theme.id === 'forest-2') {
+    return masks.filter((mask) => mask.id !== 'A-01')
+  }
+  return masks
+}
 
 export type { DirectMaskPrefix, DirectUploadTheme, MaskLabelKey, ThemeLabelKey, UploadMaskOption }
 export { DIRECT_MASKS_BY_PREFIX, DIRECT_UPLOAD_THEMES, getDirectMasksForTheme }

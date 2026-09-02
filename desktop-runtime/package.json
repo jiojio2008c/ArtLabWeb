@@ -12,7 +12,7 @@
     "test:motion": "node --no-warnings renderer/dynamic-motion-core.test.mjs",
     "test:transition-audio": "node --no-warnings scripts/verify-background-transition-audio.mjs",
     "test:background-order": "node --no-warnings scripts/verify-background-playback-order.mjs",
-    "test:presentation": "node --no-warnings --test runtime-display-settings-core.test.cjs group-state-revision-core.test.cjs group-state-revision-integration.test.cjs renderer/stage-presentation-core.test.mjs renderer/background-playback-core.test.mjs renderer/interaction-core.test.mjs",
+    "test:presentation": "node --no-warnings --test runtime-display-settings-core.test.cjs group-state-revision-core.test.cjs group-state-revision-integration.test.cjs renderer/stage-presentation-core.test.mjs renderer/background-playback-core.test.mjs renderer/background-transition-core.test.mjs renderer/interaction-core.test.mjs",
     "clean:releases": "node scripts/clean-release-directories.cjs all",
     "clean:release:standard": "node scripts/clean-release-directories.cjs standard",
     "clean:release:vertical": "node scripts/clean-release-directories.cjs vertical",

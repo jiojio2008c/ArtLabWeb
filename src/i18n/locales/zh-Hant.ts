@@ -849,6 +849,7 @@ const zhHant = {
   'animation.danceOne': '舞動一', 'animation.danceTwo': '舞動二', 'animation.jellyJump': '果凍跳躍', 'animation.jumpFlip': '翻轉跳躍', 'animation.pullRight': '向右拉伸', 'animation.raiseHand': '舉手', 'animation.rolling': '滾動', 'animation.unityWave': '揮動',
   'animation.shortDanceOne': '舞動一', 'animation.shortDanceTwo': '舞動二', 'animation.shortJellyJump': '果凍', 'animation.shortJumpFlip': '翻跳', 'animation.shortPullRight': '拉伸', 'animation.shortRaiseHand': '舉手', 'animation.shortRolling': '滾動', 'animation.shortUnityWave': '揮動',
   'animation.namedPreview': '{{name}}：{{animation}}', 'animation.mode': '動畫模式', 'animation.random': '隨機動畫', 'animation.previous': '上一個動畫', 'animation.next': '下一個動畫', 'animation.selectedCount': '已選 {{count}} 項', 'animation.clickRange': '點擊動畫範圍', 'animation.clickRangeTitle': '選擇點擊動畫', 'animation.clickRangeHint': '選擇此物件在 PC 上被點擊時播放的動畫。', 'animation.clickRangeConfirm': '套用範圍', 'animation.clickRangeCancel': '取消'
+  , 'control.backgroundTransitionDuration': '轉場時長'
 } as const
 
 type TranslationResource = { [Key in keyof typeof zhHant]: string }

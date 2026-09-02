@@ -42,7 +42,11 @@ test('state caching, stage standby, and preview activation remain separate', () 
   assert.match(rendererHtml, /id="stageStandby"/)
   assert.match(rendererHtml, /src="\.\/assets\/Right_Logo\.png"/)
   assert.match(rendererStyles, /\.stage-standby\s*\{[\s\S]*?magic-floor-background\.webp/)
-  assert.match(rendererStyles, /\.stage-standby-logo\s*\{[\s\S]*?object-fit:\s*contain/)
+  const standbyLogoStyles = rendererStyles.match(/\.stage-standby-logo\s*\{[\s\S]*?\}/)?.[0] ?? ''
+  assert.match(standbyLogoStyles, /object-fit:\s*contain/)
+  assert.match(standbyLogoStyles, /transform:\s*scale\(0\.65\)/)
+  assert.match(standbyLogoStyles, /transform-origin:\s*center/)
+  assert.ok((standbyLogoStyles.match(/drop-shadow\(/g) ?? []).length >= 3)
 })
 
 test('metadata-only state syncs preserve asset URL revisions', () => {

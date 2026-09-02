@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   CSSProperties,
   PointerEvent as ReactPointerEvent,
+  TransitionEvent as ReactTransitionEvent,
   WheelEvent as ReactWheelEvent
 } from 'react'
 import {
@@ -20,6 +21,8 @@ interface IntervalWheelProps {
   className?: string
   onChange: (value: number) => void
   onCommit?: (value: number) => void
+  onSettled?: (value: number) => void
+  onCancel?: (value: number, initialValue: number) => void
   ariaLabel: string
 }
 
@@ -28,6 +31,7 @@ interface WheelDragState {
   startX: number
   startY: number
   startValue: number
+  deferredSettledValue: number | null
   lastValue: number
   changed: boolean
   moved: boolean
@@ -36,6 +40,7 @@ interface WheelDragState {
 
 const WHEEL_STEP_PX = 46
 const EPSILON = 0.000001
+const COLLAPSE_SETTLE_MS = 200
 
 const getPrecision = (step: number) => {
   const stepText = String(step)
@@ -58,6 +63,8 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   className,
   onChange,
   onCommit,
+  onSettled,
+  onCancel,
   ariaLabel
 }) => {
   const precision = getPrecision(step)
@@ -74,6 +81,8 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   const inputRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<WheelDragState | null>(null)
   const collapseTimerRef = useRef<number | null>(null)
+  const settledTimerRef = useRef<number | null>(null)
+  const pendingSettledValueRef = useRef<number | null>(null)
   const selectionSoundTimerRef = useRef<number | null>(null)
   const suppressClickRef = useRef(false)
   const cancelEditRef = useRef(false)
@@ -92,6 +101,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
 
   useEffect(() => () => {
     if (collapseTimerRef.current !== null) window.clearTimeout(collapseTimerRef.current)
+    if (settledTimerRef.current !== null) window.clearTimeout(settledTimerRef.current)
     if (selectionSoundTimerRef.current !== null) window.clearTimeout(selectionSoundTimerRef.current)
   }, [])
 
@@ -99,6 +109,51 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     if (collapseTimerRef.current === null) return
     window.clearTimeout(collapseTimerRef.current)
     collapseTimerRef.current = null
+  }
+
+  const clearSettledTimer = () => {
+    if (settledTimerRef.current === null) return
+    window.clearTimeout(settledTimerRef.current)
+    settledTimerRef.current = null
+  }
+
+  const emitSettled = () => {
+    const settledValue = pendingSettledValueRef.current
+    pendingSettledValueRef.current = null
+    clearSettledTimer()
+    if (settledValue === null) return
+    onSettled?.(settledValue)
+  }
+
+  const clearPendingSettled = () => {
+    pendingSettledValueRef.current = null
+    clearSettledTimer()
+  }
+
+  const takePendingSettled = () => {
+    const pendingValue = pendingSettledValueRef.current
+    pendingSettledValueRef.current = null
+    clearSettledTimer()
+    return pendingValue
+  }
+
+  const scheduleSettled = (nextValue: number, waitForCollapse = false) => {
+    if (!onSettled) return
+    clearSettledTimer()
+    pendingSettledValueRef.current = nextValue
+    if (!waitForCollapse) {
+      emitSettled()
+      return
+    }
+    settledTimerRef.current = window.setTimeout(() => {
+      emitSettled()
+    }, COLLAPSE_SETTLE_MS)
+  }
+
+  const handleCollapseTransitionEnd = (event: ReactTransitionEvent<HTMLDivElement>) => {
+    if (expanded || pendingSettledValueRef.current === null) return
+    if (event.propertyName !== 'transform') return
+    emitSettled()
   }
 
   const scheduleCollapse = () => {
@@ -131,6 +186,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
       playIntervalWheelTick(nextValue > boundedValue ? 1 : -1)
       scheduleSelectionSound()
       onCommit?.(nextValue)
+      scheduleSettled(nextValue, Boolean(onSettled))
     }
   }
 
@@ -149,6 +205,15 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     clearCollapseTimer()
 
     if (cancelled) {
+      clearPendingSettled()
+      setDraft(String(clampValue(drag.startValue)))
+      if (drag.changed || drag.deferredSettledValue === null) {
+        onCancel?.(drag.lastValue, drag.startValue)
+      }
+      if (drag.deferredSettledValue !== null) {
+        if (drag.changed) onChange(drag.deferredSettledValue)
+        scheduleSettled(drag.deferredSettledValue, true)
+      }
       suppressClickRef.current = false
       return
     }
@@ -156,6 +221,9 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     if (drag.axis === 'vertical' && drag.changed) {
       playIntervalWheelSelection()
       onCommit?.(drag.lastValue)
+      scheduleSettled(drag.lastValue, true)
+    } else if (drag.deferredSettledValue !== null) {
+      scheduleSettled(drag.deferredSettledValue, true)
     }
 
     window.setTimeout(() => {
@@ -168,13 +236,16 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     event.stopPropagation()
     prepareIntervalWheelAudio()
     clearCollapseTimer()
+    const deferredSettledValue = takePendingSettled()
+    const gestureStartValue = deferredSettledValue ?? boundedValue
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startValue: boundedValue,
-      lastValue: boundedValue,
+      startValue: gestureStartValue,
+      deferredSettledValue,
+      lastValue: gestureStartValue,
       changed: false,
       moved: false,
       axis: 'pending'
@@ -237,8 +308,10 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
   const commitDraft = () => {
     if (cancelEditRef.current) {
       cancelEditRef.current = false
+      clearPendingSettled()
       setDraft(String(boundedValue))
       setEditing(false)
+      onCancel?.(boundedValue, boundedValue)
       scheduleCollapse()
       return
     }
@@ -246,6 +319,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     const parsedValue = Number(draft)
     const nextValue = Number.isFinite(parsedValue) ? setBoundedValue(parsedValue) : boundedValue
     onCommit?.(nextValue)
+    scheduleSettled(nextValue)
     setEditing(false)
     scheduleCollapse()
   }
@@ -298,6 +372,7 @@ const IntervalWheel: React.FC<IntervalWheelProps> = ({
     <div
       className={rootClassName}
       onWheel={handleWheel}
+      onTransitionEnd={handleCollapseTransitionEnd}
     >
       <div className="dynamic-interval-wheel-viewport">
         <div className="dynamic-interval-wheel-track" style={wheelStyle}>

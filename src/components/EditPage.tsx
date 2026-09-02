@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Trash2 } from 'lucide-react'
 import { removeArtworkFromIp } from '../services/artworkStorage.ts'
+import ConfirmActionDialog from './ConfirmActionDialog.tsx'
 
 interface EditPageProps {
   imageData: { name: string; url: string }
@@ -68,6 +70,7 @@ const EditPage: React.FC<EditPageProps> = ({
   const [activeTool, setActiveTool] = useState<ControlTool>('scale')
   const [isControlPanelOpen, setIsControlPanelOpen] = useState(false)
   const [animationPreviewError, setAnimationPreviewError] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeletingArtwork, setIsDeletingArtwork] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
@@ -276,11 +279,8 @@ const EditPage: React.FC<EditPageProps> = ({
     sendHttpMessage(`${imageData.name}_Release:${newReleased}`)
   }
 
-  const handleDeleteArtwork = async () => {
-    if (isDeletingArtwork) return
-
-    const confirmed = window.confirm(t('edit.confirmDeleteSlot', { index: selectedObjectIndex }))
-    if (!confirmed) return
+  const handleDeleteArtwork = async (): Promise<boolean> => {
+    if (isDeletingArtwork) return false
 
     setIsDeletingArtwork(true)
     try {
@@ -292,9 +292,11 @@ const EditPage: React.FC<EditPageProps> = ({
       }
 
       onDeleteArtwork()
+      return true
     } catch (error) {
       console.error('Failed to delete artwork:', error)
       window.alert(t('edit.deleteFailed'))
+      return false
     } finally {
       setIsDeletingArtwork(false)
     }
@@ -743,7 +745,7 @@ const EditPage: React.FC<EditPageProps> = ({
           </button>
           <button
             type="button"
-            onClick={handleDeleteArtwork}
+            onClick={() => setDeleteConfirmOpen(true)}
             disabled={isDeletingArtwork}
             className="ipad-button danger-button"
           >
@@ -751,6 +753,21 @@ const EditPage: React.FC<EditPageProps> = ({
           </button>
         </div>
       </section>
+
+      {deleteConfirmOpen && (
+        <ConfirmActionDialog
+          classNamePrefix="edit-artwork-delete-confirm"
+          icon={<Trash2 />}
+          title={t('edit.confirmDeleteSlot', { index: selectedObjectIndex })}
+          cancelLabel={t('common.cancel')}
+          confirmLabel={t('common.delete')}
+          pendingLabel={t('groups.deleting')}
+          pending={isDeletingArtwork}
+          tone="danger"
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteArtwork}
+        />
+      )}
     </main>
   )
 }

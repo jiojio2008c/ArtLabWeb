@@ -101,6 +101,8 @@ const runtimeState = {
     backgroundPlayMode: 'fixed',
     backgroundIntervalMs: 5000,
     backgroundPlaybackLoop: DEFAULT_BACKGROUND_PLAYBACK_LOOP,
+    backgroundTransitionDurations: { curtain: 1200, shadowPlay: 1400 },
+    backgroundTransitionDurationMs: 0,
     replayId: 0,
     startedAt: Date.now()
   },
@@ -223,6 +225,49 @@ const normalizeBackgroundTransition = (value, fallback = 'none') => (
     : fallback
 )
 
+const DEFAULT_BACKGROUND_TRANSITION_DURATIONS = Object.freeze({
+  curtain: 1200,
+  shadowPlay: 1400
+})
+const MIN_BACKGROUND_TRANSITION_DURATION_MS = 200
+const MAX_BACKGROUND_TRANSITION_DURATION_MS = 60000
+
+const isBackgroundTransitionDurationType = (value) => (
+  value === 'curtain' || value === 'shadowPlay'
+)
+
+const normalizeBackgroundTransitionDuration = (transition, value, fallback) => {
+  if (!isBackgroundTransitionDurationType(transition)) return 0
+  const numericValue = Number(value)
+  const numericFallback = Number(fallback)
+  const candidate = Number.isFinite(numericValue)
+    ? numericValue
+    : Number.isFinite(numericFallback)
+      ? numericFallback
+      : DEFAULT_BACKGROUND_TRANSITION_DURATIONS[transition]
+  return Math.min(
+    MAX_BACKGROUND_TRANSITION_DURATION_MS,
+    Math.max(MIN_BACKGROUND_TRANSITION_DURATION_MS, Math.round(candidate))
+  )
+}
+
+const normalizeBackgroundTransitionDurations = (value, fallback = DEFAULT_BACKGROUND_TRANSITION_DURATIONS) => {
+  const source = isRecord(value) ? value : {}
+  const fallbackSource = isRecord(fallback) ? fallback : DEFAULT_BACKGROUND_TRANSITION_DURATIONS
+  return {
+    curtain: normalizeBackgroundTransitionDuration('curtain', source.curtain, fallbackSource.curtain),
+    shadowPlay: normalizeBackgroundTransitionDuration('shadowPlay', source.shadowPlay, fallbackSource.shadowPlay)
+  }
+}
+
+const getBackgroundTransitionDuration = (transition, durations, fallback) => (
+  normalizeBackgroundTransitionDuration(
+    transition,
+    isRecord(durations) ? durations[transition] : undefined,
+    fallback
+  )
+)
+
 const normalizeBackgroundPlaybackLoop = (
   value,
   fallback = DEFAULT_BACKGROUND_PLAYBACK_LOOP
@@ -278,6 +323,16 @@ const syncActiveBackground = (group) => {
   group.background = backgrounds.find((background) => background.assetId === activeBackgroundId)
     ?? backgrounds[0]
   return group.background
+}
+
+const enforceFixedBackgroundSelection = (group) => {
+  if (group?.backgroundPlayMode !== 'fixed') return syncActiveBackground(group)
+  const backgrounds = Array.isArray(group.backgrounds) ? group.backgrounds : []
+  const firstBackground = backgrounds[0]
+  if (!firstBackground) return syncActiveBackground(group)
+  group.activeBackgroundId = firstBackground.assetId
+  group.background = firstBackground
+  return firstBackground
 }
 
 const normalizeLinkedAppearance = (value, itemId, validItemIds) => {
@@ -692,6 +747,7 @@ const ensureGroup = (groupId = DEFAULT_GROUP_ID, name = '作品檔案') => {
       backgroundIntervalMs: 5000,
       backgroundPlaybackLoop: DEFAULT_BACKGROUND_PLAYBACK_LOOP,
       backgroundTransition: 'none',
+      backgroundTransitionDurations: { ...DEFAULT_BACKGROUND_TRANSITION_DURATIONS },
       advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
       stateRevision: storedRevision,
       linkedAppearanceModelVersion: DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION,
@@ -782,6 +838,33 @@ const defaultItem = (payload, order = 0) => {
   }
 }
 
+const normalizeStoredBackgroundTransitionDurations = (group, backgrounds = []) => {
+  const source = isRecord(group.backgroundTransitionDurations)
+    ? { ...group.backgroundTransitionDurations }
+    : {}
+  const activeTransition = normalizeBackgroundTransition(group.backgroundTransition)
+  const legacyDuration = Number(group.backgroundTransitionDurationMs)
+  if (
+    isBackgroundTransitionDurationType(activeTransition)
+    && source[activeTransition] === undefined
+    && Number.isFinite(legacyDuration)
+  ) {
+    source[activeTransition] = legacyDuration
+  }
+  backgrounds.some((background) => {
+    const transition = normalizeBackgroundTransition(
+      background?.backgroundTransition,
+      activeTransition
+    )
+    if (!isBackgroundTransitionDurationType(transition) || source[transition] !== undefined) return false
+    const duration = Number(background?.backgroundTransitionDurationMs)
+    if (!Number.isFinite(duration)) return false
+    source[transition] = duration
+    return source.curtain !== undefined && source.shadowPlay !== undefined
+  })
+  return normalizeBackgroundTransitionDurations(source)
+}
+
 const normalizeStoredRuntimeState = () => {
   Object.values(runtimeState.groups).forEach((group) => {
     group.advancedFeaturesEnabled = DESKTOP_ADVANCED_FEATURES_ENABLED
@@ -799,16 +882,28 @@ const normalizeStoredRuntimeState = () => {
       : group.background
         ? [group.background]
         : []
+    group.backgroundTransitionDurations = normalizeStoredBackgroundTransitionDurations(
+      group,
+      storedBackgrounds
+    )
     group.backgrounds = storedBackgrounds.map((background) => ({
       ...background,
       backgroundTransition: normalizeBackgroundTransition(
         background.backgroundTransition,
         group.backgroundTransition
       ),
+      backgroundTransitionDurationMs: isBackgroundTransitionDurationType(
+        normalizeBackgroundTransition(background.backgroundTransition, group.backgroundTransition)
+      )
+        ? getBackgroundTransitionDuration(
+            normalizeBackgroundTransition(background.backgroundTransition, group.backgroundTransition),
+            group.backgroundTransitionDurations
+          )
+        : undefined,
       appearance: normalizeBackgroundAppearance(background.appearance, group),
       appearAnimation: undefined
     }))
-    syncActiveBackground(group)
+    enforceFixedBackgroundSelection(group)
     group.items = normalizeGroupItemLinksForModel(
       group,
       (group.items ?? []).map((item, index) => defaultItem(item, item.order ?? index))
@@ -869,19 +964,36 @@ const upsertBackground = (group, payload) => {
   const existingBackground = (group.backgrounds ?? [])
     .find((item) => item.assetId === payload.assetId)
   const hasAppearance = Object.prototype.hasOwnProperty.call(payload, 'appearance')
+  const backgroundTransition = normalizeBackgroundTransition(
+    payload.backgroundTransition,
+    group.backgroundTransition
+  )
+  const groupTransitionDurations = normalizeStoredBackgroundTransitionDurations(
+    group,
+    group.backgrounds ?? []
+  )
   const background = {
     assetId: payload.assetId,
     name: payload.name ?? payload.assetId,
     mediaType: payload.mediaType ?? payload.type ?? 'image',
     mimeType: payload.mimeType ?? '',
     bgmAudioId: payload.bgmAudioId ?? null,
-    backgroundTransition: normalizeBackgroundTransition(
-      payload.backgroundTransition,
-      group.backgroundTransition
-    ),
+    backgroundTransition,
+    backgroundTransitionDurationMs: isBackgroundTransitionDurationType(backgroundTransition)
+      ? normalizeBackgroundTransitionDuration(
+          backgroundTransition,
+          payload.backgroundTransitionDurationMs,
+          groupTransitionDurations[backgroundTransition]
+        )
+      : undefined,
     appearance: hasAppearance
       ? normalizeBackgroundAppearance(payload.appearance, group)
       : existingBackground?.appearance ?? normalizeBackgroundAppearance(undefined, group)
+  }
+
+  if (isBackgroundTransitionDurationType(backgroundTransition)) {
+    groupTransitionDurations[backgroundTransition] = background.backgroundTransitionDurationMs
+    group.backgroundTransitionDurations = groupTransitionDurations
   }
 
   group.backgrounds = [
@@ -889,7 +1001,7 @@ const upsertBackground = (group, payload) => {
     ...(group.backgrounds ?? []).filter((item) => item.assetId !== background.assetId)
   ]
   group.activeBackgroundId = payload.activeBackgroundId ?? background.assetId
-  syncActiveBackground(group)
+  enforceFixedBackgroundSelection(group)
 
   upsertAssetMetadata({
     assetId: background.assetId,
@@ -1162,6 +1274,19 @@ const applyDynamicEvent = (eventName, payload) => {
         payload.backgroundTransition,
         group.backgroundTransition ?? 'none'
       )
+      group.backgroundTransitionDurations = normalizeStoredBackgroundTransitionDurations(
+        {
+          ...group,
+          backgroundTransitionDurations: payload.backgroundTransitionDurations
+            ?? group.backgroundTransitionDurations,
+          backgroundTransitionDurationMs: payload.backgroundTransitionDurationMs
+        },
+        Array.isArray(payload.backgrounds)
+          ? payload.backgrounds
+          : payload.background
+            ? [payload.background]
+            : group.backgrounds ?? []
+      )
       group.activeBackgroundId = payload.activeBackgroundId ?? group.activeBackgroundId
       if (
         runtimeState.preview.enabled
@@ -1170,6 +1295,12 @@ const applyDynamicEvent = (eventName, payload) => {
         runtimeState.preview.backgroundPlayMode = group.backgroundPlayMode
         runtimeState.preview.backgroundIntervalMs = group.backgroundIntervalMs
         runtimeState.preview.backgroundPlaybackLoop = group.backgroundPlaybackLoop
+        runtimeState.preview.backgroundTransition = group.backgroundTransition
+        runtimeState.preview.backgroundTransitionDurations = group.backgroundTransitionDurations
+        runtimeState.preview.backgroundTransitionDurationMs = getBackgroundTransitionDuration(
+          group.backgroundTransition,
+          group.backgroundTransitionDurations
+        )
       }
 
       const backgrounds = Array.isArray(payload.backgrounds)
@@ -1182,6 +1313,10 @@ const applyDynamicEvent = (eventName, payload) => {
         .filter((background) => background?.assetId)
         .map((background) => {
           const existingBackground = (group.backgrounds ?? []).find((item) => item.assetId === background.assetId)
+          const backgroundTransition = normalizeBackgroundTransition(
+            background.backgroundTransition,
+            group.backgroundTransition
+          )
           upsertAssetMetadata({
             assetId: background.assetId,
             role: 'background',
@@ -1196,10 +1331,15 @@ const applyDynamicEvent = (eventName, payload) => {
             mediaType: background.mediaType ?? background.type ?? 'image',
             mimeType: background.mimeType ?? '',
             bgmAudioId: background.bgmAudioId ?? null,
-            backgroundTransition: normalizeBackgroundTransition(
-              background.backgroundTransition,
-              group.backgroundTransition
-            ),
+            backgroundTransition,
+            backgroundTransitionDurationMs: isBackgroundTransitionDurationType(backgroundTransition)
+                ? normalizeBackgroundTransitionDuration(
+                    backgroundTransition,
+                    group.backgroundTransitionDurations?.[backgroundTransition]
+                      ?? background.backgroundTransitionDurationMs
+                      ?? existingBackground?.backgroundTransitionDurationMs
+                  )
+              : undefined,
             appearance: Object.prototype.hasOwnProperty.call(background, 'appearance')
               ? normalizeBackgroundAppearance(background.appearance, group)
               : existingBackground?.appearance ?? normalizeBackgroundAppearance(undefined, group)
@@ -1226,7 +1366,7 @@ const applyDynamicEvent = (eventName, payload) => {
           }
         })
 
-      syncActiveBackground(group)
+      enforceFixedBackgroundSelection(group)
 
       if (
         runtimeState.preview.enabled
@@ -1309,6 +1449,20 @@ const applyDynamicEvent = (eventName, payload) => {
           previewGroup.backgroundPlaybackLoop
         ),
         backgroundTransition: payload.backgroundTransition ?? previewGroup.backgroundTransition ?? 'none',
+        backgroundTransitionDurations: normalizeStoredBackgroundTransitionDurations({
+          ...previewGroup,
+          backgroundTransitionDurations: payload.backgroundTransitionDurations
+            ?? previewGroup.backgroundTransitionDurations,
+          backgroundTransitionDurationMs: payload.backgroundTransitionDurationMs
+        }, previewGroup.backgrounds ?? []),
+        backgroundTransitionDurationMs: getBackgroundTransitionDuration(
+          normalizeBackgroundTransition(
+            payload.backgroundTransition,
+            previewGroup.backgroundTransition ?? 'none'
+          ),
+          payload.backgroundTransitionDurations
+            ?? previewGroup.backgroundTransitionDurations
+        ),
         replayId: payload.replayId ?? runtimeState.preview.replayId + 1,
         resolvedAnimationIds: payload.resolvedAnimationIds ?? {},
         startedAt: Date.now()
@@ -1339,7 +1493,7 @@ const applyDynamicEvent = (eventName, payload) => {
         )
       }))
       group.activeBackgroundId = payload.nextActiveAssetId ?? group.activeBackgroundId
-      syncActiveBackground(group)
+      enforceFixedBackgroundSelection(group)
       if (
         runtimeState.preview.enabled
         && runtimeState.preview.groupId === group.groupId
@@ -1359,6 +1513,7 @@ const applyDynamicEvent = (eventName, payload) => {
         payload.backgroundPlaybackLoop,
         group.backgroundPlaybackLoop
       )
+      enforceFixedBackgroundSelection(group)
       if (
         runtimeState.preview.enabled
         && runtimeState.preview.groupId === group.groupId
@@ -1366,6 +1521,11 @@ const applyDynamicEvent = (eventName, payload) => {
         runtimeState.preview.backgroundPlayMode = group.backgroundPlayMode
         runtimeState.preview.backgroundIntervalMs = group.backgroundIntervalMs
         runtimeState.preview.backgroundPlaybackLoop = group.backgroundPlaybackLoop
+        runtimeState.preview.backgroundTransition = group.backgroundTransition
+        runtimeState.preview.backgroundTransitionDurations = group.backgroundTransitionDurations
+        if (group.backgroundPlayMode === 'fixed') {
+          runtimeState.preview.backgroundId = group.activeBackgroundId
+        }
       }
       group.updatedAt = Date.now()
       break

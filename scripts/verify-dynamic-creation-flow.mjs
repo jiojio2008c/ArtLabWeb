@@ -835,6 +835,10 @@ const dynamicControlSource = readFileSync(
   new URL('../src/components/DynamicControlPage.tsx', import.meta.url),
   'utf8'
 )
+const intervalWheelSource = readFileSync(
+  new URL('../src/components/IntervalWheel.tsx', import.meta.url),
+  'utf8'
+)
 const walkAnimationCanvasSource = readFileSync(
   new URL('../src/components/WalkAnimationCanvas.tsx', import.meta.url),
   'utf8'
@@ -892,8 +896,8 @@ for (const [locale, resource] of localizedFlowCopy) {
 
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0/,
-  'Every stage with a background must keep the background rail and its play/stop button available.'
+  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0 && visibleBackgrounds\.length >= 2/,
+  'The background rail must appear only when at least two visible backgrounds are available.'
 )
 assert.match(
   dynamicControlSource,
@@ -1135,8 +1139,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0/,
-  'The current-background controls must stay hidden only with no background or during full preview.'
+  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0 && visibleBackgrounds\.length >= 2/,
+  'The current-background controls must stay hidden during full preview and until at least two backgrounds are available.'
 )
 assert.match(
   dynamicControlSource,
@@ -1145,8 +1149,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /className="dynamic-background-quick-rail"[\s\S]*?backgrounds\.map\(\(background\) =>[\s\S]*?className=\{`dynamic-background-quick-card\s+\$\{active \? 'active' : ''\}[\s\S]*?aria-pressed=\{active\}/,
-  'The quick switcher must expose every background as a clearly selectable card.'
+  /className="dynamic-background-quick-rail"[\s\S]*?visibleBackgrounds\.map\(\(background\) =>[\s\S]*?className=\{`dynamic-background-quick-card\s+\$\{active \? 'active' : ''\}[\s\S]*?aria-pressed=\{active\}/,
+  'The quick switcher must expose each visible background as a clearly selectable card.'
 )
 assert.match(
   dynamicControlSource,
@@ -1462,12 +1466,12 @@ assert.match(
   'The clear-all BGM action must be enabled only while at least one background has music.'
 )
 const clearAllBackgroundBgmHandler = dynamicControlSource.match(
-  /const clearAllBackgroundBgm = async \(\) => \{([\s\S]*?)\r?\n  }\r?\n\r?\n  const applyBackgroundTransition/
+  /const clearAllBackgroundBgm = async \([\s\S]*?\): Promise<boolean> => \{([\s\S]*?)\r?\n  }\r?\n\r?\n  const applyBackgroundTransition/
 )?.[1]
 assert.ok(clearAllBackgroundBgmHandler, 'The background editor must expose a dedicated clear-all BGM handler.')
 assert.match(
-  clearAllBackgroundBgmHandler,
-  /const targetIds = backgrounds\.map\(\(background\) => background\.id\)/,
+  dynamicControlSource,
+  /requestedBackgroundIds = backgrounds\.map\(\(background\) => background\.id\)/,
   'Clearing all BGM must target every background, not only the current selection.'
 )
 assert.match(
@@ -1513,12 +1517,12 @@ const backgroundActionButtonFontCss = indexCss.match(
 )?.[1]
 assert.ok(
   backgroundActionButtonFontCss,
-  'The clear-all BGM and apply-transition buttons must share one final font-size rule.'
+  'The background action controls must share one final font-size rule.'
 )
 assert.match(
   backgroundActionButtonFontCss,
   /font-size:\s*14px;/,
-  'The clear-all BGM label must match the apply-transition button font size.'
+  'The clear-all BGM label must remain readable at the shared action font size.'
 )
 assert.doesNotMatch(
   dynamicControlSource,
@@ -1527,8 +1531,23 @@ assert.doesNotMatch(
 )
 assert.match(
   dynamicControlSource,
-  /const handleAppearanceItemTimeChange = \(itemId: string, value: number\) => \{[\s\S]*appearanceDelayMs[\s\S]*commitAppearanceTiming/,
-  'Independent appearance time changes must persist through the dedicated appearance editor.'
+  /const handleAppearanceItemTimeChange = \([\s\S]*?\) => \{[\s\S]*?setAppearanceTimingDraft\(itemId, backgroundId, value\)/,
+  'Independent appearance time changes must remain local drafts until the wheel settles.'
+)
+assert.match(
+  dynamicControlSource,
+  /onSettled=\{\(value\) => commitAppearanceItemTime\(item\.id, value, displayedBackgroundId\)\}[\s\S]*?onCancel=\{\(\) => clearAppearanceTimingDraft\(item\.id, displayedBackgroundId\)\}/,
+  'Appearance timing must commit and clear drafts through the wheel settle lifecycle.'
+)
+assert.match(
+  intervalWheelSource,
+  /onSettled\?: \(value: number\) => void[\s\S]*?scheduleSettled\(drag\.lastValue, true\)/,
+  'The interval wheel must expose a settle callback after a vertical drag collapses.'
+)
+assert.match(
+  dynamicControlSource,
+  /const ControlConfirmAction|type ControlConfirmAction[\s\S]*?delete-items[\s\S]*?ConfirmActionDialog/,
+  'Destructive control actions must use the shared in-app confirmation dialog.'
 )
 assert.match(
   dynamicControlSource,

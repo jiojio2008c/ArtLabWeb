@@ -103,6 +103,7 @@ const en = {
   'control.linkageUpdate': 'Save Order',
   'control.linkageConfirm': 'Save Order',
   'control.applyTransition': 'Apply Transition',
+  'control.backgroundTransitionDuration': 'Transition duration',
   'control.backgroundTransitionSummary': 'Transition: {{transition}}',
   'common.appName': 'MagicFloor', 'common.close': 'Close', 'common.cancel': 'Cancel', 'common.save': 'Save', 'common.next': 'Next', 'common.load': 'Load', 'common.processing': 'Processing', 'common.select': 'Select', 'common.backHome': 'Back to Home', 'common.user': 'User', 'common.signedIn': 'Signed in', 'common.file': 'File', 'common.back': 'Back', 'common.stop': 'Stop', 'common.delete': 'Delete', 'common.selectAll': 'Select All', 'common.deselectAll': 'Deselect All', 'common.selectedCount': '{{count}} selected', 'common.selectNamed': 'Select {{name}}',
   'auth.signIn': 'Sign In', 'auth.signingIn': 'Signing in', 'auth.signInSuccess': 'Signed in', 'auth.email': 'Email', 'auth.password': 'Password', 'auth.showPassword': 'Show password', 'auth.hidePassword': 'Hide password', 'auth.emailRequired': 'Enter your email address.', 'auth.passwordRequired': 'Enter your password.', 'auth.networkError': 'Unable to connect. Check your network and try again.', 'auth.invalidCredentials': 'The email address or password is incorrect.', 'auth.tooManyAttempts': 'Too many attempts. Please try again later.', 'auth.unavailable': 'Sign-in is temporarily unavailable. Please try again later.',

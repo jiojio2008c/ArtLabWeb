@@ -68,6 +68,10 @@ import {
   DEFAULT_STAGE_WATERMARK_ENABLED,
   configureHighQualityImageSmoothing
 } from './stage-presentation-core.js'
+import {
+  getDynamicBackgroundTransitionTiming,
+  normalizeDynamicBackgroundTransitionDurations
+} from './background-transition-core.js'
 
 const STAGE_WIDTH = 1920
 const STAGE_HEIGHT = 1080
@@ -77,12 +81,6 @@ const PREVIEW_BGM_VOLUME = 0.62
 const PREVIEW_BGM_DUCK_VOLUME = 0.2
 const PREVIEW_BGM_TRANSITION_DUCK_VOLUME = 0.1
 const PREVIEW_BGM_FADE_MS = 420
-const BACKGROUND_TRANSITION_TIMINGS = {
-  curtain: { closeMs: 520, openMs: 680 },
-  cameraFlash: { closeMs: 150, openMs: 330 },
-  shadowPlay: { closeMs: 650, openMs: 750 }
-}
-
 const pageParams = new URLSearchParams(window.location.search)
 const displayFlipMode = pageParams.get('displayFlip')
 const pointerFlipMode = pageParams.get('pointerFlip') ?? displayFlipMode
@@ -1027,9 +1025,12 @@ const isAdvancedPreviewEnabled = () => (
   && runtimeState.preview?.advancedFeaturesEnabled === true
 )
 
-const getBackgroundTransitionTiming = (transition) => (
-  BACKGROUND_TRANSITION_TIMINGS[transition] ?? { closeMs: 0, openMs: 0 }
-)
+const getBackgroundTransitionTiming = (transition, group, preview) => {
+  const durations = normalizeDynamicBackgroundTransitionDurations(
+    preview?.backgroundTransitionDurations ?? group?.backgroundTransitionDurations
+  )
+  return getDynamicBackgroundTransitionTiming(transition, durations)
+}
 
 const getBackgroundAtCycle = (group, backgrounds, activeIndex, mode, cycle, loop = true) => {
   const preview = runtimeState.preview ?? {}
@@ -1068,6 +1069,9 @@ const getBackgroundPlaybackSchedule = (
     isAdvancedPreviewEnabled(),
     preview.backgroundTransition ?? '',
     group.backgroundTransition ?? 'none',
+    JSON.stringify(normalizeDynamicBackgroundTransitionDurations(
+      preview.backgroundTransitionDurations ?? group.backgroundTransitionDurations
+    )),
     backgrounds.map((background) => `${background.assetId}:${background.backgroundTransition ?? ''}`).join(',')
   ].join('|')
 
@@ -1097,7 +1101,7 @@ const getBackgroundPlaybackSchedule = (
       const transitionType = isAdvancedPreviewEnabled()
         ? targetBackground?.backgroundTransition ?? preview.backgroundTransition ?? group.backgroundTransition ?? 'none'
         : 'none'
-      const timing = getBackgroundTransitionTiming(transitionType)
+      const timing = getBackgroundTransitionTiming(transitionType, group, preview)
       const previousEntry = backgroundPlaybackScheduleState.entries[nextOrdinal - 2]
       const startsAtMs = previousEntry?.nextStartsAtMs ?? intervalMs
       backgroundPlaybackScheduleState.entries.push({
@@ -1834,10 +1838,12 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
       ? (1 - positionX) * STAGE_WIDTH + halfWidth + 96
       : -(positionX * STAGE_WIDTH + halfWidth + 96)
     if (transition.phase === 'closing') {
-      const progress = easeOutCubic(clamp(transition.phaseElapsedMs / Math.min(560, transition.closeMs), 0, 1))
+      const motionDuration = Math.max(1, transition.closeMs * (560 / 650))
+      const progress = easeOutCubic(clamp(transition.phaseElapsedMs / motionDuration, 0, 1))
       transitionX = outsideX * progress
     } else {
-      const progress = easeOutCubic(clamp(transition.phaseElapsedMs / Math.min(620, transition.openMs), 0, 1))
+      const motionDuration = Math.max(1, transition.openMs * (620 / 750))
+      const progress = easeOutCubic(clamp(transition.phaseElapsedMs / motionDuration, 0, 1))
       transitionX = outsideX * (1 - progress)
     }
     appearanceX = 0
@@ -2432,6 +2438,9 @@ const receiveState = (state) => {
       groupId,
       {
         ...(group ?? {}),
+        backgroundTransitionDurations: normalizeDynamicBackgroundTransitionDurations(
+          group?.backgroundTransitionDurations
+        ),
         backgroundPlaybackLoop: normalizeDynamicBackgroundPlaybackLoop(
           group?.backgroundPlaybackLoop
         ),
@@ -2442,6 +2451,10 @@ const receiveState = (state) => {
   const activeGroupForPreview = normalizedGroups[state.activeGroupId]
   const nextPreview = {
     ...(state.preview ?? {}),
+    backgroundTransitionDurations: normalizeDynamicBackgroundTransitionDurations(
+      state.preview?.backgroundTransitionDurations
+        ?? activeGroupForPreview?.backgroundTransitionDurations
+    ),
     backgroundId: state.preview?.enabled === true && typeof state.preview?.backgroundId === 'string'
       ? state.preview.backgroundId.trim()
       : null,
@@ -2489,7 +2502,7 @@ const receiveState = (state) => {
   }
 
   const preview = runtimeState.preview ?? {}
-  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${String(preview.backgroundId ?? '').trim()}:${preview.appearMode}:${preview.intervalMs}:${preview.appearAnimation}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}:${preview.backgroundPlaybackLoop}:${preview.backgroundTransition}:${preview.advancedFeaturesEnabled}`
+  const key = `${preview.enabled}:${preview.replayId}:${preview.groupId}:${String(preview.backgroundId ?? '').trim()}:${preview.appearMode}:${preview.intervalMs}:${preview.appearAnimation}:${preview.backgroundPlayMode}:${preview.backgroundIntervalMs}:${preview.backgroundPlaybackLoop}:${preview.backgroundTransition}:${JSON.stringify(preview.backgroundTransitionDurations)}:${preview.advancedFeaturesEnabled}`
   if (key !== lastPreviewKey) {
     lastPreviewKey = key
     previewStartTime = performance.now()

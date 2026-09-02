@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Trash2 } from 'lucide-react'
 import {
   MAX_DYNAMIC_ITEMS_PER_GROUP,
   addDynamicItem,
@@ -16,6 +17,7 @@ import {
   uploadUnityAsset
 } from '../services/unityBridge.ts'
 import { syncDynamicGroupToReceiver, type SyncStatus } from '../services/dynamicArtReceiverSync.ts'
+import ConfirmActionDialog from './ConfirmActionDialog.tsx'
 import DynamicItemThumbnail from './DynamicItemThumbnail.tsx'
 
 interface DynamicItemsPageProps {
@@ -62,6 +64,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
   const [editFile, setEditFile] = useState<File | undefined>()
   const [editPreview, setEditPreview] = useState<string | undefined>()
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<DynamicItem | null>(null)
   const [deletingItemId, setDeletingItemId] = useState('')
   const [receiverSyncStatus, setReceiverSyncStatus] = useState<SyncStatus | 'complete' | null>(null)
   const [receiverSyncError, setReceiverSyncError] = useState(false)
@@ -332,16 +335,13 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
     }
   }
 
-  const handleDeleteItem = async (item: DynamicItem) => {
-    if (deletingItemId) return
-
-    const confirmed = window.confirm(t('items.confirmDelete'))
-    if (!confirmed) return
+  const handleDeleteItem = async (item: DynamicItem): Promise<boolean> => {
+    if (deletingItemId) return false
 
     setDeletingItemId(item.id)
     try {
       const nextGroup = await deleteDynamicItem(group.id, item.id)
-      if (!nextGroup) return
+      if (!nextGroup) return false
 
       sendDynamicEvent(wsIp, dynamicPort, 'ItemDelete', {
         groupId: group.id,
@@ -349,9 +349,16 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
       })
       onGroupChange(nextGroup)
       closeItemMenu()
+      return true
     } finally {
       setDeletingItemId('')
     }
+  }
+
+  const requestDeleteItem = (item: DynamicItem) => {
+    if (deletingItemId) return
+    closeItemMenu()
+    setDeleteTarget(item)
   }
 
   return (
@@ -437,7 +444,7 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
             <button
               type="button"
               className="danger-menu-button"
-              onClick={() => handleDeleteItem(activeMenuItem)}
+              onClick={() => requestDeleteItem(activeMenuItem)}
               role="menuitem"
             >
               {deletingItemId === activeMenuItem.id ? t('groups.deleting') : t('items.delete')}
@@ -568,6 +575,22 @@ const DynamicItemsPage: React.FC<DynamicItemsPageProps> = ({
           </button>
         )}
       </div>
+
+      {deleteTarget && (
+        <ConfirmActionDialog
+          key={deleteTarget.id}
+          classNamePrefix="dynamic-item-delete-confirm"
+          icon={<Trash2 />}
+          title={t('items.confirmDelete')}
+          cancelLabel={t('common.cancel')}
+          confirmLabel={t('common.delete')}
+          pendingLabel={t('groups.deleting')}
+          pending={deletingItemId === deleteTarget.id}
+          tone="danger"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => handleDeleteItem(deleteTarget)}
+        />
+      )}
     </main>
   )
 }

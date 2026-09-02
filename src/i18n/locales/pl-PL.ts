@@ -103,6 +103,7 @@ const plPL = {
   'control.linkageUpdate': 'Zapisz kolejność',
   'control.linkageConfirm': 'Zapisz kolejność',
   'control.applyTransition': 'Zastosuj przejście',
+  'control.backgroundTransitionDuration': 'Czas przejścia',
   'control.backgroundTransitionSummary': 'Przejście: {{transition}}',
   'common.appName': 'MagicFloor', 'common.close': 'Zamknij', 'common.cancel': 'Anuluj', 'common.save': 'Zapisz', 'common.next': 'Dalej', 'common.load': 'Wczytaj', 'common.processing': 'Przetwarzanie', 'common.select': 'Wybierz', 'common.backHome': 'Wróć do strony głównej', 'common.user': 'Użytkownik', 'common.signedIn': 'Zalogowano', 'common.file': 'Plik', 'common.back': 'Wstecz', 'common.stop': 'Zatrzymaj', 'common.delete': 'Usuń', 'common.selectAll': 'Zaznacz wszystko', 'common.deselectAll': 'Odznacz wszystko', 'common.selectedCount': 'Wybrano: {{count}}', 'common.selectNamed': 'Wybierz {{name}}',
   'auth.signIn': 'Zaloguj się', 'auth.signingIn': 'Logowanie', 'auth.signInSuccess': 'Zalogowano', 'auth.email': 'E-mail', 'auth.password': 'Hasło', 'auth.showPassword': 'Pokaż hasło', 'auth.hidePassword': 'Ukryj hasło', 'auth.emailRequired': 'Wpisz adres e-mail.', 'auth.passwordRequired': 'Wpisz hasło.', 'auth.networkError': 'Nie można nawiązać połączenia. Sprawdź sieć i spróbuj ponownie.', 'auth.invalidCredentials': 'Adres e-mail lub hasło są nieprawidłowe.', 'auth.tooManyAttempts': 'Zbyt wiele prób. Spróbuj ponownie później.', 'auth.unavailable': 'Logowanie jest tymczasowo niedostępne. Spróbuj ponownie później.',

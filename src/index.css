@@ -3209,6 +3209,12 @@ code {
   filter: drop-shadow(0 10px 14px rgba(117, 82, 12, 0.14));
 }
 
+@media (min-width: 1100px) and (max-width: 1200px) and (min-height: 800px) and (max-height: 900px) {
+  .dynamic-library-icon-card.folder .dynamic-folder-artwork {
+    transform: translateY(8px);
+  }
+}
+
 .dynamic-library-icon-copy {
   min-width: 0;
   border-top: 1px solid rgba(23, 23, 23, 0.07);
@@ -16681,6 +16687,75 @@ button.ui-pressed {
   gap: 5px;
 }
 
+.dynamic-control-screen .dynamic-audio-selection-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-field > span {
+  color: #65746e;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 32px 0 11px;
+  border: 1px solid rgba(28, 58, 52, 0.16);
+  border-radius: 8px;
+  color: #263a35;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-field select:focus-visible {
+  border-color: rgba(8, 127, 141, 0.52);
+  box-shadow: 0 0 0 3px rgba(8, 127, 141, 0.14);
+}
+
+.dynamic-control-screen .dynamic-audio-selection-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-actions:empty {
+  display: none;
+}
+
+.dynamic-control-screen .dynamic-audio-selection-actions .dynamic-audio-icon-button {
+  width: 36px;
+  height: 36px;
+}
+
+.dynamic-background-modal .background-card-bgm-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #64756e;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dynamic-control-screen .dynamic-object-background-list.is-reordering {
   overscroll-behavior: none;
   user-select: none;
@@ -18225,6 +18300,50 @@ button.ui-pressed {
   max-width: 100%;
 }
 
+.dynamic-background-modal .dynamic-background-transition-duration {
+  min-width: 110px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px 7px;
+  border: 1px solid rgba(31, 62, 56, 0.12);
+  border-radius: 7px;
+  color: #52635e;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.dynamic-background-modal .dynamic-background-transition-duration > span {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.dynamic-background-modal .dynamic-background-transition-duration > small {
+  color: #71817a;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.dynamic-background-modal .dynamic-background-transition-duration-wheel {
+  width: 76px;
+  min-width: 76px;
+  height: 38px;
+}
+
+.dynamic-background-modal .dynamic-background-transition-duration-wheel .dynamic-interval-wheel-current {
+  height: 38px;
+}
+
+.dynamic-background-modal .dynamic-background-transition-duration-wheel .dynamic-interval-wheel-value {
+  padding-inline: 7px;
+  font-size: 14px;
+}
+
 /* Stage-only background transitions. */
 .dynamic-control-screen .dynamic-stage {
   isolation: isolate;
@@ -18282,7 +18401,7 @@ button.ui-pressed {
 
 .dynamic-background-transition-layer.is-opening .dynamic-background-transition-logo,
 .dynamic-background-transition-layer.is-closing .dynamic-background-transition-logo {
-  animation: dynamic-transition-logo-in 720ms ease both;
+  animation: dynamic-transition-logo-in var(--dynamic-transition-phase-ms, 720ms) ease both;
 }
 
 .dynamic-background-transition-layer.is-cameraFlash .dynamic-background-transition-logo {
@@ -18338,23 +18457,23 @@ button.ui-pressed {
 }
 
 .dynamic-background-transition-layer.is-curtain.is-closing .dynamic-curtain-panel.is-left {
-  animation: dynamic-curtain-close-left 520ms cubic-bezier(0.45, 0, 0.2, 1) both;
+  animation: dynamic-curtain-close-left var(--dynamic-transition-close-ms, 520ms) cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .dynamic-background-transition-layer.is-curtain.is-closing .dynamic-curtain-panel.is-right {
-  animation: dynamic-curtain-close-right 520ms cubic-bezier(0.45, 0, 0.2, 1) both;
+  animation: dynamic-curtain-close-right var(--dynamic-transition-close-ms, 520ms) cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .dynamic-background-transition-layer.is-curtain.is-opening .dynamic-curtain-panel.is-left {
-  animation: dynamic-curtain-open-left 680ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: dynamic-curtain-open-left var(--dynamic-transition-open-ms, 680ms) cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .dynamic-background-transition-layer.is-curtain.is-opening .dynamic-curtain-panel.is-right {
-  animation: dynamic-curtain-open-right 680ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: dynamic-curtain-open-right var(--dynamic-transition-open-ms, 680ms) cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .dynamic-background-transition-layer.is-curtain.is-opening .dynamic-curtain-valance {
-  animation: dynamic-transition-overlay-out 680ms ease 420ms both;
+  animation: dynamic-transition-overlay-out var(--dynamic-transition-open-ms, 680ms) ease var(--dynamic-transition-valance-delay-ms, 420ms) both;
 }
 
 .dynamic-control-screen .dynamic-camera-flash {
@@ -18396,12 +18515,12 @@ button.ui-pressed {
 
 .dynamic-background-transition-layer.is-shadowPlay.is-closing .dynamic-shadow-cloth,
 .dynamic-background-transition-layer.is-shadowPlay.is-closing .dynamic-shadow-rod {
-  animation: dynamic-shadow-close 650ms cubic-bezier(0.46, 0, 0.2, 1) both;
+  animation: dynamic-shadow-close var(--dynamic-transition-close-ms, 650ms) cubic-bezier(0.46, 0, 0.2, 1) both;
 }
 
 .dynamic-background-transition-layer.is-shadowPlay.is-opening .dynamic-shadow-cloth,
 .dynamic-background-transition-layer.is-shadowPlay.is-opening .dynamic-shadow-rod {
-  animation: dynamic-shadow-open 750ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: dynamic-shadow-open var(--dynamic-transition-open-ms, 750ms) cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .dynamic-control-screen .dynamic-stage.is-shadowPlay .dynamic-stage-item-media-stack {
@@ -18411,20 +18530,20 @@ button.ui-pressed {
 
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-closing .dynamic-stage-item-motion[data-dynamic-track='top'] .dynamic-stage-item-target,
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-closing .dynamic-stage-item-motion[data-dynamic-track='bottom'] .dynamic-stage-item-target {
-  animation: dynamic-shadow-item-exit-left 560ms ease-in both;
+  animation: dynamic-shadow-item-exit-left var(--dynamic-shadow-item-close-ms, 560ms) ease-in both;
 }
 
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-closing .dynamic-stage-item-motion[data-dynamic-track='middle'] .dynamic-stage-item-target {
-  animation: dynamic-shadow-item-exit-right 560ms ease-in both;
+  animation: dynamic-shadow-item-exit-right var(--dynamic-shadow-item-close-ms, 560ms) ease-in both;
 }
 
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-opening .dynamic-stage-item-motion[data-dynamic-track='top'] .dynamic-stage-item-target,
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-opening .dynamic-stage-item-motion[data-dynamic-track='bottom'] .dynamic-stage-item-target {
-  animation: dynamic-shadow-item-enter-left 620ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: dynamic-shadow-item-enter-left var(--dynamic-shadow-item-open-ms, 620ms) cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .dynamic-control-screen .dynamic-stage.is-shadowPlay.is-opening .dynamic-stage-item-motion[data-dynamic-track='middle'] .dynamic-stage-item-target {
-  animation: dynamic-shadow-item-enter-right 620ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: dynamic-shadow-item-enter-right var(--dynamic-shadow-item-open-ms, 620ms) cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 @keyframes dynamic-curtain-close-left {
@@ -21397,5 +21516,276 @@ button.ui-pressed {
 
   .dynamic-control-screen .preview-audio-toggle > span {
     font-size: 12px;
+  }
+}
+
+.confirm-action-overlay {
+  position: fixed;
+  z-index: 360;
+  inset: 0;
+  isolation: isolate;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+  display: grid;
+  place-items: center;
+  animation: confirm-action-overlay-in 180ms ease-out both;
+}
+
+.confirm-action-scrim {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: rgba(20, 36, 40, 0.34);
+  backdrop-filter: blur(12px) saturate(0.86);
+  -webkit-backdrop-filter: blur(12px) saturate(0.86);
+  animation: confirm-action-scrim-in 180ms ease-out both;
+}
+
+.confirm-action-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(500px, calc(100vw - 48px));
+  max-width: 100%;
+  max-height: calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 24px;
+  padding: 24px;
+  display: grid;
+  grid-template-rows: auto minmax(0, auto) auto;
+  gap: 22px;
+  color: var(--ink);
+  background: rgba(248, 252, 249, 0.92);
+  box-shadow:
+    0 28px 70px rgba(16, 43, 45, 0.24),
+    0 4px 16px rgba(16, 43, 45, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(28px) saturate(1.2);
+  -webkit-backdrop-filter: blur(28px) saturate(1.2);
+  overflow: hidden;
+  outline: none;
+  transform-origin: center;
+  animation: confirm-action-dialog-in 220ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.confirm-action-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.confirm-action-icon {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(15, 122, 103, 0.18);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #0d826d;
+  background: rgba(222, 247, 239, 0.86);
+  box-shadow:
+    0 8px 20px rgba(20, 126, 103, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.confirm-action-icon.is-danger {
+  border-color: rgba(201, 75, 61, 0.2);
+  color: #c94b3d;
+  background: rgba(255, 232, 227, 0.9);
+  box-shadow:
+    0 8px 20px rgba(201, 75, 61, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.confirm-action-icon svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.3;
+}
+
+.confirm-action-icon.is-empty {
+  visibility: hidden;
+}
+
+.confirm-action-close {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 14px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  transition: transform 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+
+.confirm-action-close:not(:disabled):hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.confirm-action-close:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.confirm-action-close:focus-visible,
+.confirm-action-dialog .ipad-button:focus-visible {
+  outline: 3px solid rgba(17, 143, 119, 0.34);
+  outline-offset: 3px;
+}
+
+.confirm-action-close:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.confirm-action-close svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.2;
+}
+
+.confirm-action-copy {
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.confirm-action-eyebrow {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.confirm-action-copy h2 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: clamp(24px, 2.4vw, 30px);
+  font-weight: 900;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.confirm-action-copy-description {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.confirm-action-actions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  gap: 10px;
+}
+
+.confirm-action-actions .ipad-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  height: auto;
+  padding: 11px 14px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.confirm-action-overlay.is-closing {
+  animation: confirm-action-overlay-out 150ms ease-in both;
+}
+
+.confirm-action-overlay.is-closing .confirm-action-scrim {
+  animation: confirm-action-scrim-out 150ms ease-in both;
+}
+
+.confirm-action-overlay.is-closing .confirm-action-dialog {
+  animation: confirm-action-dialog-out 150ms ease-in both;
+}
+
+@keyframes confirm-action-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confirm-action-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes confirm-action-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confirm-action-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes confirm-action-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes confirm-action-dialog-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(5px) scale(0.98); }
+}
+
+@media (max-width: 520px) {
+  .confirm-action-overlay {
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .confirm-action-dialog {
+    width: min(100%, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 20px;
+    gap: 18px;
+    border-radius: 20px;
+  }
+
+  .confirm-action-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-action-overlay,
+  .confirm-action-scrim,
+  .confirm-action-dialog {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .confirm-action-overlay.is-closing {
+    animation: confirm-action-overlay-out 120ms ease-out both !important;
+  }
+
+  .confirm-action-overlay.is-closing .confirm-action-scrim {
+    animation: confirm-action-scrim-out 120ms ease-out both !important;
+  }
+
+  .confirm-action-overlay.is-closing .confirm-action-dialog {
+    animation: confirm-action-dialog-out 120ms ease-out both !important;
   }
 }
