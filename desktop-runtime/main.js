@@ -27,6 +27,7 @@ const MAX_BODY_BYTES = 512 * 1024 * 1024
 const DEFAULT_GROUP_ID = 'default_group'
 const VERTICAL_DISPLAY_FLIP = process.env.MAGICFLOOR_VERTICAL_FLIP === '1'
 const DEFAULT_BACKGROUND_PLAYBACK_LOOP = true
+const DYNAMIC_CLICK_ANIMATION_NONE_ID = 0
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
@@ -124,6 +125,20 @@ const makeId = (prefix) => {
 const normalizeAppearAnimation = (value) => (
   value === 'drop' || value === 'trackSlide' ? value : 'none'
 )
+
+const normalizeRuntimeClickAnimationIds = (value) => {
+  if (!Array.isArray(value)) return value
+  const numericIds = value
+    .map((animationId) => {
+      if (typeof animationId === 'number') return animationId
+      if (typeof animationId === 'string' && animationId.trim()) return Number(animationId)
+      return NaN
+    })
+    .filter((animationId) => Number.isInteger(animationId))
+  return numericIds.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+    ? [DYNAMIC_CLICK_ANIMATION_NONE_ID]
+    : [...value]
+}
 
 const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 4
 const MAX_DYNAMIC_APPEARANCE_TIME_MS = 86400000
@@ -806,7 +821,7 @@ const defaultItem = (payload, order = 0) => {
     ),
     animationId: payload.animationId ?? 0,
     clickAnimationIds: Array.isArray(payload.clickAnimationIds)
-      ? payload.clickAnimationIds
+      ? normalizeRuntimeClickAnimationIds(payload.clickAnimationIds)
       : [1, 2, 3, 4, 5, 6, 7, 8, 9],
     moveMode: payload.moveMode ?? 'none',
     movePercent: payload.movePercent ?? 50,
@@ -1624,7 +1639,7 @@ const applyDynamicEvent = (eventName, payload) => {
         )
         item.animationId = payload.animationId ?? item.animationId
         if (Array.isArray(payload.clickAnimationIds)) {
-          item.clickAnimationIds = payload.clickAnimationIds
+          item.clickAnimationIds = normalizeRuntimeClickAnimationIds(payload.clickAnimationIds)
         }
         item.updatedAt = Date.now()
       }

@@ -458,9 +458,19 @@ const normalizeDynamicBubbleContent = (
   }
 }
 
+const normalizeDynamicItemClickAnimationIds = (item: DynamicItem): DynamicItem => {
+  if (!Array.isArray(item.clickAnimationIds)) return item
+  return {
+    ...item,
+    clickAnimationIds: normalizeDynamicClickAnimationIds(item.clickAnimationIds)
+  }
+}
+
 const normalizeDynamicItemKind = (item: DynamicItem): DynamicItem => {
-  if ((item as DynamicItem).kind === 'bubble' && (item as DynamicBubbleItem).bubble) {
-    const bubbleItem = item as DynamicBubbleItem
+  const normalizedItem = normalizeDynamicItemClickAnimationIds(item)
+
+  if (normalizedItem.kind === 'bubble' && (normalizedItem as DynamicBubbleItem).bubble) {
+    const bubbleItem = normalizedItem as DynamicBubbleItem
     return {
       ...bubbleItem,
       kind: 'bubble',
@@ -469,7 +479,7 @@ const normalizeDynamicItemKind = (item: DynamicItem): DynamicItem => {
   }
 
   return {
-    ...(item as DynamicMediaItem),
+    ...(normalizedItem as DynamicMediaItem),
     kind: 'media'
   }
 }
@@ -1059,14 +1069,15 @@ const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicB
 }
 
 const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
-  const appearanceByBackground = normalizeDynamicAppearanceByBackground(item.appearanceByBackground)
+  const normalizedClickAnimationItem = normalizeDynamicItemClickAnimationIds(item)
+  const appearanceByBackground = normalizeDynamicAppearanceByBackground(normalizedClickAnimationItem.appearanceByBackground)
   const normalizedItem = {
-    ...item,
+    ...normalizedClickAnimationItem,
     ...(Object.keys(appearanceByBackground).length > 0 ? { appearanceByBackground } : {})
   }
 
-  if (isDynamicBubbleItem(item)) {
-    const bubble = normalizeDynamicBubbleContent(item.bubble)
+  if (isDynamicBubbleItem(normalizedClickAnimationItem)) {
+    const bubble = normalizeDynamicBubbleContent(normalizedClickAnimationItem.bubble)
     return {
       ...normalizedItem,
       kind: 'bubble',
@@ -1080,7 +1091,8 @@ const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
   return {
     ...normalizedItem,
     kind: 'media',
-    media: serializeMediaForStorage(item.media) ?? item.media
+    media: serializeMediaForStorage((normalizedClickAnimationItem as DynamicMediaItem).media)
+      ?? (normalizedClickAnimationItem as DynamicMediaItem).media
   }
 }
 

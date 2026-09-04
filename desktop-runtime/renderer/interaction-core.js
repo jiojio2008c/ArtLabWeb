@@ -1,3 +1,8 @@
+import {
+  DYNAMIC_CLICK_ANIMATION_NONE_ID,
+  normalizeDynamicClickAnimationIds
+} from './dynamic-animation-catalog.js'
+
 export const INTERACTIVE_ANIMATION_MIN_ID = 1
 export const INTERACTIVE_ANIMATION_MAX_ID = 17
 export const RIPPLE_DURATION_MS = 1100
@@ -14,15 +19,7 @@ const normalizeAnimationId = (value) => {
 }
 
 const normalizeAnimationIds = (value, legacy = false) => {
-  const fallback = legacy
-    ? [1, 2, 3, 4, 5, 6, 7, 8, 9]
-    : Array.from({ length: INTERACTIVE_ANIMATION_MAX_ID }, (_unused, index) => index + 1)
-  const source = Array.isArray(value) ? value : []
-  const ids = [...new Set(source
-    .map((id) => normalizeAnimationId(id))
-    .filter((id) => id >= 1 && id <= INTERACTIVE_ANIMATION_MAX_ID))]
-    .sort((first, second) => first - second)
-  return ids.length > 0 ? ids : fallback
+  return normalizeDynamicClickAnimationIds(value, legacy)
 }
 
 const makeOverrideKey = (groupId, itemId) => `${groupId}\u0000${itemId}`
@@ -98,6 +95,14 @@ export const createAnimationOverrideStore = () => {
       item.clickAnimationIds,
       !Array.isArray(item.clickAnimationIds)
     )
+    if (
+      authoritativeAnimationIds.length === 1
+      && authoritativeAnimationIds[0] === DYNAMIC_CLICK_ANIMATION_NONE_ID
+    ) {
+      overrides.delete(key)
+      cursors.delete(key)
+      return null
+    }
     const currentIndex = authoritativeAnimationIds.indexOf(
       previous?.activeAnimationId ?? authoritativeAnimationId
     )

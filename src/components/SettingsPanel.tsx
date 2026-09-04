@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Languages, LogOut, QrCode, Stamp } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Languages, LogOut, QrCode } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   LANGUAGE_OPTIONS,
@@ -47,7 +47,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [wsIp, setWsIp] = useState(settings.wsIp)
   const [dynamicPort, setDynamicPort] = useState(String(settings.dynamicPort))
   const [interactivePort, setInteractivePort] = useState(String(settings.interactivePort))
-  const [watermarkEnabled, setWatermarkEnabled] = useState(settings.watermarkEnabled)
+  const watermarkEnabled = settings.watermarkEnabled
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState(false)
   const [avatarFailed, setAvatarFailed] = useState(false)
@@ -192,20 +192,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </span>
                   <ChevronRight aria-hidden="true" />
                 </button>
-
-                <label className="settings-advanced-row">
-                  <span className="settings-row-icon" aria-hidden="true"><Stamp /></span>
-                  <span className="settings-language-copy">
-                    <strong>{t('settings.stageWatermark')}</strong>
-                    <small>{t('settings.stageWatermarkSummary')}</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={watermarkEnabled}
-                    onChange={(event) => setWatermarkEnabled(event.target.checked)}
-                  />
-                  <span className="settings-switch" aria-hidden="true" />
-                </label>
 
                 <label className="settings-field">
                   <span>{t('settings.galleryIp')}</span>

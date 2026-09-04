@@ -4143,3 +4143,30 @@ dist/assets/web-3ui0Ni4Z.js
 - 已确认 `dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `3B2AC4FFABB0427ADA3631BA3664688D56CEBA7CE137A3353654F0991643E224`；当前资源为 `index-CySvOjHQ.js`、`index-CyM4GOc8.css`、`web-BWIfaIa4.js`、`magic-floor-background-C-YGeMXK.webp`、`Right_Logo-NbNB79TN.png`、`466-DTcHxBId.mp3`。
 - 已清理并重新生成标准版与完整翻转版 EXE：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`（SHA-256 `D22EA35C313098ABCBABC77D8F12AD889CF23EA3ABB600B24691F280ABCF2200`）与 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（SHA-256 `5CBE534DE6A72519B2620468DF93329ACAEB7AF0FB8F270940D4F992FF881708`）。发布目录由脚本先清理，旧 EXE 不会保留。
 - 当前 Windows 环境无法替代真实 iPad WKWebView、投影机和舞台硬件联调；安装新的 iOS 包或复制上述 EXE 后再进行现场验证。EXE 仍为未签名构建，正式分发前需配置代码签名证书。
+
+## 71. 2026-09-02 移动低速校准与点击动画关闭选项
+
+### 回退节点与设置页
+
+- 修改前已建立 Git 回退点：`b7071437 chore: checkpoint before motion speed and click animation updates`。
+- 首页设置页暂时隐藏“舞台浮水印”开关；保存时继续保留原有 `watermarkEnabled` 值，不会因隐藏入口而强制改变已保存的水印状态。
+
+### 移动速度
+
+- 新增共享 `desktop-runtime/renderer/dynamic-speed-core.js`（及类型声明），iPad 预览、目标点移动、桌面 EXE 的上下／左右／回环移动统一调用同一真实时间换算。
+- `moveSpeed` 协议仍为 `0–100`，`50–100%` 完全沿用旧时长，最高速度和既有作品保持一致；仅延长 `0–50%` 低速区。低速倍率为 `1 + 1.5 × ((50 - speed) / 50)²`，因此 `0%` 为旧 1% 基线的 `2.5` 倍、`25%` 为 `1.375` 倍、`50%` 不变。`0%` 仍是极慢移动，停止仍使用移动方式 `none`。
+- 基准时长维持普通上下／回环 `5.5s`、左右循环 `8.5s`、目标点 `3.8s`；背景转场、出场间隔及动画片段本身不受影响。
+
+### 点击动画“无”
+
+- 物件属性的点击动画范围新增“无”选项；选择后保存为协议哨兵 `clickAnimationIds: [0]`，并与其他动画编号互斥。属性摘要显示本地化的“无”，全选仍只选择 `1–17`。
+- `clickAnimationIds` 缺失继续按旧作品默认行为处理；普通数组仍只循环指定的 `1–17`。iPad 的 `ItemAnimation`、`GroupStateSync`、本地存储、复制设置和接收端同步均保留显式 `[0]`。
+- EXE 接收端规范化 `[0]`，点击时不创建动画覆盖、不播放点击音效；旧消息缺少字段时不误判为关闭。标准版和竖屏翻转版均已包含新逻辑。
+- 普通动画的随机候选仍只使用 `1–17`，不会把点击范围的 `[0]` 哨兵解析成普通“无动画”。
+
+### 验证与构建
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:speed`、`test:target-motion`、`test:motion`、`test:presentation`（45 项）、`test:appearance`、`test:transition-audio`、`test:background-order`、`test:item-copy`、相关 `node --check` 与 `git diff --check`。
+- 已执行 `npm run build` 与 `npm run sync:ios`。当前 Web/iOS 资源为 `index-CzA_560M.js`、`index-ClRrcpAc.css`、`web-4iYlmJON.js`；`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `A8D80572E100062C534E8A115463EEDE4BF3753244322F6DD0B50386D487DB1C`。
+- 已执行 `npm --prefix desktop-runtime run pack:all`，流程自动清理旧发布目录。标准版 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`：`85,330,625` bytes，SHA-256 `B1FD0D7C1D400010D66B33BB455F56D00F49D33AC6C747764115FDAC50CADFE4`；竖屏翻转版 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`：`85,318,601` bytes，SHA-256 `070B71739EE713B468F232F12BC70022C2AE21E24C964FC0B371FFCBE921DF9B`。
+- 两份 `app.asar` 均包含 `dynamic-speed-core.js`、更新后的 `dynamic-animation-catalog.js`、`interaction-core.js` 与 `player.js`；EXE 仍为未签名构建，真实 iPad、投影机和舞台硬件仍需现场验证。

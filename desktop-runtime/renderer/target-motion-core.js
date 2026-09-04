@@ -1,14 +1,15 @@
+import { getDynamicMoveDurationSeconds } from './dynamic-speed-core.js'
+
 const clampUnit = (value) => Math.min(1, Math.max(0, value))
 
 const TARGET_MOTION_KEYFRAME_SEGMENTS = 32
 
 const getTargetMotionDurationMs = (moveSpeed, baseSeconds = 3.8) => {
-  const numericSpeed = Number(moveSpeed)
   const numericBaseSeconds = Number(baseSeconds)
-  const normalized = Math.min(100, Math.max(1, Number.isFinite(numericSpeed) ? numericSpeed : 50)) / 100
-  const safeBaseSeconds = Number.isFinite(numericBaseSeconds) ? Math.max(0, numericBaseSeconds) : 3.8
-  const seconds = safeBaseSeconds * (1.55 - 1.09 * normalized)
-  return Math.max(1, seconds * 1000)
+  const safeBaseSeconds = Number.isFinite(numericBaseSeconds)
+    ? Math.max(0, numericBaseSeconds)
+    : 3.8
+  return Math.max(1, getDynamicMoveDurationSeconds(moveSpeed, safeBaseSeconds) * 1000)
 }
 
 const easeInOutCubic = (value) => {

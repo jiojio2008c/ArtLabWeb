@@ -509,6 +509,16 @@ MF|DynamicArt|ItemAnimation|{"groupId":"group_a","itemId":"item_001","animationI
 
 `WalkAnimation` 时长为 `0.8166667s`、60 FPS、循环播放，主要使用 `Key 23` / `Key 24` 交叉变形。iPad 与 `desktop-runtime` 均继续发送和读取 `animationId:9`；不要把第十个按钮改成 `animationId:10`。完整作品档案同步和属性复制中的 `animationId=9` 也具有相同语义。
 
+点击动画范围由 `clickAnimationIds` 控制，字段和普通物件动画的 `animationId` 相互独立：
+
+| `clickAnimationIds` | 含义 |
+| --- | --- |
+| 字段缺失 | 按旧作品兼容规则使用默认点击动画（旧版为 `1–9`） |
+| `[1,4,9]` 等 | 点击时只按数组顺序循环播放指定动画 |
+| `[0]` | 明确关闭点击动画；点击物件不创建动画覆盖，也不播放点击音效 |
+
+`0` 只在点击动画范围中作为“无”哨兵值使用，不代表普通动画选择中的 `animationId=0`。若数组同时包含 `0` 与其他编号，接收端统一按 `[0]` 处理；没有 `clickAnimationIds` 字段的旧消息不得被当成“关闭”。有效动画编号为 `1–17`，iPad 的 `ItemAnimation` 与完整 `GroupStateSync` 会原样传递该字段。
+
 当前仓库只有 Unity 曲线权重，没有原始 `photo_plane.fbx` / `photo_plane.glb` 中的 Morph Target 顶点 delta。因此现有 iPad / PC 播放器使用同曲线、同 7×9 网格拓扑的程序化行走回退；取得保留 24 个 Morph Targets 的模型后，可替换为真实 `Key 23/24` 顶点变形，而不修改本协议。
 
 ### 3.6 移动方式事件
@@ -531,6 +541,8 @@ MF|DynamicArt|ItemMotion|{"groupId":"group_a","itemId":"item_001","mode":"vertic
 | `random` | 随机 | 每次预览按 `groupId + itemId + replayId` 固定解析为上下、左移、右移或 360 回环之一；同一次预览不变，重新预览会重新选择，永不解析为停止 |
 
 补充：`percent` 现在只表示幅度，`speed` 只表示速度。左移和右移会同时读取 `percent` 与 `speed`：`percent` 控制水平移动时的上下波浪幅度，`speed` 控制循环速度。`random` 只在预览播放层解析，不改写物件保存值，也不额外发送 `ItemMotion`；iPad 与 PC 使用相同规则得到相同的移动方式。
+
+`speed` 仍为 `0–100` 百分比，最高速度的既有作品行为保持不变。移动时长使用统一的真实时间换算，不根据设备帧率动态调速：当 `speed >= 50` 时沿用旧公式 `baseSeconds × (1.55 − 1.09 × clamp(speed, 1, 100) / 100)`；当 `speed < 50` 时，再乘以 `1 + 1.5 × ((50 − speed) / 50)²`，只延长低速区。对应倍率为 `0% = 2.5×`、`25% = 1.375×`、`50% = 1×`，而 `100%` 完全保持旧最快速度。当前基准时长为：普通上下／回环 `5.5s`、左右循环 `8.5s`、目标点移动 `3.8s`。`0%` 仍表示极慢移动，不等同于 `mode: none` 的停止。
 
 左移和右移不再把 `track` 当作波浪运动边界。`percent = 0` 时，`track` 决定直线横移所在高度；`percent > 0` 时，波浪固定以 16:9 画布中心线为中心，`track` 不再影响前端波浪轨迹高度，避免切换轨道导致波浪路径跳变。
 

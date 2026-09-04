@@ -13,6 +13,7 @@ import {
   loadDynamicGroups,
   updateDynamicGroupAppearMode
 } from '../src/services/dynamicArtStorage.ts'
+import { getDefaultClickAnimationIds } from '../desktop-runtime/renderer/dynamic-animation-catalog.js'
 
 const now = 1_700_000_000_000
 const background = {
@@ -362,6 +363,36 @@ assert.equal(payload.items[1].bubble.outlineColor, '#3b9089')
 assert.equal(payload.backgroundTransition, 'curtain')
 assert.equal(payload.backgroundIntervalMs, 4500)
 assert.equal(payload.backgroundPlaybackLoop, false)
+const disabledClickPayload = buildGroupSyncPayload({
+  ...group,
+  items: [{ ...item, clickAnimationIds: [0] }]
+})
+assert.deepEqual(disabledClickPayload.items[0].clickAnimationIds, [0])
+const legacyClickPayload = buildGroupSyncPayload({
+  ...group,
+  items: [{
+    ...item,
+    clickAnimationIds: undefined
+  }]
+})
+assert.deepEqual(legacyClickPayload.items[0].clickAnimationIds, getDefaultClickAnimationIds(true))
+const emptyClickPayload = buildGroupSyncPayload({
+  ...group,
+  items: [{ ...item, clickAnimationIds: [] }]
+})
+assert.deepEqual(emptyClickPayload.items[0].clickAnimationIds, getDefaultClickAnimationIds(false))
+const disabledSnapshot = snapshotDynamicGroupForSync({
+  ...group,
+  items: [{ ...item, clickAnimationIds: [0] }]
+})
+assert.deepEqual(disabledSnapshot.items[0].clickAnimationIds, [0])
+const legacySnapshotItem = { ...item }
+delete legacySnapshotItem.clickAnimationIds
+const legacySnapshot = snapshotDynamicGroupForSync({
+  ...group,
+  items: [legacySnapshotItem]
+})
+assert.equal(Object.prototype.hasOwnProperty.call(legacySnapshot.items[0], 'clickAnimationIds'), false)
 
 const baseSignature = getGroupSyncSignature(group)
 const baseAssetSignature = getGroupAssetSignature(group)

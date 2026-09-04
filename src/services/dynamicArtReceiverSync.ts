@@ -107,7 +107,9 @@ const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
       ...item,
       position: item.position ? { ...item.position } : { x: 0.5, y: 0.5 },
       targetPosition: item.targetPosition ? { ...item.targetPosition } : item.targetPosition,
-      clickAnimationIds: Array.isArray(item.clickAnimationIds) ? [...item.clickAnimationIds] : [],
+      ...(Array.isArray(item.clickAnimationIds)
+        ? { clickAnimationIds: [...item.clickAnimationIds] }
+        : {}),
       linkedAppearance: item.linkedAppearance ? { ...item.linkedAppearance } : item.linkedAppearance,
       backgroundIds: Array.isArray(item.backgroundIds) ? [...item.backgroundIds] : item.backgroundIds,
       appearanceByBackground: cloneAppearanceByBackground(item.appearanceByBackground)

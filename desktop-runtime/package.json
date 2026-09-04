@@ -10,6 +10,7 @@
     "test:item-copy": "node scripts/verify-item-settings-copy.cjs",
     "test:target-motion": "node --no-warnings scripts/verify-target-motion.mjs",
     "test:motion": "node --no-warnings renderer/dynamic-motion-core.test.mjs",
+    "test:speed": "node --no-warnings --test renderer/dynamic-speed-core.test.mjs",
     "test:transition-audio": "node --no-warnings scripts/verify-background-transition-audio.mjs",
     "test:background-order": "node --no-warnings scripts/verify-background-playback-order.mjs",
     "test:presentation": "node --no-warnings --test runtime-display-settings-core.test.cjs group-state-revision-core.test.cjs group-state-revision-integration.test.cjs renderer/stage-presentation-core.test.mjs renderer/background-playback-core.test.mjs renderer/background-transition-core.test.mjs renderer/interaction-core.test.mjs",

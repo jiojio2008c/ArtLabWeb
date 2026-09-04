@@ -57,6 +57,7 @@ import {
   getDynamicVerticalWaveOffsets,
   sampleDynamicVerticalWave
 } from './dynamic-motion-core.js'
+import { getDynamicMoveDurationSeconds } from './dynamic-speed-core.js'
 import {
   drawBubble,
   getBubbleAssetId,
@@ -1862,8 +1863,7 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
 }
 
 const speedToCycleSeconds = (speed, baseSeconds = 5.5) => {
-  const normalized = clamp(Number(speed ?? 50), 1, 100) / 100
-  return lerp(baseSeconds * 1.55, baseSeconds * 0.46, normalized)
+  return getDynamicMoveDurationSeconds(speed, baseSeconds)
 }
 
 const getMoveTrack = (item) => {

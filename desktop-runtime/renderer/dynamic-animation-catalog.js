@@ -2,6 +2,8 @@ export const DYNAMIC_ANIMATION_MIN_ID = 0
 export const DYNAMIC_ANIMATION_MAX_ID = 17
 export const DYNAMIC_FIXED_ANIMATION_MIN_ID = 1
 export const LEGACY_DYNAMIC_ANIMATION_MAX_ID = 9
+export const DYNAMIC_CLICK_ANIMATION_NONE_ID = DYNAMIC_ANIMATION_MIN_ID
+export const DYNAMIC_CLICK_ANIMATION_NONE_IDS = Object.freeze([DYNAMIC_CLICK_ANIMATION_NONE_ID])
 
 export const DYNAMIC_ANIMATION_IDS = Object.freeze(
   Array.from(
@@ -41,6 +43,12 @@ const clampInteger = (value, minimum, maximum, fallback) => {
   return Math.min(maximum, Math.max(minimum, Math.trunc(number)))
 }
 
+const toAnimationIdNumber = (value) => {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string' && value.trim()) return Number(value)
+  return NaN
+}
+
 export const normalizeDynamicAnimationId = (value) => (
   clampInteger(value, DYNAMIC_ANIMATION_MIN_ID, DYNAMIC_ANIMATION_MAX_ID, 0)
 )
@@ -57,13 +65,30 @@ export const getDefaultClickAnimationIds = (legacy = false) => (
 export const normalizeDynamicClickAnimationIds = (value, legacy = false) => {
   const source = Array.isArray(value) ? value : []
   const allowed = new Set(DYNAMIC_ANIMATION_IDS)
+  const numericSource = source
+    .map(toAnimationIdNumber)
+    .filter((animationId) => Number.isInteger(animationId))
+
+  if (numericSource.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)) {
+    return [...DYNAMIC_CLICK_ANIMATION_NONE_IDS]
+  }
+
   const normalized = Array.from(new Set(
-    source
-      .map((animationId) => Number(animationId))
-      .filter((animationId) => Number.isInteger(animationId) && allowed.has(animationId))
+    numericSource.filter((animationId) => allowed.has(animationId))
   )).sort((first, second) => first - second)
 
   return normalized.length > 0 ? normalized : getDefaultClickAnimationIds(legacy)
+}
+
+const normalizeDynamicAnimationCandidates = (value) => {
+  const source = Array.isArray(value) ? value : []
+  const normalized = Array.from(new Set(
+    source
+      .map(toAnimationIdNumber)
+      .filter((animationId) => Number.isInteger(animationId) && DYNAMIC_ANIMATION_IDS.includes(animationId))
+  )).sort((first, second) => first - second)
+
+  return normalized.length > 0 ? normalized : [...DYNAMIC_ANIMATION_IDS]
 }
 
 export const getDynamicAnimationMode = (item) => (
@@ -76,6 +101,11 @@ export const getDynamicClickAnimationIds = (item) => (
     !Array.isArray(item?.clickAnimationIds)
   )
 )
+
+export const isDynamicClickAnimationDisabled = (item) => {
+  const animationIds = getDynamicClickAnimationIds(item)
+  return animationIds.length === 1 && animationIds[0] === DYNAMIC_CLICK_ANIMATION_NONE_ID
+}
 
 const hashString = (value) => {
   let hash = 2166136261
@@ -97,7 +127,7 @@ export const resolveDynamicAnimationId = (
   if (normalizedMode === 'none') return 0
   if (normalizedMode === 'fixed') return normalizeDynamicAnimationId(animationId)
 
-  const candidates = normalizeDynamicClickAnimationIds(availableAnimationIds, false)
+  const candidates = normalizeDynamicAnimationCandidates(availableAnimationIds)
   return candidates[hashString(seed) % candidates.length]
 }
 

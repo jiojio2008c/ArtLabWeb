@@ -8,6 +8,13 @@ import {
   sampleRipple,
   WATER_RIPPLE_FALLBACK_PROFILE
 } from './interaction-core.js'
+import {
+  DYNAMIC_CLICK_ANIMATION_NONE_ID,
+  getDefaultClickAnimationIds,
+  getDynamicClickAnimationIds,
+  normalizeDynamicClickAnimationIds,
+  resolveDynamicAnimationId
+} from './dynamic-animation-catalog.js'
 import { WATER_RIPPLE_LIGHTING_PROFILE } from './water-ripple-renderer.js'
 
 const item = {
@@ -56,6 +63,39 @@ test('authoritative animation changes invalidate active overrides and rotation c
 
   const next = store.cycle('group-a', changedItem, 2000)
   assert.equal(next.activeAnimationId, 17)
+})
+
+test('explicit click-animation none sentinel disables the desktop cycle', () => {
+  assert.deepEqual(normalizeDynamicClickAnimationIds([DYNAMIC_CLICK_ANIMATION_NONE_ID]), [0])
+  assert.deepEqual(normalizeDynamicClickAnimationIds([0, 4, 9]), [0])
+  assert.deepEqual(getDynamicClickAnimationIds({ clickAnimationIds: [0] }), [0])
+  assert.deepEqual(
+    normalizeDynamicClickAnimationIds(undefined, true),
+    getDefaultClickAnimationIds(true)
+  )
+  assert.deepEqual(
+    normalizeDynamicClickAnimationIds([], false),
+    getDefaultClickAnimationIds(false)
+  )
+
+  const store = createAnimationOverrideStore()
+  const disabledItem = { ...item, clickAnimationIds: [DYNAMIC_CLICK_ANIMATION_NONE_ID] }
+
+  assert.equal(store.cycle('group-a', disabledItem, 1000), null)
+  assert.equal(store.get('group-a', disabledItem), null)
+  assert.equal(store.size, 0)
+
+  const activeOverride = store.cycle('group-a', item, 2000)
+  assert.ok(activeOverride)
+  assert.equal(store.size, 1)
+  assert.equal(store.cycle('group-a', disabledItem, 3000), null)
+  assert.equal(store.get('group-a', disabledItem), null)
+  assert.equal(store.size, 0)
+})
+
+test('click-animation none sentinel does not become a regular random animation candidate', () => {
+  const resolved = resolveDynamicAnimationId('random', 1, [0, 1], 'seed')
+  assert.equal(resolved, 1)
 })
 
 test('desktop playback releases only non-looping Unity click animations', () => {

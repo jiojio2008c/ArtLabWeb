@@ -126,6 +126,7 @@ import WalkAnimationCanvas from './WalkAnimationCanvas.tsx'
 import UnityAnimationCanvas from './UnityAnimationCanvas.tsx'
 import IntervalWheel from './IntervalWheel.tsx'
 import {
+  DYNAMIC_CLICK_ANIMATION_NONE_ID,
   DYNAMIC_ANIMATION_IDS,
   getDynamicAnimationMode,
   getDynamicClickAnimationIds,
@@ -143,6 +144,7 @@ import {
   getDynamicVerticalWaveKeyframes,
   getDynamicVerticalWaveOffsets
 } from '../../desktop-runtime/renderer/dynamic-motion-core.js'
+import { getDynamicMoveDurationSeconds } from '../../desktop-runtime/renderer/dynamic-speed-core.js'
 import {
   getDynamicBackgroundTransitionTiming,
   type DynamicBackgroundTransitionDurations
@@ -609,11 +611,6 @@ const resolvePreviewMotionMode = (
   if (item.moveMode !== 'random') return item.moveMode
   const modeIndex = mixHash(hashString(`${groupId}:${item.id}:${replayId}`)) % RANDOM_PREVIEW_MOTION_MODES.length
   return RANDOM_PREVIEW_MOTION_MODES[modeIndex]
-}
-
-const getMoveDuration = (speed: number, baseSeconds = 5.5) => {
-  const ratio = clamp(speed, 1, 100) / 100
-  return lerp(baseSeconds * 1.55, baseSeconds * 0.46, ratio)
 }
 
 const formatHorizontalMotionTransform = (point: Point) => (
@@ -1224,7 +1221,7 @@ const DynamicStageMotion: React.FC<DynamicStageMotionProps> = ({
       return undefined
     }
 
-    const duration = getMoveDuration(getItemMoveSpeed(item), isHorizontalMotion ? 8.5 : 5.5) * 1000
+    const duration = getDynamicMoveDurationSeconds(getItemMoveSpeed(item), isHorizontalMotion ? 8.5 : 5.5) * 1000
     const elapsedMs = epochStartedAt === undefined ? 0 : Math.max(0, performance.now() - epochStartedAt)
     const motionStartMs = schedule?.activeStartMs ?? appearDelayMs
     const motionElapsedMs = Math.max(0, elapsedMs - motionStartMs)
@@ -1392,7 +1389,7 @@ const getMotionPreviewStyle = (
     orbitY71,
     orbitY38
   } = getDynamicOrbitGeometry(item, { width: stageWidth, height: stageHeight })
-  const moveDuration = getMoveDuration(getItemMoveSpeed(item), isLoopMove ? 8.5 : 5.5)
+  const moveDuration = getDynamicMoveDurationSeconds(getItemMoveSpeed(item), isLoopMove ? 8.5 : 5.5)
 
   return {
     left: isLoopMove ? '0px' : `${item.position.x * 100}%`,
@@ -1836,6 +1833,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     ? activeTab
     : visiblePropertyTabs[0]?.id ?? 'motion'
   const selectedAnimationMode = selectedItem ? getDynamicAnimationMode(selectedItem) : 'none'
+  const selectedClickAnimationIds = selectedItem ? getDynamicClickAnimationIds(selectedItem) : []
+  const selectedClickAnimationDisabled = selectedClickAnimationIds.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+  const clickAnimationDraftHasAll = clickAnimationDraft.length === DYNAMIC_ANIMATION_IDS.length
+    && DYNAMIC_ANIMATION_IDS.every((animationId) => clickAnimationDraft.includes(animationId))
   const animationPreviewId = selectedItem
     ? selectedAnimationMode === 'none'
       ? 0
@@ -5003,18 +5004,26 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const toggleClickAnimationDraft = (animationId: number) => {
-    setClickAnimationDraft((currentIds) => (
-      currentIds.includes(animationId)
-        ? currentIds.filter((id) => id !== animationId)
-        : [...currentIds, animationId].sort((first, second) => first - second)
-    ))
+    setClickAnimationDraft((currentIds) => {
+      if (animationId === DYNAMIC_CLICK_ANIMATION_NONE_ID) {
+        return [DYNAMIC_CLICK_ANIMATION_NONE_ID]
+      }
+
+      const animationIds = currentIds.filter((id) => id !== DYNAMIC_CLICK_ANIMATION_NONE_ID)
+      return animationIds.includes(animationId)
+        ? animationIds.filter((id) => id !== animationId)
+        : [...animationIds, animationId].sort((first, second) => first - second)
+    })
   }
 
   const confirmClickAnimationRange = () => {
     if (!selectedItem || clickAnimationDraft.length === 0) return
+    const clickAnimationIds = clickAnimationDraft.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+      ? [DYNAMIC_CLICK_ANIMATION_NONE_ID]
+      : [...clickAnimationDraft]
     const changedItem = updateItemLocal(selectedItem.id, (item) => ({
       ...item,
-      clickAnimationIds: [...clickAnimationDraft]
+      clickAnimationIds
     }), { persist: true, emit: false })
     if (changedItem) sendItemAnimationState(changedItem)
     closeClickAnimationRange()
@@ -6748,7 +6757,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     } else if (item.moveMode !== 'none') {
       const baseDurationSeconds = item.moveMode === 'left' || item.moveMode === 'right' ? 8.5 : 5.5
       primary.push(t('control.layerMoveTime', {
-        value: Number(getMoveDuration(getItemMoveSpeed(item), baseDurationSeconds).toFixed(1))
+        value: Number(getDynamicMoveDurationSeconds(getItemMoveSpeed(item), baseDurationSeconds).toFixed(1))
       }))
     }
 
@@ -8199,7 +8208,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   <MousePointerClick size={19} strokeWidth={2.2} aria-hidden="true" />
                   <span>
                     <strong>{t('animation.clickRange')}</strong>
-                    <small>{t('animation.selectedCount', { count: getDynamicClickAnimationIds(selectedItem).length })}</small>
+                    <small>{selectedClickAnimationDisabled
+                      ? t('animation.none')
+                      : t('animation.selectedCount', { count: selectedClickAnimationIds.length })}</small>
                   </span>
                   <ChevronRight size={18} strokeWidth={2.2} aria-hidden="true" />
                 </button>
@@ -9465,23 +9476,43 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             </div>
 
             <div className="dynamic-click-range-toolbar">
-              <span>{t('animation.selectedCount', { count: clickAnimationDraft.length })}</span>
+              <span>{clickAnimationDraft.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+                ? t('animation.none')
+                : t('animation.selectedCount', { count: clickAnimationDraft.length })}</span>
               <button
                 type="button"
                 className="dynamic-copy-select-all"
                 onClick={() => setClickAnimationDraft(
-                  clickAnimationDraft.length === DYNAMIC_ANIMATION_IDS.length
+                  clickAnimationDraftHasAll
                     ? []
                     : [...DYNAMIC_ANIMATION_IDS]
                 )}
               >
-                {clickAnimationDraft.length === DYNAMIC_ANIMATION_IDS.length
+                {clickAnimationDraftHasAll
                   ? t('common.deselectAll')
                   : t('common.selectAll')}
               </button>
             </div>
 
             <div className="dynamic-click-range-options" aria-label={t('animation.clickRangeTitle')}>
+              {(() => {
+                const definition = getDynamicAnimationPreview(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+                const checked = clickAnimationDraft.includes(DYNAMIC_CLICK_ANIMATION_NONE_ID)
+                return (
+                  <label key={DYNAMIC_CLICK_ANIMATION_NONE_ID} className={`dynamic-click-range-option ${checked ? 'selected' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleClickAnimationDraft(DYNAMIC_CLICK_ANIMATION_NONE_ID)}
+                    />
+                    <span className="dynamic-click-range-check" aria-hidden="true">
+                      {checked ? <Check size={14} strokeWidth={3} /> : null}
+                    </span>
+                    <span className="dynamic-click-range-number">—</span>
+                    <strong>{t(definition.labelKey)}</strong>
+                  </label>
+                )
+              })()}
               {DYNAMIC_ANIMATION_IDS.map((animationId) => {
                 const definition = getDynamicAnimationPreview(animationId)
                 const checked = clickAnimationDraft.includes(animationId)
