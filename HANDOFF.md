@@ -4267,3 +4267,36 @@ dist/assets/web-3ui0Ni4Z.js
 
 - 图标文件已验证为 `1024×1024`、`Format24bppRgb`，SHA-256 为 `65487F33D6FADBEF54613FFEBED16833FAD21C1AC9C81760FE813660442BD13B`。
 - 根目录 `appicon.png` 保留为源文件；后续若替换源图，需要重新生成并复制到上述 AppIcon 资源路径。实体 Xcode Archive、App Store Connect 图标预览及真实 iPad 安装仍需在 macOS 环境确认。
+
+## 78. 2026-09-07 內置公共案例
+
+### Git 回退节点
+
+- 在开始本轮公共案例工作前，已将当前版本提交并推送至 `origin/main`：`b9072c07 chore: checkpoint before bundled public examples`。
+- 本轮修改均建立在该节点之后；该提交可作为公共案例功能的回退基线。
+
+### 公共案例内容
+
+- iPad 作品档案根目录新增置顶的虚拟资料夹「公共案例」，内置五套只读母版：`龜兔賽跑`、`幼稚園頒獎典禮`、`海底歷奇`、`城市交通`、`非洲大草原`。
+- 母版资源位于 `public/dynamic-cases`，包含 `manifest.json`、各案例 `template.json`、海报、背景、物件、气泡图片和音源；五套案例共 102 条资源记录，构建目录约 100 MB。
+- 公共案例资料夹及案例卡不可编辑、删除、移动或加入普通资料夹；母版不会写入普通 `DynamicGroup` 存储。
+- 用户点击案例后，应用会下载并校验清单内资源，复制至本地持久化存储，并生成全新的作品、物件和媒体 ID；复制完成后才进入既有控制页，可继续编辑及通过原有流程同步至 EXE。
+- 导入失败或取消会清理已写入素材和半成品作品；导入期间卡片锁定，失败后可重新复制。
+
+### 实现与多语言
+
+- 新增 `src/services/publicCaseStorage.ts`，提供清单读取、资源校验、导入、ID 重映射、持久化和事务回滚；`src/services/dynamicArtStorage.ts` 新增水合及持久化媒体清理导出。
+- 新增 `scripts/export-public-dynamic-cases.mjs` 与 `scripts/verify-public-cases.mjs`；`package.json` 提供 `export:public-cases` 和 `test:public-cases` 命令。
+- 公共案例卡片、缩略图、只读状态、复制状态及重试状态已加入作品档案页，并同步英文、简体中文、繁体中文、葡萄牙文和波兰文。
+
+### 验证与 iOS 同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run build`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run test:public-cases` 及 `git diff --check`。
+- 公共案例验证结果：5 套模板、102 个唯一素材、所有资源文件存在，大小与 SHA-256 均与清单一致；背景、BGM、物件音源、气泡图片、背景适用范围、出场时间和关联物件引用均有效，未发现 Windows 绝对路径。
+- 已执行 `npm run sync:ios`；`dist/dynamic-cases` 与 `ios/App/App/public/dynamic-cases` 均包含五套案例（各 113 个文件，约 100,029,684 bytes）。`ios/App/App/public` 由 Capacitor 同步生成并被 `.gitignore` 忽略，之后每次更新 Web 资源都必须重新执行同步。
+- 尚未在实体 iPad、离线首次启动及真实 EXE 联机环境验证首次复制耗时、持久化空间、导入后的播放和跨设备同步；约 90 MB 素材首次复制可能需要等待。
+
+### 发布前注意事项
+
+- 公共案例所含图片、影片、音频、Logo、背景和其他媒体的版权／授权仍需由公司确认；上架前应准备可向 Apple 提供的授权文件。
+- Windows 环境无法执行 Xcode Archive、签名或 App Store Connect 上传；iOS 真机、不同语言、VoiceOver、离线导入和 EXE 联调需在 macOS／实体设备完成。

@@ -11,7 +11,9 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test:creation-flow": "node --no-warnings scripts/verify-dynamic-creation-flow.mjs",
-    "test:receiver-sync": "node --no-warnings scripts/verify-dynamic-receiver-sync.mjs"
+    "test:receiver-sync": "node --no-warnings scripts/verify-dynamic-receiver-sync.mjs",
+    "test:public-cases": "node scripts/verify-public-cases.mjs",
+    "export:public-cases": "node scripts/export-public-dynamic-cases.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.0",

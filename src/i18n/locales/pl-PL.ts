@@ -2,6 +2,19 @@ import type { TranslationResource } from './zh-Hant.ts'
 import { LEGAL_CONTENT } from '../legalContent.ts'
 
 const plPL = {
+  'groups.publicCases': 'Przykłady publiczne',
+  'groups.publicCaseCount': '{{count}} wbudowanych przykładów',
+  'groups.publicCaseBadge': 'Oficjalny przykład',
+  'groups.builtInCase': 'Dołączony do aplikacji',
+  'groups.publicCaseType': 'Wbudowany przykład',
+  'groups.copyAndEdit': 'Skopiuj i edytuj',
+  'groups.importingPublicCase': 'Kopiowanie przykładu',
+  'groups.publicCaseRetry': 'Spróbuj ponownie',
+  'groups.publicCaseTortoiseHare': 'Żółw i zając',
+  'groups.publicCaseKindergartenAwards': 'Uroczystość wręczenia nagród w przedszkolu',
+  'groups.publicCaseUnderseaAdventure': 'Podwodna przygoda',
+  'groups.publicCaseCityTraffic': 'Ruch miejski',
+  'groups.publicCaseAfricanSavanna': 'Afrykańska sawanna',
   'control.previewAudioOff': 'Dźwięk iPada: wyłączony',
   'control.previewAudioOn': 'Dźwięk iPada: włączony',
   'control.appearanceTime': 'Czas wejścia', 'control.layerAppearanceTime': 'Wejście {{value}} s', 'control.layerMoveTime': 'Ruch {{value}} s', 'control.layerAudioTime': 'Dźwięk {{value}} s', 'control.hideAfterTarget': 'Ukryj po dotarciu', 'control.hideAfterTargetShort': 'Ukrywa po dotarciu',

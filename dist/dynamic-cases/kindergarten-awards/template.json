@@ -1,0 +1,1033 @@
+{
+  "templateId": "magicfloor.kindergarten-awards",
+  "version": 1,
+  "slug": "kindergarten-awards",
+  "names": {
+    "zhHant": "幼稚園頒獎典禮",
+    "zhHans": "幼儿园颁奖典礼",
+    "en": "Kindergarten Awards Ceremony",
+    "pt": "Cerimónia de Prémios do Jardim de Infância",
+    "pl": "Uroczystość wręczenia nagród w przedszkolu"
+  },
+  "poster": "/dynamic-cases/kindergarten-awards/poster.png",
+  "posterPath": "kindergarten-awards/poster.png",
+  "posterAssetId": "media_mtihgmgw_mt13qy",
+  "source": {
+    "groupId": "group_mtgo8hl4_qi428q",
+    "updatedAt": 1788350124879,
+    "stateRevision": 1788345808649
+  },
+  "group": {
+    "groupId": "group_mtgo8hl4_qi428q",
+    "name": "幼稚園頒獎典禮",
+    "activeBackgroundId": "media_mtihgmgw_mt13qy",
+    "backgrounds": [
+      {
+        "assetId": "media_mtihgmgw_mt13qy",
+        "name": "空背舞台景.png",
+        "mediaType": "image",
+        "mimeType": "image/png",
+        "bgmAudioId": "media_mtgov56j_vyup4t",
+        "backgroundTransition": "none",
+        "appearance": {
+          "appearMode": "sequence",
+          "appearIntervalMs": 1200,
+          "appearAnimation": "none"
+        }
+      }
+    ],
+    "backgroundPlayMode": "fixed",
+    "backgroundIntervalMs": 5000,
+    "backgroundPlaybackLoop": true,
+    "backgroundTransition": "none",
+    "backgroundTransitionDurations": {
+      "curtain": 1200,
+      "shadowPlay": 1400
+    },
+    "advancedFeaturesEnabled": true,
+    "stateRevision": 1788345808649,
+    "linkedAppearanceModelVersion": 4,
+    "audioLibrary": [
+      {
+        "assetId": "media_mtjyw1pb_yjiil3",
+        "name": "bgm.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 51540
+      },
+      {
+        "assetId": "media_mtijw40r_qqkiqf",
+        "name": "小學6a班畢業啦.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 1959
+      },
+      {
+        "assetId": "media_mtij8tm2_10xxtc",
+        "name": "頒獎進行曲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 10893
+      },
+      {
+        "assetId": "media_mtgovx4a_oh5tfv",
+        "name": "頒獎音樂.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 10893
+      },
+      {
+        "assetId": "media_mtgov56j_vyup4t",
+        "name": "8月17日歡呼聲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 16980
+      }
+    ],
+    "items": [
+      {
+        "itemId": "item_mtgoj1tw_22bj0w",
+        "kind": "media",
+        "assetId": "media_mtgoj1tf_pvzs8z",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "男1.png",
+        "gridIndex": 63,
+        "position": {
+          "x": 1,
+          "y": 0.5780805205368036
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.5494090735798703,
+          "y": 0.5737427138403145
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 0,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgos54e_s00cxe",
+        "kind": "media",
+        "assetId": "media_mtgos53x_tjcv5g",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "女1.png",
+        "gridIndex": 48,
+        "position": {
+          "x": 0,
+          "y": 0.5726582621661922
+        },
+        "scale": 1.05,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.47884102173084253,
+          "y": 0.5683204554697032
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 1200
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 1,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgoyhvr_g5jpnt",
+        "kind": "media",
+        "assetId": "media_mtgoyhva_7mi6ww",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "女2.png",
+        "gridIndex": 63,
+        "position": {
+          "x": 1,
+          "y": 0.5737427138403145
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.6157072054898971,
+          "y": 0.5726582621661922
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 2400
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 2,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgp2w0p_3t8s3p",
+        "kind": "media",
+        "assetId": "media_mtgp2w07_jdmrq0",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "男3.png",
+        "gridIndex": 48,
+        "position": {
+          "x": 0,
+          "y": 0.5607292937508471
+        },
+        "scale": 1.02,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.40869233701868096,
+          "y": 0.5661515521214585
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 3600
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 3,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgp6741_rd126n",
+        "kind": "media",
+        "assetId": "media_mtgp673j_fupk3e",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "女4.png",
+        "gridIndex": 48,
+        "position": {
+          "x": 0,
+          "y": 0.5596448420767249
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.3342737323675181,
+          "y": 0.5704893588179477
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 6000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 5,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgpa931_ldpfms",
+        "kind": "media",
+        "assetId": "media_mtgpa92k_ot944h",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "男2.png",
+        "gridIndex": 79,
+        "position": {
+          "x": 1,
+          "y": 0.5336180018977905
+        },
+        "scale": 1.4,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.6858558902020586,
+          "y": 0.531449098549546
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 4800
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 4,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgw2xrz_pyr2ia",
+        "kind": "media",
+        "assetId": "media_mtgw2xrj_hnynyn",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "男4.png",
+        "gridIndex": 48,
+        "position": {
+          "x": 0,
+          "y": 0.5628981970990918
+        },
+        "scale": 1.03,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.2694243232939381,
+          "y": 0.5672360037955809
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 8400
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 7,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtgwd2yq_fv8ysd",
+        "kind": "media",
+        "assetId": "media_mtgwd2y4_tcew7y",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "女5.png",
+        "gridIndex": 63,
+        "position": {
+          "x": 1,
+          "y": 0.5791649722109259
+        },
+        "scale": 1.05,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "target",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.748684712161647,
+          "y": 0.5683204554697032
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 7200
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 6,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtiir6az_ekt1hl",
+        "kind": "media",
+        "assetId": "media_mtiir6ag_mzb3gb",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "小朋友左邊.png",
+        "gridIndex": 19,
+        "position": {
+          "x": 0.24380480365993143,
+          "y": 0.8481089873932492
+        },
+        "scale": 2.494689323514798,
+        "rotation": -0.2584200981206095,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          1
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": "media_mtij8tm2_10xxtc",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 10,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtiirqsb_ollsw0",
+        "kind": "media",
+        "assetId": "media_mtiirqrs_p4gu6r",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "小朋友右邊.png",
+        "gridIndex": 28,
+        "position": {
+          "x": 0.7525352649637819,
+          "y": 0.8372644706520266
+        },
+        "scale": 2.5037636361287285,
+        "rotation": -0.12902024747646124,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          1
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 9,
+        "updatedAt": 1788350123278
+      },
+      {
+        "itemId": "item_mtiiz5b9_kwi2oz",
+        "kind": "bubble",
+        "assetId": null,
+        "imageAssetId": null,
+        "bubble": {
+          "schemaVersion": 2,
+          "bubbleType": "title",
+          "styleId": "title-rounded",
+          "title": "",
+          "bodyText": "小學6A班畢業啦！",
+          "revealMode": "typewriter",
+          "revealIntervalMs": 75,
+          "fontSizePx": 60,
+          "textColor": "#8b332c",
+          "surfaceColor": "#ffffff",
+          "outlineColor": "#263a3b",
+          "surfaceId": "light",
+          "titleMaskId": "rounded",
+          "paletteId": "ocean",
+          "maskColor": "#dd6859",
+          "maskOpacity": 1,
+          "widthPx": 900,
+          "heightPx": 220,
+          "imageAssetId": null
+        },
+        "name": "小學6A班畢業啦！",
+        "gridIndex": 120,
+        "position": {
+          "x": 0.540869233701868,
+          "y": 0.21153585468347566
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 85,
+        "moveSpeed": 50,
+        "moveTrack": "top",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": "media_mtijw40r_qqkiqf",
+        "audioTrigger": "appearanceDelay",
+        "audioDelayMs": 100,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtihgmgw_mt13qy": {
+            "appearanceDelayMs": 8600
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtihgmgw_mt13qy"
+        ],
+        "isVisible": true,
+        "order": 8,
+        "updatedAt": 1788350123278
+      }
+    ],
+    "appearMode": "sequence",
+    "appearIntervalMs": 1200,
+    "appearAnimation": "none",
+    "updatedAt": 1788350124879,
+    "background": {
+      "assetId": "media_mtihgmgw_mt13qy",
+      "name": "空背舞台景.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "bgmAudioId": "media_mtgov56j_vyup4t",
+      "backgroundTransition": "none",
+      "appearance": {
+        "appearMode": "sequence",
+        "appearIntervalMs": 1200,
+        "appearAnimation": "none"
+      }
+    }
+  },
+  "assets": [
+    {
+      "assetId": "media_mtgoj1tf_pvzs8z",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgoj1tw_22bj0w",
+      "name": "男1.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "9870a8982789c735b21dd4c87da95f91f902d01533cb103a5fc542d737a98523",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122401,
+      "path": "kindergarten-awards/assets/media_mtgoj1tf_pvzs8z.png",
+      "size": 1199874,
+      "sha256": "9870a8982789c735b21dd4c87da95f91f902d01533cb103a5fc542d737a98523"
+    },
+    {
+      "assetId": "media_mtgos53x_tjcv5g",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgos54e_s00cxe",
+      "name": "女1.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "dfda97949d8ce52d367e9a37b4267cbff35fca56fa7ea5465e76b27bb1bef0c4",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122480,
+      "path": "kindergarten-awards/assets/media_mtgos53x_tjcv5g.png",
+      "size": 1130195,
+      "sha256": "dfda97949d8ce52d367e9a37b4267cbff35fca56fa7ea5465e76b27bb1bef0c4"
+    },
+    {
+      "assetId": "media_mtgov56j_vyup4t",
+      "role": "audio",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "8月17日歡呼聲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "0692fbd2092817b34d23275329a74646cc34b47fd69685eff98fa1385ed773fc",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123258,
+      "path": "kindergarten-awards/assets/media_mtgov56j_vyup4t.mp3",
+      "size": 407560,
+      "sha256": "0692fbd2092817b34d23275329a74646cc34b47fd69685eff98fa1385ed773fc"
+    },
+    {
+      "assetId": "media_mtgovx4a_oh5tfv",
+      "role": "audio",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "頒獎音樂.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "3502e634272ad29b61a3302c11887125e1e49dea36f4af55fdc75ab6e618fa1b",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123206,
+      "path": "kindergarten-awards/assets/media_mtgovx4a_oh5tfv.mp3",
+      "size": 261483,
+      "sha256": "3502e634272ad29b61a3302c11887125e1e49dea36f4af55fdc75ab6e618fa1b"
+    },
+    {
+      "assetId": "media_mtgoyhva_7mi6ww",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgoyhvr_g5jpnt",
+      "name": "女2.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "a24b6599ab373387b0ded5b2f749adab8be31b7c64a05b1f9d9fcd6877488a24",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122572,
+      "path": "kindergarten-awards/assets/media_mtgoyhva_7mi6ww.png",
+      "size": 1441653,
+      "sha256": "a24b6599ab373387b0ded5b2f749adab8be31b7c64a05b1f9d9fcd6877488a24"
+    },
+    {
+      "assetId": "media_mtgp2w07_jdmrq0",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgp2w0p_3t8s3p",
+      "name": "男3.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "32911571843f0d01e19050f651979f1b31d2f6803a0c7742d91576fd2adb0203",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122661,
+      "path": "kindergarten-awards/assets/media_mtgp2w07_jdmrq0.png",
+      "size": 1379116,
+      "sha256": "32911571843f0d01e19050f651979f1b31d2f6803a0c7742d91576fd2adb0203"
+    },
+    {
+      "assetId": "media_mtgp673j_fupk3e",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgp6741_rd126n",
+      "name": "女4.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "3471ee244e196a50d9aaba1bfa060d90e95121037f76fd01bd35767f059f0347",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122801,
+      "path": "kindergarten-awards/assets/media_mtgp673j_fupk3e.png",
+      "size": 1476233,
+      "sha256": "3471ee244e196a50d9aaba1bfa060d90e95121037f76fd01bd35767f059f0347"
+    },
+    {
+      "assetId": "media_mtgpa92k_ot944h",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgpa931_ldpfms",
+      "name": "男2.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "a0e52777ee21d4e350f9b3caf56fec88b7de7833a96f86a73f8b8b1c8327bd8f",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122719,
+      "path": "kindergarten-awards/assets/media_mtgpa92k_ot944h.png",
+      "size": 699103,
+      "sha256": "a0e52777ee21d4e350f9b3caf56fec88b7de7833a96f86a73f8b8b1c8327bd8f"
+    },
+    {
+      "assetId": "media_mtgw2xrj_hnynyn",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgw2xrz_pyr2ia",
+      "name": "男4.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "3eb0c8afdba04d87005258f75800454bcb3698fce9f0a44550a2404f7cc55c79",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122928,
+      "path": "kindergarten-awards/assets/media_mtgw2xrj_hnynyn.png",
+      "size": 1144205,
+      "sha256": "3eb0c8afdba04d87005258f75800454bcb3698fce9f0a44550a2404f7cc55c79"
+    },
+    {
+      "assetId": "media_mtgwd2y4_tcew7y",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtgwd2yq_fv8ysd",
+      "name": "女5.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "acf543f0d1170c23f9fe1b9caf3d738de03ace7111f6b1dc1731eb9e04b691cd",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122866,
+      "path": "kindergarten-awards/assets/media_mtgwd2y4_tcew7y.png",
+      "size": 1179006,
+      "sha256": "acf543f0d1170c23f9fe1b9caf3d738de03ace7111f6b1dc1731eb9e04b691cd"
+    },
+    {
+      "assetId": "media_mtihgmgw_mt13qy",
+      "role": "background",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "空背舞台景.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "2e57f0337a14e636f7b6ceaf63afc833271aea778e0d0d8ed642875c3e43d446",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122319,
+      "path": "kindergarten-awards/assets/media_mtihgmgw_mt13qy.png",
+      "size": 3980440,
+      "sha256": "2e57f0337a14e636f7b6ceaf63afc833271aea778e0d0d8ed642875c3e43d446"
+    },
+    {
+      "assetId": "media_mtiir6ag_mzb3gb",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtiir6az_ekt1hl",
+      "name": "小朋友左邊.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "fd458171684155f7096e28a3e020860dabd661b73afa43dde4374c76e12fea1b",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123053,
+      "path": "kindergarten-awards/assets/media_mtiir6ag_mzb3gb.png",
+      "size": 934005,
+      "sha256": "fd458171684155f7096e28a3e020860dabd661b73afa43dde4374c76e12fea1b"
+    },
+    {
+      "assetId": "media_mtiirqrs_p4gu6r",
+      "role": "item",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": "item_mtiirqsb_ollsw0",
+      "name": "小朋友右邊.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "fa2e72dac4d7524e8bfb36ea3bf416c86b74bca2a897237be860568a951e5740",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350122995,
+      "path": "kindergarten-awards/assets/media_mtiirqrs_p4gu6r.png",
+      "size": 860470,
+      "sha256": "fa2e72dac4d7524e8bfb36ea3bf416c86b74bca2a897237be860568a951e5740"
+    },
+    {
+      "assetId": "media_mtij8tm2_10xxtc",
+      "role": "audio",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "頒獎進行曲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "7ab9d33a2ce53bad301877afd126944cee8bbda70acf6cd972605f20f5ff2ad2",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123175,
+      "path": "kindergarten-awards/assets/media_mtij8tm2_10xxtc.mp3",
+      "size": 261483,
+      "sha256": "7ab9d33a2ce53bad301877afd126944cee8bbda70acf6cd972605f20f5ff2ad2"
+    },
+    {
+      "assetId": "media_mtijw40r_qqkiqf",
+      "role": "audio",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "小學6a班畢業啦.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "e31eb86ef6f595980c365a30aa5954f51295f09b5a451f36bb190b34d1cf50f1",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123142,
+      "path": "kindergarten-awards/assets/media_mtijw40r_qqkiqf.mp3",
+      "size": 31808,
+      "sha256": "e31eb86ef6f595980c365a30aa5954f51295f09b5a451f36bb190b34d1cf50f1"
+    },
+    {
+      "assetId": "media_mtjyw1pb_yjiil3",
+      "role": "audio",
+      "groupId": "group_mtgo8hl4_qi428q",
+      "itemId": null,
+      "name": "bgm.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "f45fabfc3fb7c2b99bec421c636c37c42d72cbbefe96c217dd30ba02f2a7a940",
+      "stateRevision": 1788345808648,
+      "updatedAt": 1788350123116,
+      "path": "kindergarten-awards/assets/media_mtjyw1pb_yjiil3.mp3",
+      "size": 1237000,
+      "sha256": "f45fabfc3fb7c2b99bec421c636c37c42d72cbbefe96c217dd30ba02f2a7a940"
+    }
+  ]
+}

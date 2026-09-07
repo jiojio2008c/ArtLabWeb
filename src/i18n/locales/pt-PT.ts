@@ -2,6 +2,19 @@ import type { TranslationResource } from './zh-Hant.ts'
 import { LEGAL_CONTENT } from '../legalContent.ts'
 
 const ptPT = {
+  'groups.publicCases': 'Casos Públicos',
+  'groups.publicCaseCount': '{{count}} casos incluídos',
+  'groups.publicCaseBadge': 'Caso Oficial',
+  'groups.builtInCase': 'Incluído na aplicação',
+  'groups.publicCaseType': 'Caso incluído',
+  'groups.copyAndEdit': 'Copiar e editar',
+  'groups.importingPublicCase': 'A copiar o caso',
+  'groups.publicCaseRetry': 'Tentar novamente',
+  'groups.publicCaseTortoiseHare': 'A Lebre e a Tartaruga',
+  'groups.publicCaseKindergartenAwards': 'Cerimónia de prémios do jardim de infância',
+  'groups.publicCaseUnderseaAdventure': 'Aventura submarina',
+  'groups.publicCaseCityTraffic': 'Trânsito urbano',
+  'groups.publicCaseAfricanSavanna': 'Savana africana',
   'control.previewAudioOff': 'Som do iPad: desligado',
   'control.previewAudioOn': 'Som do iPad: ligado',
   'control.appearanceTime': 'Tempo de entrada', 'control.layerAppearanceTime': 'Entrada {{value}} s', 'control.layerMoveTime': 'Movimento {{value}} s', 'control.layerAudioTime': 'Áudio {{value}} s', 'control.hideAfterTarget': 'Ocultar ao chegar', 'control.hideAfterTargetShort': 'Oculta ao chegar',

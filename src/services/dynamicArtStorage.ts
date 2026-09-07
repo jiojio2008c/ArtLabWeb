@@ -1510,6 +1510,12 @@ const deleteDynamicMedia = async (media?: DynamicStoredMedia) => {
   }
 }
 
+const deletePersistedDynamicMedia = async (media?: DynamicMedia | DynamicAudioMedia) => {
+  await deleteDynamicMedia(media)
+}
+
+const hydrateDynamicGroup = async (group: DynamicGroup) => hydrateGroup(group)
+
 const isMediaUsedByOtherGroups = (groups: DynamicGroup[], groupId: string, mediaId?: string) => {
   if (!mediaId) return false
 
@@ -2610,6 +2616,7 @@ export {
   calculateGridIndex,
   copyDynamicItemSettings,
   createDynamicGroup,
+  deletePersistedDynamicMedia,
   deleteDynamicBackgrounds,
   deleteDynamicGroup,
   deleteDynamicItem,
@@ -2617,6 +2624,7 @@ export {
   deleteDynamicAudio,
   getDynamicMoveTrackCenter,
   getDynamicMoveTrackFromPosition,
+  hydrateDynamicGroup,
   getDynamicItemBubbleImage,
   getDynamicItemMedia,
   getDynamicMediaFile,

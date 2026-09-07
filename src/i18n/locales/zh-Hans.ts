@@ -2,6 +2,19 @@ import type { TranslationResource } from './zh-Hant.ts'
 import { LEGAL_CONTENT } from '../legalContent.ts'
 
 const zhHans = {
+  'groups.publicCases': '公共案例',
+  'groups.publicCaseCount': '{{count}} 个内置案例',
+  'groups.publicCaseBadge': '官方案例',
+  'groups.builtInCase': '随 App 内置',
+  'groups.publicCaseType': '内置案例',
+  'groups.copyAndEdit': '复制并编辑',
+  'groups.importingPublicCase': '正在复制案例',
+  'groups.publicCaseRetry': '重新复制',
+  'groups.publicCaseTortoiseHare': '龟兔赛跑',
+  'groups.publicCaseKindergartenAwards': '幼儿园颁奖典礼',
+  'groups.publicCaseUnderseaAdventure': '海底历奇',
+  'groups.publicCaseCityTraffic': '城市交通',
+  'groups.publicCaseAfricanSavanna': '非洲大草原',
   'control.previewAudioOff': 'iPad 声音：关',
   'control.previewAudioOn': 'iPad 声音：开',
   'control.appearanceTime': '出场时间', 'control.layerAppearanceTime': '出场 {{value}} 秒', 'control.layerMoveTime': '移动 {{value}} 秒', 'control.layerAudioTime': '音源 {{value}} 秒', 'control.hideAfterTarget': '到达后隐藏', 'control.hideAfterTargetShort': '到达后隐藏',

@@ -27,6 +27,7 @@ import {
   loadDynamicGroups,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
+import { importPublicCase } from './services/publicCaseStorage.ts'
 import {
   captureDynamicArchiveSourceSnapshot,
   makeDynamicArchiveReplayId,
@@ -79,7 +80,7 @@ const pageOrder: Record<Page, number> = {
 }
 
 function App() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [currentPage, setCurrentPage] = useState<Page>('entry')
   const [transitionDirection, setTransitionDirection] = useState<TransitionDirection>('neutral')
@@ -522,6 +523,17 @@ function App() {
     openDynamicGroup(group, origin, 'free')
   }
 
+  const handleImportPublicCase = useCallback(async (
+    templateId: string,
+    _origin?: DynamicTransitionOrigin
+  ) => {
+    const importedGroup = await importPublicCase(templateId, {
+      locale: i18n.resolvedLanguage ?? i18n.language
+    })
+    updateDynamicGroupState(importedGroup)
+    return importedGroup
+  }, [i18n.language, i18n.resolvedLanguage])
+
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
     setSelectedDynamicItemId('')
@@ -660,6 +672,7 @@ function App() {
                 onUpdateGroup={updateDynamicGroupState}
                 onDeleteGroup={handleDeleteDynamicGroup}
                 onSelectGroup={handleSelectDynamicGroup}
+                onImportPublicCase={handleImportPublicCase}
                 portalArrival={Boolean(dynamicPortalOrigin)}
                 transitionPrepared={false}
                 archiveReplayId={dynamicArchiveReplayId}

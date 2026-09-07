@@ -1,6 +1,19 @@
 import { LEGAL_CONTENT } from '../legalContent.ts'
 
 const zhHant = {
+  'groups.publicCases': '公共案例',
+  'groups.publicCaseCount': '{{count}} 個內置案例',
+  'groups.publicCaseBadge': '官方案例',
+  'groups.builtInCase': '隨 App 內置',
+  'groups.publicCaseType': '內置案例',
+  'groups.copyAndEdit': '複製並編輯',
+  'groups.importingPublicCase': '正在複製案例',
+  'groups.publicCaseRetry': '重新複製',
+  'groups.publicCaseTortoiseHare': '龜兔賽跑',
+  'groups.publicCaseKindergartenAwards': '幼稚園頒獎典禮',
+  'groups.publicCaseUnderseaAdventure': '海底歷奇',
+  'groups.publicCaseCityTraffic': '城市交通',
+  'groups.publicCaseAfricanSavanna': '非洲大草原',
   'control.previewAudioOff': 'iPad 聲音：關',
   'control.previewAudioOn': 'iPad 聲音：開',
   'control.appearanceTime': '出場時間', 'control.layerAppearanceTime': '出場 {{value}} 秒', 'control.layerMoveTime': '移動 {{value}} 秒', 'control.layerAudioTime': '音訊 {{value}} 秒', 'control.hideAfterTarget': '到達後隱藏', 'control.hideAfterTargetShort': '到達後隱藏',

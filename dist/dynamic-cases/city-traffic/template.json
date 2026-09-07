@@ -1,0 +1,971 @@
+{
+  "templateId": "magicfloor.city-traffic",
+  "version": 1,
+  "slug": "city-traffic",
+  "names": {
+    "zhHant": "城市交通",
+    "zhHans": "城市交通",
+    "en": "City Traffic",
+    "pt": "Trânsito Urbano",
+    "pl": "Ruch miejski"
+  },
+  "poster": "/dynamic-cases/city-traffic/poster.jpeg",
+  "posterPath": "city-traffic/poster.jpeg",
+  "posterAssetId": "media_mtjrt698_myqgdg",
+  "source": {
+    "groupId": "group_mtjrsu71_edms41",
+    "updatedAt": 1788350044961,
+    "stateRevision": 1788349888956
+  },
+  "group": {
+    "groupId": "group_mtjrsu71_edms41",
+    "name": "城市交通",
+    "activeBackgroundId": "media_mtjrt698_myqgdg",
+    "backgrounds": [
+      {
+        "assetId": "media_mtjrt698_myqgdg",
+        "name": "ce96d5f331e054f7d070384097a23068.jpeg",
+        "mediaType": "image",
+        "mimeType": "image/jpeg",
+        "bgmAudioId": "media_mtjrtmpm_vu4w7k",
+        "backgroundTransition": "none",
+        "appearance": {
+          "appearMode": "sequence",
+          "appearIntervalMs": 1000,
+          "appearAnimation": "none"
+        }
+      }
+    ],
+    "backgroundPlayMode": "fixed",
+    "backgroundIntervalMs": 5000,
+    "backgroundPlaybackLoop": true,
+    "backgroundTransition": "none",
+    "backgroundTransitionDurations": {
+      "curtain": 1200,
+      "shadowPlay": 1400
+    },
+    "advancedFeaturesEnabled": true,
+    "stateRevision": 1788349888956,
+    "linkedAppearanceModelVersion": 4,
+    "audioLibrary": [
+      {
+        "assetId": "media_mtjsyo2h_olx455",
+        "name": "道路噪音.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 13558
+      },
+      {
+        "assetId": "media_mtjsy9yj_y1gzaa",
+        "name": "汽車鳴笛.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 31164
+      },
+      {
+        "assetId": "media_mtjrtmpm_vu4w7k",
+        "name": "城市.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 219716
+      }
+    ],
+    "items": [
+      {
+        "itemId": "item_mtjse25a_ax021h",
+        "kind": "media",
+        "assetId": "media_mtjse24u_gylf62",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "02.png",
+        "gridIndex": 68,
+        "position": {
+          "x": 0.2596645062905072,
+          "y": 0.4967466449776332
+        },
+        "scale": 2.8829096140824357,
+        "rotation": 0.19279772767345094,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          0
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 10,
+        "updatedAt": 1788350014068
+      },
+      {
+        "itemId": "item_mtjsfgdn_rgept4",
+        "kind": "media",
+        "assetId": "media_mtjsfgd8_zg04mm",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "01.png",
+        "gridIndex": 76,
+        "position": {
+          "x": 0.7561951963400684,
+          "y": 0.5032533550223666
+        },
+        "scale": 2.8896881195659723,
+        "rotation": 0.3039391004659535,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          0
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": "media_mtjsy9yj_y1gzaa",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 9,
+        "updatedAt": 1788350014068
+      },
+      {
+        "itemId": "item_mtjsmrs6_bh9ibz",
+        "kind": "media",
+        "assetId": "media_mtjsmrrl_281twt",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "1.png",
+        "gridIndex": 32,
+        "position": {
+          "x": 0.05226839496759437,
+          "y": 0.7255659482174325
+        },
+        "scale": 1.4213384991040297,
+        "rotation": -1.27994002858604,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "none",
+        "animationId": 0,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 0,
+        "moveSpeed": 70,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 10000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 0,
+        "updatedAt": 1788350014068
+      },
+      {
+        "itemId": "item_mtjsowba_l0dr2z",
+        "kind": "media",
+        "assetId": "media_mtjsowah_nacmky",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "4.png",
+        "gridIndex": 31,
+        "position": {
+          "x": 0.9428516965306901,
+          "y": 0.8350955673037821
+        },
+        "scale": 1.270939860138835,
+        "rotation": -0.6320109483990883,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 0,
+        "moveSpeed": 75,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 9000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 8,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsrgbc_cvcnh6",
+        "kind": "media",
+        "assetId": "media_mtjsrgao_n3eakn",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (1)-Photoroom.png",
+        "gridIndex": 127,
+        "position": {
+          "x": 0.9940907357987037,
+          "y": 0.21370475803172023
+        },
+        "scale": 0.9169540464910656,
+        "rotation": 0.6012215046292972,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 0,
+        "moveSpeed": 80,
+        "moveTrack": "top",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 6000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 4,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsself_hn572y",
+        "kind": "media",
+        "assetId": "media_mtjsseko_76mxro",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (2)-Photoroom.png",
+        "gridIndex": 80,
+        "position": {
+          "x": 0.0540983606557377,
+          "y": 0.4360173512267859
+        },
+        "scale": 0.8403176864936274,
+        "rotation": -1.1418672022647485,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 0,
+        "moveSpeed": 85,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 8000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 7,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjstfgj_w33pzx",
+        "kind": "media",
+        "assetId": "media_mtjstffq_qxmcsp",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (5)-Photoroom.png",
+        "gridIndex": 126,
+        "position": {
+          "x": 0.9300419367136866,
+          "y": 0.2104514030093534
+        },
+        "scale": 0.9416115156911659,
+        "rotation": 0.23536551087613589,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 0,
+        "moveSpeed": 70,
+        "moveTrack": "top",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 5000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 2,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsuef0_vo8e0v",
+        "kind": "media",
+        "assetId": "media_mtjsuee4_irmyaa",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (4)-Photoroom.png",
+        "gridIndex": 81,
+        "position": {
+          "x": 0.0742279832253145,
+          "y": 0.4154127694184628
+        },
+        "scale": 0.8979899412278968,
+        "rotation": 0.04741560089277641,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 0,
+        "moveSpeed": 70,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 4000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 1,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsw2gx_4m61a4",
+        "kind": "media",
+        "assetId": "media_mtjsw2ge_xjydsr",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (6)-Photoroom.png",
+        "gridIndex": 30,
+        "position": {
+          "x": 0.8922226458253908,
+          "y": 0.8134065338213365
+        },
+        "scale": 1.740546719729556,
+        "rotation": 1.3007762593674954,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 0,
+        "moveSpeed": 85,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 7000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 6,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsx6sc_lljzhe",
+        "kind": "media",
+        "assetId": "media_mtjsx6rp_ppwf47",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "圖片轉換為兒童插畫風 (7)-Photoroom.png",
+        "gridIndex": 33,
+        "position": {
+          "x": 0.08093785741517345,
+          "y": 0.7320726582621662
+        },
+        "scale": 1.8381794815418815,
+        "rotation": 0.18899034101534085,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 0,
+        "moveSpeed": 85,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": "media_mtjsyo2h_olx455",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 800
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 3,
+        "updatedAt": 1788350014069
+      },
+      {
+        "itemId": "item_mtjsz3ku_v8wgmv",
+        "kind": "media",
+        "assetId": "media_mtjsz3k4_vxy9ni",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "2.png",
+        "gridIndex": 31,
+        "position": {
+          "x": 0.9556614563476934,
+          "y": 0.8405178256743934
+        },
+        "scale": 1.8066734522652468,
+        "rotation": -0.15432872350498883,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 0,
+        "moveSpeed": 85,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjrt698_myqgdg": {
+            "appearanceDelayMs": 2400
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [
+          "media_mtjrt698_myqgdg"
+        ],
+        "isVisible": true,
+        "order": 5,
+        "updatedAt": 1788350014069
+      }
+    ],
+    "appearMode": "sequence",
+    "appearIntervalMs": 1000,
+    "appearAnimation": "none",
+    "updatedAt": 1788350044961,
+    "background": {
+      "assetId": "media_mtjrt698_myqgdg",
+      "name": "ce96d5f331e054f7d070384097a23068.jpeg",
+      "mediaType": "image",
+      "mimeType": "image/jpeg",
+      "bgmAudioId": "media_mtjrtmpm_vu4w7k",
+      "backgroundTransition": "none",
+      "appearance": {
+        "appearMode": "sequence",
+        "appearIntervalMs": 1000,
+        "appearAnimation": "none"
+      }
+    },
+    "activeItemId": "item_mtjsowba_l0dr2z"
+  },
+  "assets": [
+    {
+      "assetId": "media_mtjrt698_myqgdg",
+      "role": "background",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": null,
+      "name": "ce96d5f331e054f7d070384097a23068.jpeg",
+      "mediaType": "image",
+      "mimeType": "image/jpeg",
+      "contentHash": "b6b686234f77ee967f464ee8c67dfcc8c79fa53d9feb9d58273c8e41fa31e294",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012030,
+      "path": "city-traffic/assets/media_mtjrt698_myqgdg.jpeg",
+      "size": 123268,
+      "sha256": "b6b686234f77ee967f464ee8c67dfcc8c79fa53d9feb9d58273c8e41fa31e294"
+    },
+    {
+      "assetId": "media_mtjrtmpm_vu4w7k",
+      "role": "audio",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": null,
+      "name": "城市.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "92dd2fdd9ea38dd3e32e84876922fe9fb44d15143f51ed39f0447b39a46314b4",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350014039,
+      "path": "city-traffic/assets/media_mtjrtmpm_vu4w7k.mp3",
+      "size": 5273232,
+      "sha256": "92dd2fdd9ea38dd3e32e84876922fe9fb44d15143f51ed39f0447b39a46314b4"
+    },
+    {
+      "assetId": "media_mtjse24u_gylf62",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjse25a_ax021h",
+      "name": "02.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "c8b1526ab65e75dfafd6b398c366ebb9c1ea0f0eeb3b81e0ac0abc1c6d8dc92b",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013672,
+      "path": "city-traffic/assets/media_mtjse24u_gylf62.png",
+      "size": 197994,
+      "sha256": "c8b1526ab65e75dfafd6b398c366ebb9c1ea0f0eeb3b81e0ac0abc1c6d8dc92b"
+    },
+    {
+      "assetId": "media_mtjsfgd8_zg04mm",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsfgdn_rgept4",
+      "name": "01.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "556b83d72d0007819bada09554a9b40b7281d6f1cc956f381b78975d7d920f86",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013638,
+      "path": "city-traffic/assets/media_mtjsfgd8_zg04mm.png",
+      "size": 198945,
+      "sha256": "556b83d72d0007819bada09554a9b40b7281d6f1cc956f381b78975d7d920f86"
+    },
+    {
+      "assetId": "media_mtjsmrrl_281twt",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsmrs6_bh9ibz",
+      "name": "1.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "a68a43830c86618a42750082b1a3235716952cd895b6561512ab045690ba797e",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012216,
+      "path": "city-traffic/assets/media_mtjsmrrl_281twt.png",
+      "size": 2157218,
+      "sha256": "a68a43830c86618a42750082b1a3235716952cd895b6561512ab045690ba797e"
+    },
+    {
+      "assetId": "media_mtjsowah_nacmky",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsowba_l0dr2z",
+      "name": "4.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "67138bb25f637a20733545c4700cc97433d81f580139aa15bb0e030bc290afa3",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013595,
+      "path": "city-traffic/assets/media_mtjsowah_nacmky.png",
+      "size": 3034507,
+      "sha256": "67138bb25f637a20733545c4700cc97433d81f580139aa15bb0e030bc290afa3"
+    },
+    {
+      "assetId": "media_mtjsrgao_n3eakn",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsrgbc_cvcnh6",
+      "name": "圖片轉換為兒童插畫風 (1)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "07fc4c25e380378f0f3893a2b2fd5e1c84f6357d6b472bffbdd8e13b228f933f",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012937,
+      "path": "city-traffic/assets/media_mtjsrgao_n3eakn.png",
+      "size": 2260981,
+      "sha256": "07fc4c25e380378f0f3893a2b2fd5e1c84f6357d6b472bffbdd8e13b228f933f"
+    },
+    {
+      "assetId": "media_mtjsseko_76mxro",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsself_hn572y",
+      "name": "圖片轉換為兒童插畫風 (2)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "666ba7b468caf7dec429ba12b9ec9290688192c1ffd1498673d1b5fff5de1b10",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013434,
+      "path": "city-traffic/assets/media_mtjsseko_76mxro.png",
+      "size": 2720311,
+      "sha256": "666ba7b468caf7dec429ba12b9ec9290688192c1ffd1498673d1b5fff5de1b10"
+    },
+    {
+      "assetId": "media_mtjstffq_qxmcsp",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjstfgj_w33pzx",
+      "name": "圖片轉換為兒童插畫風 (5)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "eee0932307882981b06cf5ab17a2392be2d183ff1809f6a1db0018d43ce55411",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012668,
+      "path": "city-traffic/assets/media_mtjstffq_qxmcsp.png",
+      "size": 3162538,
+      "sha256": "eee0932307882981b06cf5ab17a2392be2d183ff1809f6a1db0018d43ce55411"
+    },
+    {
+      "assetId": "media_mtjsuee4_irmyaa",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsuef0_vo8e0v",
+      "name": "圖片轉換為兒童插畫風 (4)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "82f809bb6cb085730f080b5f35bea5e311cbde4a98443a4b9cfdc29a84637ad8",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012454,
+      "path": "city-traffic/assets/media_mtjsuee4_irmyaa.png",
+      "size": 3567066,
+      "sha256": "82f809bb6cb085730f080b5f35bea5e311cbde4a98443a4b9cfdc29a84637ad8"
+    },
+    {
+      "assetId": "media_mtjsw2ge_xjydsr",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsw2gx_4m61a4",
+      "name": "圖片轉換為兒童插畫風 (6)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "b2f19e0e6644e2ed13042673e9a7cdafea800f4d1f159a4ecdb1d0e2c164ecc5",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013260,
+      "path": "city-traffic/assets/media_mtjsw2ge_xjydsr.png",
+      "size": 2377078,
+      "sha256": "b2f19e0e6644e2ed13042673e9a7cdafea800f4d1f159a4ecdb1d0e2c164ecc5"
+    },
+    {
+      "assetId": "media_mtjsx6rp_ppwf47",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsx6sc_lljzhe",
+      "name": "圖片轉換為兒童插畫風 (7)-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "3e70bcdcd00d5175f5e36e4e5fe6872df8f8d92ad91c42644400f521878a2db5",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350012791,
+      "path": "city-traffic/assets/media_mtjsx6rp_ppwf47.png",
+      "size": 1906134,
+      "sha256": "3e70bcdcd00d5175f5e36e4e5fe6872df8f8d92ad91c42644400f521878a2db5"
+    },
+    {
+      "assetId": "media_mtjsy9yj_y1gzaa",
+      "role": "audio",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": null,
+      "name": "汽車鳴笛.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "7ef5fbd1afe6a4151794a9edd3f855516b839f19f1a2cc7ea6f8132beebace33",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013763,
+      "path": "city-traffic/assets/media_mtjsy9yj_y1gzaa.mp3",
+      "size": 747988,
+      "sha256": "7ef5fbd1afe6a4151794a9edd3f855516b839f19f1a2cc7ea6f8132beebace33"
+    },
+    {
+      "assetId": "media_mtjsyo2h_olx455",
+      "role": "audio",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": null,
+      "name": "道路噪音.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "676841f344bb90959160c20c404ef0934cc28c4c335279d0c62589121a078b63",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013710,
+      "path": "city-traffic/assets/media_mtjsyo2h_olx455.mp3",
+      "size": 325431,
+      "sha256": "676841f344bb90959160c20c404ef0934cc28c4c335279d0c62589121a078b63"
+    },
+    {
+      "assetId": "media_mtjsz3k4_vxy9ni",
+      "role": "item",
+      "groupId": "group_mtjrsu71_edms41",
+      "itemId": "item_mtjsz3ku_v8wgmv",
+      "name": "2.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "fc46f55e5b0a8af4085f2d6c170c7f273a4c0fc8151b05318e1c4b2d1cd4bc14",
+      "stateRevision": 1788349888954,
+      "updatedAt": 1788350013120,
+      "path": "city-traffic/assets/media_mtjsz3k4_vxy9ni.png",
+      "size": 2258561,
+      "sha256": "fc46f55e5b0a8af4085f2d6c170c7f273a4c0fc8151b05318e1c4b2d1cd4bc14"
+    }
+  ]
+}

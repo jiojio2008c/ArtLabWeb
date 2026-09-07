@@ -11,6 +11,7 @@ import {
   Grid2X2,
   Image as ImageIcon,
   List,
+  LoaderCircle,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -53,6 +54,7 @@ interface DynamicGroupsPageProps {
   onUpdateGroup: (group: DynamicGroup) => void
   onDeleteGroup: (groupId: string) => void
   onSelectGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
+  onImportPublicCase?: (templateId: string, origin?: DynamicTransitionOrigin) => Promise<DynamicGroup | void>
   portalArrival?: boolean
   transitionPrepared?: boolean
   archiveReplayId?: string
@@ -67,6 +69,19 @@ type LibraryEntity =
   | { kind: 'folder'; folder: DynamicFolder }
   | { kind: 'material'; group: DynamicGroup }
 
+type PublicLibraryEntity =
+  | { kind: 'public-folder'; folder: DynamicFolder }
+  | {
+      kind: 'public-case'
+      templateId: string
+      nameKey: string
+      poster: string
+      backgroundCount: number
+      objectCount: number
+    }
+
+type LibraryBrowserEntity = LibraryEntity | PublicLibraryEntity
+
 type CreatorType = 'folder' | 'material'
 
 type FolderTransitionDirection = 'forward' | 'backward'
@@ -74,16 +89,43 @@ type FolderTransitionDirection = 'forward' | 'backward'
 const LONG_PRESS_DELAY_MS = 420
 const LONG_PRESS_MOVE_TOLERANCE = 12
 
-const getEntityId = (entity: LibraryEntity) => (
-  entity.kind === 'folder' ? entity.folder.id : entity.group.id
+const PUBLIC_CASES_FOLDER_ID = '__magicfloor_public_cases__'
+const PUBLIC_CASES_FOLDER: DynamicFolder = {
+  id: PUBLIC_CASES_FOLDER_ID,
+  name: 'Public Cases',
+  order: -1,
+  createdAt: 0,
+  updatedAt: 0
+}
+
+const PUBLIC_CASES = [
+  { templateId: 'magicfloor.tortoise-hare', nameKey: 'groups.publicCaseTortoiseHare', poster: '/dynamic-cases/tortoise-hare/poster.jpeg', backgroundCount: 4, objectCount: 16 },
+  { templateId: 'magicfloor.kindergarten-awards', nameKey: 'groups.publicCaseKindergartenAwards', poster: '/dynamic-cases/kindergarten-awards/poster.png', backgroundCount: 1, objectCount: 11 },
+  { templateId: 'magicfloor.undersea-adventure', nameKey: 'groups.publicCaseUnderseaAdventure', poster: '/dynamic-cases/undersea-adventure/poster.jpeg', backgroundCount: 2, objectCount: 18 },
+  { templateId: 'magicfloor.city-traffic', nameKey: 'groups.publicCaseCityTraffic', poster: '/dynamic-cases/city-traffic/poster.jpeg', backgroundCount: 1, objectCount: 11 },
+  { templateId: 'magicfloor.african-savanna', nameKey: 'groups.publicCaseAfricanSavanna', poster: '/dynamic-cases/african-savanna/poster.jpeg', backgroundCount: 2, objectCount: 13 }
+] as const
+
+const getEntityId = (entity: LibraryBrowserEntity) => (
+  entity.kind === 'folder' || entity.kind === 'public-folder'
+    ? entity.folder.id
+    : entity.kind === 'material' ? entity.group.id : entity.templateId
 )
 
-const getEntityName = (entity: LibraryEntity) => (
-  entity.kind === 'folder' ? entity.folder.name : entity.group.name
+const getEntityName = (entity: LibraryBrowserEntity) => (
+  entity.kind === 'folder' || entity.kind === 'public-folder'
+    ? entity.folder.name
+    : entity.kind === 'material' ? entity.group.name : entity.templateId
 )
 
-const getEntityUpdatedAt = (entity: LibraryEntity) => (
-  entity.kind === 'folder' ? entity.folder.updatedAt : entity.group.updatedAt
+const getEntityUpdatedAt = (entity: LibraryBrowserEntity) => (
+  entity.kind === 'folder' || entity.kind === 'public-folder'
+    ? entity.folder.updatedAt
+    : entity.kind === 'material' ? entity.group.updatedAt : 0
+)
+
+const isPublicEntity = (entity: LibraryBrowserEntity): entity is PublicLibraryEntity => (
+  entity.kind === 'public-folder' || entity.kind === 'public-case'
 )
 
 const formatLibraryDate = (timestamp: number, locale: string) => new Intl.DateTimeFormat(locale, {
@@ -126,6 +168,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onUpdateGroup,
   onDeleteGroup,
   onSelectGroup,
+  onImportPublicCase,
   portalArrival = false,
   transitionPrepared = false,
   archiveReplayId = ''
@@ -174,9 +217,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const [failedPreviewIds, setFailedPreviewIds] = useState<string[]>([])
   const [folderTransitioning, setFolderTransitioning] = useState(false)
   const [incomingFolderId, setIncomingFolderId] = useState<string | null>(null)
+  const [importingPublicCaseId, setImportingPublicCaseId] = useState<string | null>(null)
+  const [publicCaseErrorId, setPublicCaseErrorId] = useState<string | null>(null)
 
   const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
-  const currentFolder = currentFolderId ? folderById.get(currentFolderId) : undefined
+  const currentFolder = currentFolderId === PUBLIC_CASES_FOLDER_ID
+    ? PUBLIC_CASES_FOLDER
+    : currentFolderId ? folderById.get(currentFolderId) : undefined
   const archiveMirrorSignature = useMemo(() => JSON.stringify({
     currentFolderId,
     viewMode,
@@ -202,7 +249,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }), [currentFolderId, folders, groups, i18n.language, i18n.resolvedLanguage, sortMode, viewMode])
 
   useEffect(() => {
-    if (currentFolderId && !folderById.has(currentFolderId)) {
+    if (currentFolderId && currentFolderId !== PUBLIC_CASES_FOLDER_ID && !folderById.has(currentFolderId)) {
       setCurrentFolderId('')
     }
   }, [currentFolderId, folderById])
@@ -311,14 +358,16 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     suppressClickRef.current = false
   }
 
-  const openEntityMenu = (entity: LibraryEntity, clientX: number, clientY: number, suppressClick = true) => {
+  const openEntityMenu = (entity: LibraryBrowserEntity, clientX: number, clientY: number, suppressClick = true) => {
+    if (isPublicEntity(entity)) return
     clearLongPressTimer()
     suppressClickRef.current = suppressClick
     setMenuPosition(getMenuPosition(clientX, clientY))
     setMenuTarget(entity)
   }
 
-  const handleEntityPointerDown = (event: React.PointerEvent<HTMLElement>, entity: LibraryEntity) => {
+  const handleEntityPointerDown = (event: React.PointerEvent<HTMLElement>, entity: LibraryBrowserEntity) => {
+    if (isPublicEntity(entity)) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     if ((event.target as HTMLElement).closest('.dynamic-library-more-button')) return
 
@@ -344,6 +393,17 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     longPressPointRef.current = null
   }
 
+  const getEntityOrigin = (sourceElement?: HTMLElement): DynamicTransitionOrigin | undefined => {
+    const sourceCard = sourceElement?.closest<HTMLElement>('.dynamic-library-icon-card, .dynamic-library-detail-row')
+    const rect = sourceCard?.getBoundingClientRect()
+    return rect ? {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    } : undefined
+  }
+
   const handleMaterialSelect = (group: DynamicGroup, sourceElement?: HTMLElement) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
@@ -354,23 +414,33 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
       return
     }
 
-    const sourceCard = sourceElement?.closest<HTMLElement>('.dynamic-library-icon-card, .dynamic-library-detail-row')
-    const rect = sourceCard?.getBoundingClientRect()
-    onSelectGroup(group, rect ? {
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height
-    } : undefined)
+    onSelectGroup(group, getEntityOrigin(sourceElement))
   }
 
-  const handleEntityOpen = (entity: LibraryEntity, sourceElement: HTMLElement) => {
+  const handlePublicCaseImport = async (caseItem: PublicLibraryEntity & { kind: 'public-case' }, sourceElement?: HTMLElement) => {
+    if (!onImportPublicCase || importingPublicCaseId) return
+    setPublicCaseErrorId(null)
+    setImportingPublicCaseId(caseItem.templateId)
+    try {
+      const importedGroup = await onImportPublicCase(caseItem.templateId, getEntityOrigin(sourceElement))
+      if (importedGroup) onSelectGroup(importedGroup, getEntityOrigin(sourceElement))
+    } catch (error) {
+      console.warn('Public case import failed:', error)
+      setPublicCaseErrorId(caseItem.templateId)
+    } finally {
+      setImportingPublicCaseId(null)
+    }
+  }
+
+  const handleEntityOpen = (entity: LibraryBrowserEntity, sourceElement: HTMLElement) => {
     if (suppressClickRef.current) {
       suppressClickRef.current = false
       return
     }
-    if (entity.kind === 'folder') {
+    if (entity.kind === 'folder' || entity.kind === 'public-folder') {
       transitionToFolder(entity.folder.id, sourceElement)
+    } else if (entity.kind === 'public-case') {
+      void handlePublicCaseImport(entity, sourceElement)
     } else {
       handleMaterialSelect(entity.group, sourceElement)
     }
@@ -410,7 +480,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const handleCreate = async () => {
-    if (!creatorType || isCreating || !name.trim()) return
+    if (!creatorType || isCreating || !name.trim() || currentFolderId === PUBLIC_CASES_FOLDER_ID) return
     setIsCreating(true)
     try {
       if (creatorType === 'folder') {
@@ -606,6 +676,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const getBreadcrumbsForFolderId = (folderId: string) => {
+    if (folderId === PUBLIC_CASES_FOLDER_ID) return [PUBLIC_CASES_FOLDER]
     const result: DynamicFolder[] = []
     const visited = new Set<string>()
     let folder = folderId ? folderById.get(folderId) : undefined
@@ -618,9 +689,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const getEntitiesForFolderId = (folderId: string) => {
+    if (folderId === PUBLIC_CASES_FOLDER_ID) {
+      return PUBLIC_CASES.map((caseItem): PublicLibraryEntity => ({ kind: 'public-case', ...caseItem }))
+    }
     const validFolderIds = new Set(folders.map((folder) => folder.id))
     const currentId = folderId || undefined
-    const nextEntities: LibraryEntity[] = [
+    const nextEntities: LibraryBrowserEntity[] = [
+      ...(folderId === '' ? [{ kind: 'public-folder', folder: PUBLIC_CASES_FOLDER } as PublicLibraryEntity] : []),
       ...folders
         .filter((folder) => folder.parentId === currentId)
         .map((folder): LibraryEntity => ({ kind: 'folder', folder })),
@@ -635,6 +710,8 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     ]
 
     return nextEntities.sort((left, right) => {
+      if (left.kind === 'public-folder') return -1
+      if (right.kind === 'public-folder') return 1
       if (sortMode === 'type' && left.kind !== right.kind) return left.kind === 'folder' ? -1 : 1
       if (sortMode === 'updated') return getEntityUpdatedAt(right) - getEntityUpdatedAt(left)
       return getEntityName(left).localeCompare(getEntityName(right), 'zh-Hant', { numeric: true })
@@ -649,7 +726,12 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     () => getEntitiesForFolderId(currentFolderId),
     [currentFolderId, folders, groups, sortMode]
   )
-  const incomingFolder = incomingFolderId ? folderById.get(incomingFolderId) : undefined
+  const incomingFolder = incomingFolderId && incomingFolderId !== PUBLIC_CASES_FOLDER_ID
+    ? folderById.get(incomingFolderId)
+    : undefined
+  const incomingDisplayFolder = incomingFolderId === PUBLIC_CASES_FOLDER_ID
+    ? PUBLIC_CASES_FOLDER
+    : incomingFolder
   const incomingBreadcrumbs = incomingFolderId === null ? [] : getBreadcrumbsForFolderId(incomingFolderId)
   const incomingEntities = incomingFolderId === null ? [] : getEntitiesForFolderId(incomingFolderId)
 
@@ -658,7 +740,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     sourceElement?: HTMLElement,
     requestedDirection?: FolderTransitionDirection
   ) => {
-    if (folderTransitioning || folderId === currentFolderId || (folderId && !folderById.has(folderId))) return
+    if (
+      folderTransitioning
+      || folderId === currentFolderId
+      || (folderId && folderId !== PUBLIC_CASES_FOLDER_ID && !folderById.has(folderId))
+    ) return
 
     closeEntityMenu()
     clearLongPressTimer()
@@ -810,6 +896,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   }
 
   const getFolderContent = (folder: DynamicFolder) => {
+    if (folder.id === PUBLIC_CASES_FOLDER_ID) {
+      return t('groups.publicCaseCount', { count: PUBLIC_CASES.length })
+    }
     const folderCount = folders.filter((item) => item.parentId === folder.id).length
     const materialCount = groups.filter((group) => group.folderId === folder.id).length
     const parts: string[] = []
@@ -825,6 +914,41 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
 
   const markPreviewFailed = (entityId: string) => {
     setFailedPreviewIds((current) => current.includes(entityId) ? current : [...current, entityId])
+  }
+
+  const getBrowserEntityName = (entity: LibraryBrowserEntity) => {
+    if (entity.kind === 'public-folder') return t('groups.publicCases')
+    if (entity.kind === 'public-case') return t(entity.nameKey)
+    return getEntityName(entity)
+  }
+
+  const getFolderDisplayName = (folder: DynamicFolder) => (
+    folder.id === PUBLIC_CASES_FOLDER_ID ? t('groups.publicCases') : folder.name
+  )
+
+  const getBrowserEntityContent = (entity: LibraryBrowserEntity) => {
+    if (entity.kind === 'public-folder') return getFolderContent(entity.folder)
+    if (entity.kind === 'public-case') {
+      return t('groups.materialSummary', {
+        backgrounds: entity.backgroundCount,
+        objects: entity.objectCount
+      })
+    }
+    return entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)
+  }
+
+  const renderPublicCasePreview = (entity: PublicLibraryEntity & { kind: 'public-case' }) => {
+    if (failedPreviewIds.includes(entity.templateId)) {
+      return <span className="dynamic-library-preview-fallback"><ImageIcon aria-hidden="true" /></span>
+    }
+    return (
+      <img
+        src={entity.poster}
+        alt=""
+        decoding="async"
+        onError={() => markPreviewFailed(entity.templateId)}
+      />
+    )
   }
 
   const renderMaterialPreview = (group: DynamicGroup, compact = false) => {
@@ -866,7 +990,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     )
   }
 
-  const renderMoreButton = (entity: LibraryEntity, interactive = true) => (
+  const renderMoreButton = (entity: LibraryBrowserEntity, interactive = true) => {
+    if (isPublicEntity(entity)) return null
+    return (
     <button
       type="button"
       className="dynamic-library-more-button"
@@ -882,12 +1008,13 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     >
       <MoreHorizontal aria-hidden="true" />
     </button>
-  )
+    )
+  }
 
-  const renderIconEntity = (entity: LibraryEntity, layerKey = 'current', interactive = true) => (
+  const renderIconEntity = (entity: LibraryBrowserEntity, layerKey = 'current', interactive = true) => (
     <article
       key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
-      className={`dynamic-library-icon-card dynamic-library-entity-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
+      className={`dynamic-library-icon-card dynamic-library-entity-card ${entity.kind} ${importingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-importing' : ''} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
       data-library-entity-id={getEntityId(entity)}
       data-library-entity-kind={entity.kind}
       onPointerDown={interactive ? (event) => handleEntityPointerDown(event, entity) : undefined}
@@ -900,27 +1027,42 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         openEntityMenu(entity, event.clientX, event.clientY)
       } : undefined}
     >
-      <button
+       <button
         type="button"
         className="dynamic-library-icon-main"
-        onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
-        disabled={!interactive || folderTransitioning}
+         onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
+         aria-label={entity.kind === 'public-case'
+           ? `${getBrowserEntityName(entity)}: ${importingPublicCaseId === entity.templateId ? t('groups.importingPublicCase') : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}`
+           : undefined}
+        disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onImportPublicCase || Boolean(importingPublicCaseId)))}
       >
-        <span className="dynamic-library-icon-preview">
-          {entity.kind === 'folder'
+         <span className="dynamic-library-icon-preview">
+           {entity.kind === 'public-case'
+             ? renderPublicCasePreview(entity)
+             : entity.kind === 'folder' || entity.kind === 'public-folder'
             ? <DynamicFolderArtwork folderId={entity.folder.id} />
             : renderMaterialPreview(entity.group)}
-        </span>
-        <span className="dynamic-library-icon-copy">
-          <strong>{getEntityName(entity)}</strong>
-          <small>{entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)}</small>
-        </span>
-      </button>
+         </span>
+         <span className="dynamic-library-icon-copy">
+           <strong>{getBrowserEntityName(entity)}</strong>
+           <small>{getBrowserEntityContent(entity)}</small>
+           {isPublicEntity(entity) && entity.kind === 'public-case' && (
+             <span className="dynamic-library-public-badge">{t('groups.publicCaseBadge')}</span>
+           )}
+         </span>
+         {entity.kind === 'public-case' && (
+           <span className="dynamic-library-public-action" aria-hidden="true">
+             {importingPublicCaseId === entity.templateId
+               ? <><LoaderCircle className="dynamic-library-public-spinner" />{t('groups.importingPublicCase')}</>
+                : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
+           </span>
+         )}
+       </button>
       {renderMoreButton(entity, interactive)}
     </article>
   )
 
-  const renderDetailEntity = (entity: LibraryEntity, layerKey = 'current', interactive = true) => (
+  const renderDetailEntity = (entity: LibraryBrowserEntity, layerKey = 'current', interactive = true) => (
     <article
       key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
       className={`dynamic-library-detail-row dynamic-library-entity-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
@@ -940,21 +1082,32 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         type="button"
         className="dynamic-library-detail-main"
         onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
-        disabled={!interactive || folderTransitioning}
+         disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onImportPublicCase || Boolean(importingPublicCaseId)))}
+         aria-label={entity.kind === 'public-case'
+           ? `${getBrowserEntityName(entity)}: ${importingPublicCaseId === entity.templateId ? t('groups.importingPublicCase') : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}`
+           : undefined}
       >
         <span className="dynamic-library-detail-name">
           <span className="dynamic-library-detail-thumbnail">
-            {entity.kind === 'folder'
+            {entity.kind === 'public-case'
+              ? renderPublicCasePreview(entity)
+              : entity.kind === 'folder' || entity.kind === 'public-folder'
               ? <DynamicFolderArtwork folderId={entity.folder.id} compact />
               : renderMaterialPreview(entity.group, true)}
           </span>
-          <strong>{getEntityName(entity)}</strong>
+          <strong>{getBrowserEntityName(entity)}</strong>
         </span>
-        <time>{formatLibraryDate(getEntityUpdatedAt(entity), i18n.resolvedLanguage ?? i18n.language)}</time>
-        <span>{entity.kind === 'folder' ? t('groups.folder') : t('groups.material')}</span>
-        <span>{entity.kind === 'folder' ? getFolderContent(entity.folder) : getMaterialContent(entity.group)}</span>
+        <time>{isPublicEntity(entity) ? t('groups.builtInCase') : formatLibraryDate(getEntityUpdatedAt(entity), i18n.resolvedLanguage ?? i18n.language)}</time>
+        <span>{entity.kind === 'folder' || entity.kind === 'public-folder' ? t('groups.folder') : entity.kind === 'public-case' ? t('groups.publicCaseType') : t('groups.material')}</span>
+        <span>{getBrowserEntityContent(entity)}</span>
       </button>
-      {renderMoreButton(entity, interactive)}
+      {entity.kind === 'public-case' ? (
+        <span className="dynamic-library-public-detail-action" aria-hidden="true">
+          {importingPublicCaseId === entity.templateId
+            ? <LoaderCircle className="dynamic-library-public-spinner" />
+            : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
+        </span>
+      ) : renderMoreButton(entity, interactive)}
     </article>
   )
 
@@ -982,7 +1135,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
               className={index === trail.length - 1 ? 'current' : ''}
               onClick={interactive ? () => transitionToFolder(trailFolder.id, undefined, 'backward') : undefined}
             >
-              {trailFolder.name}
+              {getFolderDisplayName(trailFolder)}
             </button>
           </span>
         ))}
@@ -990,7 +1143,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     )
   }
 
-  const renderLibraryBrowser = (list: LibraryEntity[], layerKey: string, interactive: boolean) => (
+  const renderLibraryBrowser = (list: LibraryBrowserEntity[], layerKey: string, interactive: boolean) => (
     <section className={`dynamic-library-browser view-${viewMode}`} aria-label={t('groups.libraryLabel')}>
       {viewMode === 'details' && list.length > 0 && (
         <div className="dynamic-library-detail-header" aria-hidden="true">
@@ -1080,11 +1233,21 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
               <option value="type">{t('groups.type')}</option>
             </select>
           </label>
-          <button type="button" className="ipad-button secondary-button dynamic-library-create-action" onClick={() => openCreator('folder')}>
+          <button
+            type="button"
+            className="ipad-button secondary-button dynamic-library-create-action"
+            disabled={currentFolderId === PUBLIC_CASES_FOLDER_ID}
+            onClick={() => openCreator('folder')}
+          >
             <FolderPlus aria-hidden="true" />
             <span>{t('groups.newFolder')}</span>
           </button>
-          <button type="button" className="ipad-button primary-button dynamic-library-create-action" onClick={() => openCreator('material')}>
+          <button
+            type="button"
+            className="ipad-button primary-button dynamic-library-create-action"
+            disabled={currentFolderId === PUBLIC_CASES_FOLDER_ID}
+            onClick={() => openCreator('material')}
+          >
             <FilePlus2 aria-hidden="true" />
             <span>{t('groups.newMaterial')}</span>
           </button>
@@ -1105,10 +1268,10 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           <div
             key={`incoming-${incomingFolderId || 'root'}`}
             ref={incomingLayerRef}
-            className={`dynamic-library-depth-layer incoming-layer ${incomingFolder ? 'has-breadcrumb' : ''}`}
+            className={`dynamic-library-depth-layer incoming-layer ${incomingFolderId !== '' ? 'has-breadcrumb' : ''}`}
             aria-hidden="true"
           >
-            {renderBreadcrumbs(incomingFolder, incomingBreadcrumbs, false)}
+            {renderBreadcrumbs(incomingDisplayFolder, incomingBreadcrumbs, false)}
             {renderLibraryBrowser(incomingEntities, `incoming-${incomingFolderId || 'root'}`, false)}
           </div>
         )}
@@ -1145,7 +1308,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           <section ref={creatorDialogRef} className="dynamic-library-form-modal" role="dialog" aria-modal="true" aria-labelledby="library-create-title" tabIndex={-1}>
             <div className="dynamic-library-modal-heading">
               <div>
-                <p className="eyebrow">{currentFolder?.name ?? t('groups.archive')}</p>
+                <p className="eyebrow">{currentFolder ? getFolderDisplayName(currentFolder) : t('groups.archive')}</p>
                 <h2 id="library-create-title">{creatorType === 'folder' ? t('groups.newFolder') : t('groups.newMaterial')}</h2>
               </div>
               <button type="button" className="dynamic-panel-close" onClick={resetCreator} aria-label={t('common.close')}><X aria-hidden="true" /></button>
@@ -1300,5 +1463,6 @@ const areDynamicGroupsPropsEqual = (
   && previous.portalArrival === next.portalArrival
   && previous.transitionPrepared === next.transitionPrepared
   && previous.archiveReplayId === next.archiveReplayId
+  && previous.onImportPublicCase === next.onImportPublicCase
 
 export default memo(DynamicGroupsPage, areDynamicGroupsPropsEqual)

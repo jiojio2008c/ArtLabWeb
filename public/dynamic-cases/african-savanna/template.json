@@ -1,0 +1,1334 @@
+{
+  "templateId": "magicfloor.african-savanna",
+  "version": 1,
+  "slug": "african-savanna",
+  "names": {
+    "zhHant": "非洲大草原",
+    "zhHans": "非洲大草原",
+    "en": "African Savanna",
+    "pt": "Savana Africana",
+    "pl": "Afrykańska sawanna"
+  },
+  "poster": "/dynamic-cases/african-savanna/poster.jpeg",
+  "posterPath": "african-savanna/poster.jpeg",
+  "posterAssetId": "media_mtjoxv2f_t7gnv0",
+  "source": {
+    "groupId": "group_mtjoxjkm_uwmlrt",
+    "updatedAt": 1788350097619,
+    "stateRevision": 1788347040665
+  },
+  "group": {
+    "groupId": "group_mtjoxjkm_uwmlrt",
+    "name": "非洲大草原",
+    "activeBackgroundId": "media_mtjyykn9_n4zrtm",
+    "backgrounds": [
+      {
+        "assetId": "media_mtjyykn9_n4zrtm",
+        "name": "生成視頻：第一幀和最後一幀都是這張圖片，但視頻要動態的，空曠.mp4",
+        "mediaType": "video",
+        "mimeType": "video/mp4",
+        "bgmAudioId": "media_mtjzfr3g_03ba7p",
+        "backgroundTransition": "none",
+        "appearance": {
+          "appearMode": "sequence",
+          "appearIntervalMs": 1000,
+          "appearAnimation": "none"
+        }
+      },
+      {
+        "assetId": "media_mtjoxv2f_t7gnv0",
+        "name": "d43c1a6bc700cbda5080ccd28b50df2d.jpeg",
+        "mediaType": "image",
+        "mimeType": "image/jpeg",
+        "bgmAudioId": "media_mtjrkjbv_apniul",
+        "backgroundTransition": "none",
+        "appearance": {
+          "appearMode": "sequence",
+          "appearIntervalMs": 1000,
+          "appearAnimation": "none"
+        }
+      }
+    ],
+    "backgroundPlayMode": "fixed",
+    "backgroundIntervalMs": 5000,
+    "backgroundPlaybackLoop": true,
+    "backgroundTransition": "none",
+    "backgroundTransitionDurations": {
+      "curtain": 1200,
+      "shadowPlay": 1400
+    },
+    "advancedFeaturesEnabled": true,
+    "stateRevision": 1788347040665,
+    "linkedAppearanceModelVersion": 4,
+    "audioLibrary": [
+      {
+        "assetId": "media_mtjznjum_c2sjxk",
+        "name": "非洲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 25208
+      },
+      {
+        "assetId": "media_mtjzfr3g_03ba7p",
+        "name": "非洲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 25208
+      },
+      {
+        "assetId": "media_mtjrkjbv_apniul",
+        "name": "非洲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 25208
+      },
+      {
+        "assetId": "media_mtjpiyez_dlhyy7",
+        "name": "大象的聲音.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 2717
+      },
+      {
+        "assetId": "media_mtjpisfc_qq6hxp",
+        "name": "獅子吼叫.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 3239
+      },
+      {
+        "assetId": "media_mtjp9fct_mhq6nm",
+        "name": "獅子吼叫.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 3239
+      },
+      {
+        "assetId": "media_mtjp949i_92xu67",
+        "name": "大象的聲音.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 2717
+      },
+      {
+        "assetId": "media_mtjoyakx_kdtgjf",
+        "name": "非洲.mp3",
+        "mediaType": "audio",
+        "mimeType": "audio/mpeg",
+        "durationMs": 25208
+      }
+    ],
+    "items": [
+      {
+        "itemId": "item_mtjoz9do_nl6tdk",
+        "kind": "media",
+        "assetId": "media_mtjoz9dc_6lhjcx",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "2-Photoroom.png",
+        "gridIndex": 48,
+        "position": {
+          "x": 0.05611894776972932,
+          "y": 0.6192896841534499
+        },
+        "scale": 0.7338578742472723,
+        "rotation": -2.2509886142998425,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 1,
+        "moveSpeed": 1,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 1,
+          "y": 0.7656906601599566
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 3000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 3000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 3,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp180y_xf1off",
+        "kind": "media",
+        "assetId": "media_mtjp180k_38vuik",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "3-Photoroom.png",
+        "gridIndex": 69,
+        "position": {
+          "x": 0.3475028593213877,
+          "y": 0.511928968415345
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": "media_mtjznjum_c2sjxk",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 0
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 0
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 0,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp1bu9_481dqw",
+        "kind": "media",
+        "assetId": "media_mtjp1btw_n9g4o1",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "4-Photoroom.png",
+        "gridIndex": 74,
+        "position": {
+          "x": 0.645177277926039,
+          "y": 0.54771587366138
+        },
+        "scale": 0.7275142303657574,
+        "rotation": -0.4189944932365677,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "none",
+        "movePercent": 50,
+        "moveSpeed": 50,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 0
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 500
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 1,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp1rvf_4lt9i3",
+        "kind": "media",
+        "assetId": "media_mtjp1rv2_pq7xp0",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "5-Photoroom.png",
+        "gridIndex": 47,
+        "position": {
+          "x": 1,
+          "y": 0.6865256879490307
+        },
+        "scale": 1.43835951663163,
+        "rotation": -1.6536371980871252,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 2,
+        "moveSpeed": 1,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.01791841402973691,
+          "y": 0.6854412362749085
+        },
+        "audioId": "media_mtjp949i_92xu67",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 6000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 6000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 6,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp214a_ctrlr4",
+        "kind": "media",
+        "assetId": "media_mtjp213t_djz7s9",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "6-Photoroom.png",
+        "gridIndex": 34,
+        "position": {
+          "x": 0.1689668318719024,
+          "y": 0.6724278161854412
+        },
+        "scale": 1.4141145903882677,
+        "rotation": 1.0003023945103706,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 2,
+        "moveSpeed": 1,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 1,
+          "y": 0.623627490849939
+        },
+        "audioId": "media_mtjpiyez_dlhyy7",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 7000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 7000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 7,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp2w5x_ddzb5g",
+        "kind": "media",
+        "assetId": "media_mtjp2w5j_pm32i1",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "9-Photoroom.png",
+        "gridIndex": 32,
+        "position": {
+          "x": 0.06221883339687383,
+          "y": 0.7743662735529349
+        },
+        "scale": 0.6176077915423829,
+        "rotation": -0.6645220403771646,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 1,
+        "moveSpeed": 2,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.380442241707968,
+          "y": 0.8437711806967603
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 8000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 8000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 8,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp3qcp_kyltb0",
+        "kind": "media",
+        "assetId": "media_mtjp3qc9_ud7dfk",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "10-Photoroom.png",
+        "gridIndex": 47,
+        "position": {
+          "x": 1,
+          "y": 0.7364104649586554
+        },
+        "scale": 0.7099190560530323,
+        "rotation": -0.2908390223505606,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 2,
+        "moveSpeed": 2,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.6132672512390392,
+          "y": 0.8383489223261489
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 9000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 9000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 9,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp47x4_yywf4b",
+        "kind": "media",
+        "assetId": "media_mtjp47wn_ofybnv",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "11-Photoroom.png",
+        "gridIndex": 31,
+        "position": {
+          "x": 1,
+          "y": 0.823166598888437
+        },
+        "scale": 0.7689671325910183,
+        "rotation": 1.629831917858894,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 2,
+        "moveSpeed": 2,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.6779260388867709,
+          "y": 0.8296733089331706
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 10000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 10000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 10,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp4x7c_0186gn",
+        "kind": "media",
+        "assetId": "media_mtjp4x6t_6dqz48",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "13-Photoroom.png",
+        "gridIndex": 57,
+        "position": {
+          "x": 0.5742279832253147,
+          "y": 0.6106140707604717
+        },
+        "scale": 0.8181293878196715,
+        "rotation": 0.9192731577875008,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 3,
+        "moveSpeed": 1,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.04414792222645825,
+          "y": 0.7309882065880439
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 5000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 4300
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 4,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp5c81_838fch",
+        "kind": "media",
+        "assetId": "media_mtjp5c7l_e2d6qw",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "14-Photoroom.png",
+        "gridIndex": 29,
+        "position": {
+          "x": 0.8700724361418224,
+          "y": 0.839433374000271
+        },
+        "scale": 1.4471864255576163,
+        "rotation": 0.16811946955493084,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 2,
+        "moveSpeed": 2,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0.43149065955013344,
+          "y": 0.8025620170801138
+        },
+        "audioId": "media_mtjpisfc_qq6hxp",
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 11000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 11000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 11,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjp6lbc_gt7kow",
+        "kind": "media",
+        "assetId": "media_mtjp6lau_aspx0r",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "15-Photoroom.png",
+        "gridIndex": 61,
+        "position": {
+          "x": 0.8184140297369424,
+          "y": 0.5824183272332928
+        },
+        "scale": 0.6574718243020842,
+        "rotation": 0.17635164074992105,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "left",
+        "movePercent": 1,
+        "moveSpeed": 1,
+        "moveTrack": "middle",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": {
+          "x": 0,
+          "y": 0.6236274908499391
+        },
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 1600
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 2000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 2,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtju5cpq_t1e0ju",
+        "kind": "media",
+        "assetId": "media_mtju5cp4_p1zn85",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "7-Photoroom.png",
+        "gridIndex": 22,
+        "position": {
+          "x": 0.37983225314525354,
+          "y": 0.7808729835976684
+        },
+        "scale": 0.7949558884956966,
+        "rotation": 1.1265422906834814,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 2,
+        "moveSpeed": 2,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 4000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 4500
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 5,
+        "updatedAt": 1788350097412
+      },
+      {
+        "itemId": "item_mtjurduf_x3mkm5",
+        "kind": "media",
+        "assetId": "media_mtjurdts_ujtmyh",
+        "imageAssetId": null,
+        "bubble": null,
+        "name": "獅子.png",
+        "gridIndex": 19,
+        "position": {
+          "x": 0.24441479222264584,
+          "y": 0.8394333740002712
+        },
+        "scale": 1,
+        "rotation": 0,
+        "flipX": false,
+        "flipY": false,
+        "animationMode": "fixed",
+        "animationId": 9,
+        "clickAnimationIds": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17
+        ],
+        "moveMode": "right",
+        "movePercent": 2,
+        "moveSpeed": 1,
+        "moveTrack": "bottom",
+        "targetMode": "loop",
+        "targetLoop": false,
+        "targetPosition": null,
+        "audioId": null,
+        "audioTrigger": "appearance",
+        "audioDelayMs": 0,
+        "appearanceDelayMs": 0,
+        "appearanceByBackground": {
+          "media_mtjoxv2f_t7gnv0": {
+            "appearanceDelayMs": 12000
+          },
+          "media_mtjyykn9_n4zrtm": {
+            "appearanceDelayMs": 12000
+          }
+        },
+        "hideAfterTarget": false,
+        "linkedAppearance": null,
+        "backgroundIds": [],
+        "isVisible": true,
+        "order": 12,
+        "updatedAt": 1788350097412
+      }
+    ],
+    "appearMode": "sequence",
+    "appearIntervalMs": 1000,
+    "appearAnimation": "none",
+    "updatedAt": 1788350097619,
+    "background": {
+      "assetId": "media_mtjyykn9_n4zrtm",
+      "name": "生成視頻：第一幀和最後一幀都是這張圖片，但視頻要動態的，空曠.mp4",
+      "mediaType": "video",
+      "mimeType": "video/mp4",
+      "bgmAudioId": "media_mtjzfr3g_03ba7p",
+      "backgroundTransition": "none",
+      "appearance": {
+        "appearMode": "sequence",
+        "appearIntervalMs": 1000,
+        "appearAnimation": "none"
+      }
+    }
+  },
+  "assets": [
+    {
+      "assetId": "media_mtjoxv2f_t7gnv0",
+      "role": "background",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "d43c1a6bc700cbda5080ccd28b50df2d.jpeg",
+      "mediaType": "image",
+      "mimeType": "image/jpeg",
+      "contentHash": "c67d272e526cbc70b68754229f62297a7684927e65267cfc8e4c22546a0e8d9f",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096606,
+      "path": "african-savanna/assets/media_mtjoxv2f_t7gnv0.jpeg",
+      "size": 370005,
+      "sha256": "c67d272e526cbc70b68754229f62297a7684927e65267cfc8e4c22546a0e8d9f"
+    },
+    {
+      "assetId": "media_mtjoyakx_kdtgjf",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "非洲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097394,
+      "path": "african-savanna/assets/media_mtjoyakx_kdtgjf.mp3",
+      "size": 605045,
+      "sha256": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3"
+    },
+    {
+      "assetId": "media_mtjoz9dc_6lhjcx",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjoz9do_nl6tdk",
+      "name": "2-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "14714d599310b78355e34a7163d8c74e77dd0b50aa992efaadfe89f7462c2833",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096758,
+      "path": "african-savanna/assets/media_mtjoz9dc_6lhjcx.png",
+      "size": 364747,
+      "sha256": "14714d599310b78355e34a7163d8c74e77dd0b50aa992efaadfe89f7462c2833"
+    },
+    {
+      "assetId": "media_mtjp180k_38vuik",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp180y_xf1off",
+      "name": "3-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "428e9eaa361e32a3ebc6e340c05c0973efe49079776aa6b4ff6912c330321d13",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096666,
+      "path": "african-savanna/assets/media_mtjp180k_38vuik.png",
+      "size": 514864,
+      "sha256": "428e9eaa361e32a3ebc6e340c05c0973efe49079776aa6b4ff6912c330321d13"
+    },
+    {
+      "assetId": "media_mtjp1btw_n9g4o1",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp1bu9_481dqw",
+      "name": "4-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "a8f7bc81b41d6f95fc8b6f6f22a75314cb1f757d345fc71f0e033d66107c78a7",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096699,
+      "path": "african-savanna/assets/media_mtjp1btw_n9g4o1.png",
+      "size": 300247,
+      "sha256": "a8f7bc81b41d6f95fc8b6f6f22a75314cb1f757d345fc71f0e033d66107c78a7"
+    },
+    {
+      "assetId": "media_mtjp1rv2_pq7xp0",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp1rvf_4lt9i3",
+      "name": "5-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "f189b10e83ec3445c20dd444da6af39fb099eb3deabbc9fc72d11352071b9979",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096853,
+      "path": "african-savanna/assets/media_mtjp1rv2_pq7xp0.png",
+      "size": 121131,
+      "sha256": "f189b10e83ec3445c20dd444da6af39fb099eb3deabbc9fc72d11352071b9979"
+    },
+    {
+      "assetId": "media_mtjp213t_djz7s9",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp214a_ctrlr4",
+      "name": "6-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "7cc867974ff20915415d110a137d23536927171e469d6ca63be2dfc54bcad752",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096908,
+      "path": "african-savanna/assets/media_mtjp213t_djz7s9.png",
+      "size": 1053927,
+      "sha256": "7cc867974ff20915415d110a137d23536927171e469d6ca63be2dfc54bcad752"
+    },
+    {
+      "assetId": "media_mtjp2w5j_pm32i1",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp2w5x_ddzb5g",
+      "name": "9-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "181d2e75fc3fb81f6ba11555695f50d07b62d319bb828b0aa69913fc447c3b4f",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096938,
+      "path": "african-savanna/assets/media_mtjp2w5j_pm32i1.png",
+      "size": 276252,
+      "sha256": "181d2e75fc3fb81f6ba11555695f50d07b62d319bb828b0aa69913fc447c3b4f"
+    },
+    {
+      "assetId": "media_mtjp3qc9_ud7dfk",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp3qcp_kyltb0",
+      "name": "10-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "8557dd2e64c58bb2d30b2ac3d785660f745db05354a09bc6a85276ca04bcb1b9",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096988,
+      "path": "african-savanna/assets/media_mtjp3qc9_ud7dfk.png",
+      "size": 761843,
+      "sha256": "8557dd2e64c58bb2d30b2ac3d785660f745db05354a09bc6a85276ca04bcb1b9"
+    },
+    {
+      "assetId": "media_mtjp47wn_ofybnv",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp47x4_yywf4b",
+      "name": "11-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "d2f7f772f4d84065212376fd3c4915cffc255abba07f5ae7326a4803bb221d5e",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097017,
+      "path": "african-savanna/assets/media_mtjp47wn_ofybnv.png",
+      "size": 139754,
+      "sha256": "d2f7f772f4d84065212376fd3c4915cffc255abba07f5ae7326a4803bb221d5e"
+    },
+    {
+      "assetId": "media_mtjp4x6t_6dqz48",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp4x7c_0186gn",
+      "name": "13-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "962ec04be9db5f79d1d327ac822c171bba74b5418f32db1e39c0cd9245ff3e19",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096793,
+      "path": "african-savanna/assets/media_mtjp4x6t_6dqz48.png",
+      "size": 484595,
+      "sha256": "962ec04be9db5f79d1d327ac822c171bba74b5418f32db1e39c0cd9245ff3e19"
+    },
+    {
+      "assetId": "media_mtjp5c7l_e2d6qw",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp5c81_838fch",
+      "name": "14-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "4b4848f185b4cf090750258c97df76f888c026c7ab50b4df291e810978c77210",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097055,
+      "path": "african-savanna/assets/media_mtjp5c7l_e2d6qw.png",
+      "size": 454337,
+      "sha256": "4b4848f185b4cf090750258c97df76f888c026c7ab50b4df291e810978c77210"
+    },
+    {
+      "assetId": "media_mtjp6lau_aspx0r",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjp6lbc_gt7kow",
+      "name": "15-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "624c15174a65f5095db2abdd2495aff0eec8ddcf226ed10baf43f63982b60e0c",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096725,
+      "path": "african-savanna/assets/media_mtjp6lau_aspx0r.png",
+      "size": 135112,
+      "sha256": "624c15174a65f5095db2abdd2495aff0eec8ddcf226ed10baf43f63982b60e0c"
+    },
+    {
+      "assetId": "media_mtjp949i_92xu67",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "大象的聲音.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "f1408c3cc54d4c2f33f3a2515a6798cc46a5756226f2316aab709aa80941c4ca",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097342,
+      "path": "african-savanna/assets/media_mtjp949i_92xu67.mp3",
+      "size": 65251,
+      "sha256": "f1408c3cc54d4c2f33f3a2515a6798cc46a5756226f2316aab709aa80941c4ca"
+    },
+    {
+      "assetId": "media_mtjp9fct_mhq6nm",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "獅子吼叫.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "96c5bafc8e7e38d59f48d2c958ee82926903172dd86c6c6ffc6adbf3c421f964",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097316,
+      "path": "african-savanna/assets/media_mtjp9fct_mhq6nm.mp3",
+      "size": 77790,
+      "sha256": "96c5bafc8e7e38d59f48d2c958ee82926903172dd86c6c6ffc6adbf3c421f964"
+    },
+    {
+      "assetId": "media_mtjpisfc_qq6hxp",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "獅子吼叫.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "96c5bafc8e7e38d59f48d2c958ee82926903172dd86c6c6ffc6adbf3c421f964",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097291,
+      "path": "african-savanna/assets/media_mtjpisfc_qq6hxp.mp3",
+      "size": 77790,
+      "sha256": "96c5bafc8e7e38d59f48d2c958ee82926903172dd86c6c6ffc6adbf3c421f964"
+    },
+    {
+      "assetId": "media_mtjpiyez_dlhyy7",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "大象的聲音.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "f1408c3cc54d4c2f33f3a2515a6798cc46a5756226f2316aab709aa80941c4ca",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097263,
+      "path": "african-savanna/assets/media_mtjpiyez_dlhyy7.mp3",
+      "size": 65251,
+      "sha256": "f1408c3cc54d4c2f33f3a2515a6798cc46a5756226f2316aab709aa80941c4ca"
+    },
+    {
+      "assetId": "media_mtjrkjbv_apniul",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "非洲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097229,
+      "path": "african-savanna/assets/media_mtjrkjbv_apniul.mp3",
+      "size": 605045,
+      "sha256": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3"
+    },
+    {
+      "assetId": "media_mtju5cp4_p1zn85",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtju5cpq_t1e0ju",
+      "name": "7-Photoroom.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "d59d5cf539eb62808a0ce798f93c35b4bca4220101b1474e6d804f731c74dc9d",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096826,
+      "path": "african-savanna/assets/media_mtju5cp4_p1zn85.png",
+      "size": 446461,
+      "sha256": "d59d5cf539eb62808a0ce798f93c35b4bca4220101b1474e6d804f731c74dc9d"
+    },
+    {
+      "assetId": "media_mtjurdts_ujtmyh",
+      "role": "item",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": "item_mtjurduf_x3mkm5",
+      "name": "獅子.png",
+      "mediaType": "image",
+      "mimeType": "image/png",
+      "contentHash": "170457e0006a48cda52089c5ed6f02dd3bc3846df23ac7cec13f36dff178aaa3",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097087,
+      "path": "african-savanna/assets/media_mtjurdts_ujtmyh.png",
+      "size": 261325,
+      "sha256": "170457e0006a48cda52089c5ed6f02dd3bc3846df23ac7cec13f36dff178aaa3"
+    },
+    {
+      "assetId": "media_mtjyykn9_n4zrtm",
+      "role": "background",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "生成視頻：第一幀和最後一幀都是這張圖片，但視頻要動態的，空曠.mp4",
+      "mediaType": "video",
+      "mimeType": "video/mp4",
+      "contentHash": "846b2a05c09051156cc7aa7687872a4257e41dba62524872c7f3dea3ec8fc589",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350096563,
+      "path": "african-savanna/assets/media_mtjyykn9_n4zrtm.mp4",
+      "size": 2121467,
+      "sha256": "846b2a05c09051156cc7aa7687872a4257e41dba62524872c7f3dea3ec8fc589"
+    },
+    {
+      "assetId": "media_mtjzfr3g_03ba7p",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "非洲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097180,
+      "path": "african-savanna/assets/media_mtjzfr3g_03ba7p.mp3",
+      "size": 605045,
+      "sha256": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3"
+    },
+    {
+      "assetId": "media_mtjznjum_c2sjxk",
+      "role": "audio",
+      "groupId": "group_mtjoxjkm_uwmlrt",
+      "itemId": null,
+      "name": "非洲.mp3",
+      "mediaType": "audio",
+      "mimeType": "audio/mpeg",
+      "contentHash": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3",
+      "stateRevision": 1788347040664,
+      "updatedAt": 1788350097132,
+      "path": "african-savanna/assets/media_mtjznjum_c2sjxk.mp3",
+      "size": 605045,
+      "sha256": "471aa0a04216bf6112a9538fa507412d7baf0f3613ba7725ece98c66558309d3"
+    }
+  ]
+}
