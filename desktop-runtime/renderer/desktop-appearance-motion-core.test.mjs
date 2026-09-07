@@ -76,7 +76,7 @@ test('desktop player uses position-based slide direction and independent entranc
   )
   const trackSlideBranch = playbackFunction.slice(
     playbackFunction.indexOf("} else if (appearAnimation === 'trackSlide')"),
-    playbackFunction.indexOf('\n  }\n\n  const targetActive')
+    playbackFunction.indexOf('\n  }\n\n  const motionPath')
   )
 
   assert.match(playbackFunction, /sampleDesktopEntranceProgress\(/)

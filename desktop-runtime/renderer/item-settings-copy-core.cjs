@@ -15,6 +15,7 @@ const DEFAULT_ITEM_SETTINGS_COPY_FIELDS = Object.freeze([
   'targetMode',
   'targetLoop',
   'targetPosition',
+  'motionPath',
   'appearanceDelayMs',
   'appearanceHideMs',
   'appearanceByBackground',
@@ -37,6 +38,14 @@ const cloneItemSettingValue = (value, field) => {
           : timing
       ])
     )
+  }
+  if (field === 'motionPath' && value && typeof value === 'object') {
+    return {
+      ...value,
+      points: Array.isArray(value.points)
+        ? value.points.map((point) => ({ ...point }))
+        : []
+    }
   }
   if (value && typeof value === 'object') return { ...value }
   return value

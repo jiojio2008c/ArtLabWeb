@@ -4170,3 +4170,100 @@ dist/assets/web-3ui0Ni4Z.js
 - 已执行 `npm run build` 与 `npm run sync:ios`。当前 Web/iOS 资源为 `index-CzA_560M.js`、`index-ClRrcpAc.css`、`web-4iYlmJON.js`；`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `A8D80572E100062C534E8A115463EEDE4BF3753244322F6DD0B50386D487DB1C`。
 - 已执行 `npm --prefix desktop-runtime run pack:all`，流程自动清理旧发布目录。标准版 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`：`85,330,625` bytes，SHA-256 `B1FD0D7C1D400010D66B33BB455F56D00F49D33AC6C747764115FDAC50CADFE4`；竖屏翻转版 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`：`85,318,601` bytes，SHA-256 `070B71739EE713B468F232F12BC70022C2AE21E24C964FC0B371FFCBE921DF9B`。
 - 两份 `app.asar` 均包含 `dynamic-speed-core.js`、更新后的 `dynamic-animation-catalog.js`、`interaction-core.js` 与 `player.js`；EXE 仍为未签名构建，真实 iPad、投影机和舞台硬件仍需现场验证。
+
+## 72. 2026-09-04 舞台目标点手绘路线与快捷控件
+
+### 回退点与路线功能
+
+- 修改前已建立并推送 Git 回退点 `57cf58c1`，提交说明为 `chore: checkpoint before custom motion paths`；当前 `main` 与 `origin/main` 均指向该回退点。
+- 新增共享路线核心 `desktop-runtime/renderer/dynamic-motion-path-core.js`（及类型声明）：路线点以物件初始位置为原点，首点固定为 `{ x: 0, y: 0 }`，自动去重并限制最多 `64` 点；支持去抖、RDP 简化、平滑和按弧长采样。
+- 目标点编辑器提供“直达终点／绘制路线”两种方式。绘制时可在舞台拖动生成路线，起点保留红色半透明物件，终点与中间节点可视化；中间节点可拖动，完成后自动优化，并提供“优化路线／重新绘制”。方向键仍可微调终点，Enter 保存，Escape 取消。
+- 路线保存到本地作品资料、完整 `GroupStateSync`、增量 `ItemMotion` 及物件属性复制；EXE 沿同一相对路线播放，缺少路线的旧作品继续回退到 `targetPosition` 直线移动，显式 `null` 可清除旧路线。
+
+### 舞台控制界面
+
+- 背景快捷切换栏在存在一个或以上可见背景时显示；单背景也可查看当前卡片并使用 `Play／Stop` 快捷播放。
+- 图层数量旁新增圆形问号入口，弹窗说明列表上方物件位于舞台前方，并提示可拖动物件卡片调整层次。
+- 右上角预览入口改为首页 MagicFloor Logo 加播放三角图标，并保留无障碍标签；相关路线、快捷背景、图层规则和预览文案已加入英文、简体中文、繁体中文、葡萄牙文及波兰文。
+
+### 构建与验证
+
+- 已执行 `npm run sync:ios`；`dist/index.html` 与 iOS 公共资源入口 SHA-256 均为 `3C4EC7BCDE642AE948161BAE10D6149F294CBC7F305A3DAC3F9F7B1570E29373`，Web 资源已同步到 `ios/App/App/public`（当前入口资源为 `index-DZcDLCye.js`、`index-CXjkXTVQ.css`、`web-CW-4RPi_.js`）。
+- 已重新生成标准版与翻转版 EXE，发布脚本先清理旧发布目录；本机 7-Zip 内存限制下使用压缩级别 `1` 完成打包：标准版 `desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`（`113,240,590` bytes），SHA-256 `19853F1638572FC8BFCEF7F92349E4FD9B75EC75B8DAF3FC4CC04B226943CC91`；翻转版 `desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（`113,240,639` bytes），SHA-256 `1804BA2B837055C0AF9529CB39AE853DFFB0879D4F1C0774F95AFFF52AEBCD5D`。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run build`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:motion-path`、`test:target-motion`、`test:motion`、`test:item-copy`、`test:appearance`、`test:presentation` 与 `git diff --check`。桌面两套 `app.asar` 均包含 `dynamic-motion-path-core.js`；真实 iPad、投影机、触控绘制和现场 EXE 联调仍需在目标设备验证。
+
+## 73. 2026-09-04 互动艺术上传来源图标
+
+### 上传弹窗
+
+- 互动艺术的上传来源弹窗保留原有 iOS 相簿、相机和文件选择流程，仅在三个按钮中加入对应的 `Images`、`Camera` 与 `FileUp` 图标；文字继续使用现有多语言翻译。
+- 三个按钮统一采用图标与文字水平居中排列，并保留原有触控尺寸、遮罩关闭和无障碍标签。
+
+### 验证与同步
+
+- 已通过 `npx tsc --noEmit --pretty false` 与 `git diff --check`，并执行 `npm run sync:ios` 将最新 Web 资源同步到 iOS 项目。
+
+## 74. 2026-09-04 iOS 长按文字选取防护
+
+### 交互保护
+
+- 全局关闭 iOS 页面静态文字的长按选取和系统 callout，避免普通文字、标签和卡片长按出现“全选”。
+- `input`、`textarea` 和 `contenteditable` 明确恢复文字选取及系统编辑菜单；`select` 保留原生选项操作。
+- 未修改舞台控制页的 `pointer`、`touch`、拖动、路线绘制、滑轮或 `touch-action` 逻辑，舞台交互继续沿用原有实现。
+
+### 验证与同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:motion`、`test:appearance`、`test:presentation`（45 项）及 `git diff --check`。
+- 已执行 `npm run sync:ios`，最新防选取规则已写入 iOS 公共 Web 资源；仍需在实体 iPad 上验证长按静态文字、输入编辑和舞台全套触控操作。
+
+## 75. 2026-09-04 设置页分组与技术人员解锁
+
+### 设置资讯架构
+
+- 首页设置页改为分组卡片结构：帐户、一般、装置连接、帮助与支援、法律与授权、技术人员设定；二维码保留在普通用户可见的「装置连接」分组。
+- IP 位址、动态艺术端口及互动艺术端口已从首页移入技术人员设定详情页；原有 `onSave`、网络设置持久化、Unity 通讯与二维码发送协议保持不变。
+- 新增帮助中心、意见反馈入口、条款、私隐政策及第三方许可页面；所有页面支持滚动、安全区域和窄屏布局。
+
+### 技术人员入口
+
+- 技术人员设定默认以灰色锁定样式显示；三秒内连续点按六次后显示密码弹窗，固定密码为 `168`，验证成功后才可编辑 IP 与端口。
+- 密码输入限制为数字三位，错误时保留在弹窗内；关闭设置、取消或按 Escape 会清除解锁状态及未保存草稿。设置层和密码层均提供焦点循环与返回焦点，避免 Escape 事件传入舞台控制页。
+- `advancedFeaturesEnabled` 与 `watermarkEnabled` 仍随设置保存而保留，未重新暴露已隐藏的开关；舞台控制页触控、路线、图层和播放逻辑未改动。
+
+### 多语言与验证
+
+- 新增设置页文字已同步英文、简体中文、繁体中文、葡萄牙文及波兰文，包含帮助、法律、技术解锁及二维码摘要。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run build`、`npm run test:creation-flow`、`npm run test:receiver-sync`、桌面 `test:presentation`（45 项）、`test:appearance`、`test:motion`、`test:target-motion`、`test:item-copy` 与 `git diff --check`；`npm run lint` 仍因仓库未配置 ESLint 而无法启动。
+- 已执行 `npm run sync:ios`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `9ABBF220150C1431D1BAC71B0ECDAD126D68529D7A8620966033EACB137432EF`；当前入口资源为 `index-CvnRbbn5.js`、`index-26grNRPk.css`、`web-BV64WcRt.js`。
+- 尚未提交 Git；工作区中其他既有修改均保留。实体 iPad、VoiceOver、网络连接及 Unity 联调仍需现场验证。
+
+## 76. 2026-09-04 设置页法律声明补全
+
+### 法律内容
+
+- 根据 `APP_PRIVACY_POLICY_ZH-HANS.md` 与 `APP_STORE_SUBMISSION_ZH-HANS.md` 的已确认资料，补全设置页的使用条款摘要、隐私政策及内容版权／第三方声明，不再显示“正式法律内容将在发布前加入”的占位提示。
+- 新增 `src/i18n/legalContent.ts`，提供繁体中文、简体中文、英文、葡萄牙文及波兰文五套正文；内容涵盖账号、作品与本地资料、相机／照片／麦克风／本地网络权限、Supabase、保存与删除、跨境处理、儿童教育场景、用户素材责任及标准 HTTPS/TLS 说明。
+- 许可页列出内置 Logo、背景、主题、遮罩、示例媒体、音效及字体的权利声明，并列明 Capacitor、React、Three.js、i18next、Axios、ws、Lucide 等第三方套件；GSAP 按 GreenSock Standard License 说明。另加入“非医疗、金融、博彩或其他受监管行业应用”的行业声明。没有擅自填入公司法定名称、支持网址或联系方式。
+
+### 阅读体验
+
+- `SettingsPanel` 的法律页面改为按章节渲染标题和正文，支持滚动、换行、复制及安全区域适配；法律说明卡片显示资料整理提示，仍不改变设置、二维码、Unity 通讯或舞台控制行为。
+- 法律资料日期统一为 `2026-08-28`，与上架隐私政策文件保持一致。
+
+### 验证与同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run build`、`npm run sync:ios` 与 `git diff --check`。
+- Web 资源已同步至 `ios/App/App/public`；`dist/index.html` 与 iOS 公共入口 SHA-256 均为 `36844A54E620AFA550679A074A6BFD5B5A3BA0BC7B8C9378A5CFD3F46FC67C65`，当前资源为 `index-B2IGKogW.js`、`index-DglvxQ1j.css`、`web-CGIFadkM.js`。当前构建仍需在实体 iPad 上检查长文滚动、文字复制、VoiceOver 阅读顺序及各语言显示效果。
+
+## 77. 2026-09-04 iOS AppIcon 接入
+
+### 图标资源
+
+- 使用项目根目录 `appicon.png` 作为最终品牌图标来源，替换 `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`。
+- 原图为 `1280×1280` 带透明通道；已按原有构图缩放至 `1024×1024`，以黑色填充透明区域并输出不透明 RGB PNG，符合 App Store Connect 1024 图标资源要求，同时保留 MagicFloor 彩色 Logo 的比例和位置。
+- `Contents.json`、Xcode `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`、`Info.plist` 及 Capacitor 配置无需修改；Debug 与 Release 均继续引用同一 AppIcon 资源。
+
+### 验证
+
+- 图标文件已验证为 `1024×1024`、`Format24bppRgb`，SHA-256 为 `65487F33D6FADBEF54613FFEBED16833FAD21C1AC9C81760FE813660442BD13B`。
+- 根目录 `appicon.png` 保留为源文件；后续若替换源图，需要重新生成并复制到上述 AppIcon 资源路径。实体 Xcode Archive、App Store Connect 图标预览及真实 iPad 安装仍需在 macOS 环境确认。

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import axios from 'axios'
-import { Image as ImageIcon, Plus, Zap, ZapOff } from 'lucide-react'
+import { Camera, FileUp, Image as ImageIcon, Images, Plus, Zap, ZapOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 import { playArtworkLaunchSound, stopArtworkLaunchSound } from '../services/artworkLaunchAudio.ts'
@@ -1286,13 +1286,16 @@ const UploadPage: React.FC<UploadPageProps> = ({
           />
           <div className="upload-action-sheet">
             <button type="button" onClick={openFilePicker} className="upload-action-item">
-              {t('upload.photoLibrary')}
+              <Images size={20} strokeWidth={2.2} aria-hidden="true" />
+              <span>{t('upload.photoLibrary')}</span>
             </button>
             <button type="button" onClick={handleOpenCamera} className="upload-action-item">
-              {t('upload.takePhoto')}
+              <Camera size={20} strokeWidth={2.2} aria-hidden="true" />
+              <span>{t('upload.takePhoto')}</span>
             </button>
             <button type="button" onClick={openFilePicker} className="upload-action-item">
-              {t('upload.chooseFile')}
+              <FileUp size={20} strokeWidth={2.2} aria-hidden="true" />
+              <span>{t('upload.chooseFile')}</span>
             </button>
           </div>
         </div>

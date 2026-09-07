@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  CircleHelp,
   FlipHorizontal2,
   FlipVertical2,
   ImageIcon,
@@ -144,6 +145,12 @@ import {
   getDynamicVerticalWaveKeyframes,
   getDynamicVerticalWaveOffsets
 } from '../../desktop-runtime/renderer/dynamic-motion-core.js'
+import {
+  normalizeMotionPath,
+  optimizeMotionPath,
+  sampleMotionPath,
+  type DynamicMotionPath
+} from '../../desktop-runtime/renderer/dynamic-motion-path-core.js'
 import { getDynamicMoveDurationSeconds } from '../../desktop-runtime/renderer/dynamic-speed-core.js'
 import {
   getDynamicBackgroundTransitionTiming,
@@ -214,6 +221,13 @@ interface TargetEditSnapshot {
   targetLoop: boolean
   hideAfterTarget: boolean
   targetPosition?: Point
+  motionPath?: DynamicMotionPath
+}
+
+interface TargetRoutePointerState {
+  pointerId: number
+  mode: 'draw' | 'node'
+  nodeIndex?: number
 }
 
 interface DynamicItemPlaybackEpoch {
@@ -361,6 +375,8 @@ const PREVIEW_FADE_APPEAR_DURATION_MS = 420
 const PREVIEW_DROP_APPEAR_DURATION_MS = 620
 const PREVIEW_TRACK_APPEAR_DURATION_MS = 560
 const TARGET_ARRIVAL_SETTLE_MS = 80
+const TARGET_ROUTE_MIN_POINT_DISTANCE = 0.004
+const TARGET_ROUTE_NODE_HIT_RADIUS = 34
 const PREVIEW_BGM_VOLUME = 0.72
 const PREVIEW_BGM_DUCK_VOLUME = 0.22
 const PREVIEW_BGM_TRANSITION_DUCK_VOLUME = 0.1
@@ -685,6 +701,7 @@ interface DynamicStageTargetProps {
   editing: boolean
   item: DynamicItem
   targetPosition?: Point
+  motionPath?: DynamicMotionPath
   stageSize: { width: number; height: number }
   appearDelayMs: number
   appearAnimation: DynamicAppearAnimation
@@ -908,6 +925,7 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
   editing,
   item,
   targetPosition,
+  motionPath,
   stageSize,
   appearDelayMs,
   appearAnimation,
@@ -921,6 +939,9 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
   children
 }) => {
   const elementRef = useRef<HTMLDivElement>(null)
+  const motionPathKey = motionPath
+    ? motionPath.points.map((point) => `${point.x}:${point.y}`).join('|')
+    : ''
 
   useLayoutEffect(() => {
     if (!editing) return undefined
@@ -948,7 +969,7 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
       return undefined
     }
 
-    if (!previewing || !ready || !enabled || !targetPosition) {
+    if (!previewing || !ready || !enabled || (!targetPosition && !motionPath)) {
       element.style.removeProperty('transform')
       element.style.removeProperty('opacity')
       element.style.removeProperty('pointer-events')
@@ -979,12 +1000,28 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
       element.style.removeProperty('pointer-events')
     }
 
+    const getPathOffset = (progress: number) => {
+      if (!motionPath) {
+        return {
+          x: offsetX * progress,
+          y: offsetY * progress
+        }
+      }
+      const point = sampleMotionPath(motionPath, progress)
+      return {
+        x: point.x * stageWidth,
+        y: point.y * stageHeight
+      }
+    }
+
     if (reduceMotion) {
       const progress = clamp(targetElapsedMs / Math.max(1, duration), 0, 1)
       const remainingDuration = Math.max(1, duration - targetElapsedMs)
+      const currentOffset = getPathOffset(progress)
+      const finalOffset = getPathOffset(1)
       animation = element.animate([
-        { transform: `translate3d(${offsetX * progress}px, ${offsetY * progress}px, 0)` },
-        { transform: `translate3d(${offsetX}px, ${offsetY}px, 0)` }
+        { transform: `translate3d(${currentOffset.x}px, ${currentOffset.y}px, 0)` },
+        { transform: `translate3d(${finalOffset.x}px, ${finalOffset.y}px, 0)` }
       ], {
         duration: remainingDuration,
         delay,
@@ -993,13 +1030,14 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
       })
     } else {
       const animationDuration = loop ? duration * 2 : duration
-      const sampleCount = 32
+      const sampleCount = motionPath ? 48 : 32
       const keyframes = Array.from({ length: sampleCount + 1 }, (_, index) => {
         const offset = index / sampleCount
         const progress = sampleTargetMotionProgress(animationDuration * offset, duration, loop)
+        const pathOffset = getPathOffset(progress)
         return {
           offset,
-          transform: `translate3d(${offsetX * progress}px, ${offsetY * progress}px, 0)`
+          transform: `translate3d(${pathOffset.x}px, ${pathOffset.y}px, 0)`
         }
       })
       animation = element.animate(keyframes, {
@@ -1031,7 +1069,7 @@ const DynamicStageTarget: React.FC<DynamicStageTargetProps> = ({
       if (arrivalTimer !== undefined) window.clearTimeout(arrivalTimer)
       animation.cancel()
     }
-  }, [appearAnimation, appearDelayMs, editing, enabled, epochStartedAt, hideAfterTarget, item.id, item.moveSpeed, item.position.x, item.position.y, loop, onArrival, previewing, ready, replayId, schedule, stageSize.height, stageSize.width, targetPosition?.x, targetPosition?.y])
+  }, [appearAnimation, appearDelayMs, editing, enabled, epochStartedAt, hideAfterTarget, item.id, item.moveSpeed, item.position.x, item.position.y, loop, motionPathKey, onArrival, previewing, ready, replayId, schedule, stageSize.height, stageSize.width, targetPosition?.x, targetPosition?.y])
 
   return (
     <div
@@ -1533,6 +1571,10 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const clickAnimationRangeCloseButtonRef = useRef<HTMLButtonElement>(null)
   const animationSwipeStartRef = useRef<{ pointerId: number; x: number } | null>(null)
   const targetEditSnapshotRef = useRef<TargetEditSnapshot | null>(null)
+  const targetRoutePointerRef = useRef<TargetRoutePointerState | null>(null)
+  const targetRouteDraftRef = useRef<Point[]>([])
+  const layerRulesButtonRef = useRef<HTMLButtonElement>(null)
+  const layerRulesCloseButtonRef = useRef<HTMLButtonElement>(null)
   const itemPlaybackSessionRef = useRef('')
   const itemPlaybackContextRef = useRef('')
   const itemPlaybackEpochCounterRef = useRef(0)
@@ -1621,8 +1663,12 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const [clickAnimationDraft, setClickAnimationDraft] = useState<number[]>([])
   const [targetEditingItemId, setTargetEditingItemId] = useState('')
   const [targetDraftPosition, setTargetDraftPosition] = useState<Point | null>(null)
+  const [targetDraftPath, setTargetDraftPath] = useState<Point[]>([])
+  const [targetRouteMode, setTargetRouteMode] = useState(false)
+  const [targetRouteDrawing, setTargetRouteDrawing] = useState(false)
   const [targetDraftLoop, setTargetDraftLoop] = useState(false)
   const [targetDraftHideAfterTarget, setTargetDraftHideAfterTarget] = useState(false)
+  const [layerRulesOpen, setLayerRulesOpen] = useState(false)
   const [previewingAudioId, setPreviewingAudioId] = useState('')
   const [isAddingAudio, setIsAddingAudio] = useState(false)
   const [audioRecorderContext, setAudioRecorderContext] = useState<'item' | 'background' | 'flow' | null>(null)
@@ -1670,8 +1716,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       })
     }
     targetEditSnapshotRef.current = null
+    targetRoutePointerRef.current = null
+    targetRouteDraftRef.current = []
     setTargetEditingItemId('')
     setTargetDraftPosition(null)
+    setTargetDraftPath([])
+    setTargetRouteMode(false)
+    setTargetRouteDrawing(false)
     setTargetDraftLoop(false)
     setTargetDraftHideAfterTarget(false)
     setManipulatingItemId('')
@@ -1759,7 +1810,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   ].join(':')).join('|')
   const activeTrack = selectedItem ? getItemTrack(selectedItem) : 'middle'
   const selectedTargetActive = Boolean(
-    selectedItem?.targetMode === 'target' && selectedItem.targetPosition
+    selectedItem?.targetMode === 'target'
+      && (selectedItem.targetPosition || selectedItem.motionPath)
   )
   const targetEditorOpen = Boolean(
     selectedItem && targetEditingItemId === selectedItem.id
@@ -1781,7 +1833,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const previewBackgroundPlayMode = previewSelectedBackgroundOnly
     ? 'fixed'
     : group.backgroundPlayMode ?? 'fixed'
-  const showBackgroundQuickSwitcher = !previewMode && backgrounds.length > 0 && visibleBackgrounds.length >= 2
+  const showBackgroundQuickSwitcher = !previewMode && visibleBackgrounds.length > 0
   const backgroundIntervalDisplayValue = Number(backgroundIntervalDraft)
   const backgroundWheelValue = Number.isFinite(backgroundIntervalDisplayValue) && backgroundIntervalDisplayValue > 0
     ? backgroundIntervalDisplayValue
@@ -1858,6 +1910,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   const targetEditingItem = targetEditingItemId
     ? sortedItems.find((item) => item.id === targetEditingItemId)
     : undefined
+  const getDraftRouteEndpoint = (item: DynamicItem, points = targetDraftPath): Point => {
+    const lastPoint = points[points.length - 1]
+    if (!lastPoint) return item.targetPosition ?? item.position
+    return {
+      x: clamp(item.position.x + lastPoint.x, 0, 1),
+      y: clamp(item.position.y + lastPoint.y, 0, 1)
+    }
+  }
+  const getDraftRouteAbsolutePoints = (item: DynamicItem, points = targetDraftPath) => (
+    points.map((point) => ({
+      x: clamp(item.position.x + point.x, 0, 1),
+      y: clamp(item.position.y + point.y, 0, 1)
+    }))
+  )
+  const setDraftRoutePoints = (points: Point[], item = targetEditingItem) => {
+    const normalizedPoints = points.length > 0
+      ? points.map((point) => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
+      : [{ x: 0, y: 0 }]
+    normalizedPoints[0] = { x: 0, y: 0 }
+    targetRouteDraftRef.current = normalizedPoints
+    setTargetDraftPath(normalizedPoints)
+    if (item) setTargetDraftPosition(getDraftRouteEndpoint(item, normalizedPoints))
+  }
   const backgroundTransitionRenderTiming = backgroundTransitionState
     ? getBackgroundTransitionTiming(
         backgroundTransitionState.type,
@@ -2543,7 +2618,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }, [clickAnimationRangeOpen])
 
   useEffect(() => {
-    if (!isImagePreviewOpen && !copyConfirmOpen && !clickAnimationRangeOpen) return undefined
+    if (!layerRulesOpen) return undefined
+    const frame = window.requestAnimationFrame(() => layerRulesCloseButtonRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [layerRulesOpen])
+
+  useEffect(() => {
+    if (!isImagePreviewOpen && !copyConfirmOpen && !clickAnimationRangeOpen && !layerRulesOpen) return undefined
     const handleModalKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (isImagePreviewOpen) {
@@ -2557,6 +2638,11 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         setClickAnimationDraft([])
         return
       }
+      if (layerRulesOpen) {
+        setLayerRulesOpen(false)
+        window.requestAnimationFrame(() => layerRulesButtonRef.current?.focus({ preventScroll: true }))
+        return
+      }
       if (isCopying) return
       setCopyConfirmOpen(false)
       setCopyErrorKey('')
@@ -2564,7 +2650,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     }
     window.addEventListener('keydown', handleModalKeyDown)
     return () => window.removeEventListener('keydown', handleModalKeyDown)
-  }, [clickAnimationRangeOpen, copyConfirmOpen, isCopying, isImagePreviewOpen])
+  }, [clickAnimationRangeOpen, copyConfirmOpen, isCopying, isImagePreviewOpen, layerRulesOpen])
 
   useEffect(() => {
     if (!stagePlaybackActive) return undefined
@@ -4741,6 +4827,8 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       moveMode,
       targetMode: 'loop',
       targetLoop: false,
+      targetPosition: undefined,
+      motionPath: undefined,
       hideAfterTarget: false
     }), { persist: true, emit: false })
     if (changedItem) {
@@ -4778,6 +4866,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       targetMode: item.targetMode ?? 'loop',
       targetLoop: item.targetLoop === true,
       targetPosition: item.targetPosition ?? null,
+      motionPath: item.motionPath ?? null,
       backgroundId: activeBackgroundId,
       ...(hasAppearanceByBackground ? { appearanceByBackground } : {}),
       ...appearancePayload,
@@ -4819,28 +4908,6 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     window.requestAnimationFrame(() => targetSetButtonRef.current?.focus({ preventScroll: true }))
   }
 
-  const handleTargetModeChange = (targetMode: DynamicTargetMode) => {
-    if (!selectedItem) return
-
-    // The target mode choice is intentionally only actionable while entering
-    // the editor. Once the editor is open, clicking the selected choice must
-    // leave the draft position/loop value untouched.
-    if (targetMode === 'target') {
-      if (targetEditingItemId === selectedItem.id) return
-      startTargetEditing()
-      return
-    }
-
-    clearTargetEditing()
-    const changedItem = persistAdvancedItem((item) => ({
-      ...item,
-      targetMode,
-      targetLoop: false,
-      hideAfterTarget: false
-    }))
-    if (changedItem) sendItemMotionState(changedItem)
-  }
-
   const handleTargetLoopToggle = () => {
     if (!selectedItem || targetEditingItemId !== selectedItem.id) return
     setTargetDraftLoop((currentLoop) => !currentLoop)
@@ -4851,23 +4918,188 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     setTargetDraftHideAfterTarget((currentValue) => !currentValue)
   }
 
-  const startTargetEditing = () => {
+  const getTargetRouteStagePoint = (clientX: number, clientY: number) => {
+    const stage = stageRef.current
+    if (!stage) return undefined
+    const rect = stage.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return undefined
+    return {
+      x: clamp((clientX - rect.left) / rect.width, 0, 1),
+      y: clamp((clientY - rect.top) / rect.height, 0, 1)
+    }
+  }
+
+  const getTargetRouteRelativePoint = (item: DynamicItem, absolutePoint: Point): Point => ({
+    x: absolutePoint.x - item.position.x,
+    y: absolutePoint.y - item.position.y
+  })
+
+  const optimizeTargetRouteDraft = () => {
+    if (!targetEditingItem) return
+    const optimized = optimizeMotionPath(targetRouteDraftRef.current, {
+      tolerance: 0.004,
+      smoothing: 1,
+      debounceDistance: TARGET_ROUTE_MIN_POINT_DISTANCE
+    })
+    if (optimized) setDraftRoutePoints(optimized.points, targetEditingItem)
+  }
+
+  const handleRedrawTargetRoute = () => {
+    if (!targetEditingItem) return
+    setDraftRoutePoints([{ x: 0, y: 0 }], targetEditingItem)
+    setTargetRouteMode(true)
+    setTargetRouteDrawing(false)
+  }
+
+  const handleTargetRouteModeChange = (route: boolean) => {
+    if (!selectedItem) return
+    if (targetEditingItemId !== selectedItem.id) {
+      startTargetEditing(route ? 'path' : 'point')
+      return
+    }
+
+    setTargetRouteMode(route)
+    setTargetRouteDrawing(false)
+    if (route && targetRouteDraftRef.current.length === 0) {
+      setDraftRoutePoints([{ x: 0, y: 0 }], selectedItem)
+    }
+  }
+
+  const handleTargetRoutePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!targetRouteMode || !targetEditingItem) return
+    event.preventDefault()
+    event.stopPropagation()
+    const absolutePoint = getTargetRouteStagePoint(event.clientX, event.clientY)
+    if (!absolutePoint) return
+
+    const rect = stageRef.current?.getBoundingClientRect()
+    const currentPoints = targetRouteDraftRef.current.length > 0
+      ? targetRouteDraftRef.current
+      : [{ x: 0, y: 0 }]
+    const absolutePoints = getDraftRouteAbsolutePoints(targetEditingItem, currentPoints)
+    const pointerX = absolutePoint.x * (rect?.width ?? 1)
+    const pointerY = absolutePoint.y * (rect?.height ?? 1)
+    let nearestNodeIndex = -1
+    let nearestDistance = TARGET_ROUTE_NODE_HIT_RADIUS
+    absolutePoints.forEach((point, index) => {
+      if (index === 0) return
+      const distance = Math.hypot(
+        point.x * (rect?.width ?? 1) - pointerX,
+        point.y * (rect?.height ?? 1) - pointerY
+      )
+      if (distance <= nearestDistance) {
+        nearestDistance = distance
+        nearestNodeIndex = index
+      }
+    })
+
+    if (nearestNodeIndex >= 1) {
+      targetRoutePointerRef.current = {
+        pointerId: event.pointerId,
+        mode: 'node',
+        nodeIndex: nearestNodeIndex
+      }
+    } else {
+      const relativePoint = getTargetRouteRelativePoint(targetEditingItem, absolutePoint)
+      const nextPoints = [{ x: 0, y: 0 }]
+      if (getDistance(relativePoint, nextPoints[0]) >= TARGET_ROUTE_MIN_POINT_DISTANCE) {
+        nextPoints.push(relativePoint)
+      }
+      setDraftRoutePoints(nextPoints, targetEditingItem)
+      targetRoutePointerRef.current = { pointerId: event.pointerId, mode: 'draw' }
+    }
+
+    setTargetRouteDrawing(true)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {}
+  }
+
+  const handleTargetRoutePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointerState = targetRoutePointerRef.current
+    if (!pointerState || pointerState.pointerId !== event.pointerId || !targetRouteMode || !targetEditingItem) return
+    event.preventDefault()
+    event.stopPropagation()
+    const absolutePoint = getTargetRouteStagePoint(event.clientX, event.clientY)
+    if (!absolutePoint) return
+    const relativePoint = getTargetRouteRelativePoint(targetEditingItem, absolutePoint)
+    const currentPoints = targetRouteDraftRef.current.length > 0
+      ? targetRouteDraftRef.current
+      : [{ x: 0, y: 0 }]
+
+    if (pointerState.mode === 'node' && pointerState.nodeIndex !== undefined) {
+      const nextPoints = currentPoints.map((point, index) => (
+        index === pointerState.nodeIndex ? relativePoint : point
+      ))
+      setDraftRoutePoints(nextPoints, targetEditingItem)
+      return
+    }
+
+    const lastPoint = currentPoints[currentPoints.length - 1] ?? { x: 0, y: 0 }
+    if (getDistance(relativePoint, lastPoint) < TARGET_ROUTE_MIN_POINT_DISTANCE) return
+    if (currentPoints.length >= 256) return
+    setDraftRoutePoints([...currentPoints, relativePoint], targetEditingItem)
+  }
+
+  const handleTargetRoutePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointerState = targetRoutePointerRef.current
+    if (!pointerState || pointerState.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {}
+    const item = targetEditingItem
+    const points = targetRouteDraftRef.current
+    targetRoutePointerRef.current = null
+    setTargetRouteDrawing(false)
+    if (!item || points.length < 2) return
+
+    if (pointerState.mode === 'draw') {
+      const optimized = optimizeMotionPath(points, {
+        tolerance: 0.004,
+        smoothing: 1,
+        debounceDistance: TARGET_ROUTE_MIN_POINT_DISTANCE
+      })
+      if (optimized) setDraftRoutePoints(optimized.points, item)
+      return
+    }
+
+    const normalized = normalizeMotionPath({ version: 1, points })
+    if (normalized) setDraftRoutePoints(normalized.points, item)
+  }
+
+  const startTargetEditing = (requestedMode?: 'point' | 'path') => {
     if (!selectedItem) return
     // Avoid reinitializing an in-progress draft when the selected mode card is
     // clicked again.
     if (targetEditingItemId === selectedItem.id) return
 
     clearTargetEditing()
+    const existingMotionPath = normalizeMotionPath(selectedItem.motionPath)
+    const routeMode = requestedMode === undefined
+      ? Boolean(existingMotionPath)
+      : requestedMode === 'path'
+    const initialRoutePoints = existingMotionPath?.points ?? [{ x: 0, y: 0 }]
     targetEditSnapshotRef.current = {
       itemId: selectedItem.id,
       moveMode: selectedItem.moveMode,
       targetMode: selectedItem.targetMode ?? 'loop',
       targetLoop: selectedItem.targetLoop === true,
       hideAfterTarget: selectedItem.hideAfterTarget === true,
-      targetPosition: selectedItem.targetPosition
+      targetPosition: selectedItem.targetPosition,
+      motionPath: existingMotionPath
     }
     setTargetEditingItemId(selectedItem.id)
-    setTargetDraftPosition(selectedItem.targetPosition ?? selectedItem.position)
+    setTargetDraftPosition(existingMotionPath
+      ? getDraftRouteEndpoint(selectedItem, initialRoutePoints)
+      : selectedItem.targetPosition ?? selectedItem.position)
+    targetRouteDraftRef.current = initialRoutePoints
+    setTargetDraftPath(initialRoutePoints)
+    setTargetRouteMode(routeMode)
+    setTargetRouteDrawing(false)
     setTargetDraftLoop(selectedItem.targetLoop === true)
     setTargetDraftHideAfterTarget(selectedItem.hideAfterTarget === true)
     setManipulatingItemId(selectedItem.id)
@@ -4888,10 +5120,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
       x: clamp(targetDraftPosition.x, 0, 1),
       y: clamp(targetDraftPosition.y, 0, 1)
     }
+    const optimizedPath = targetRouteMode
+      ? optimizeMotionPath(targetRouteDraftRef.current, {
+          tolerance: 0.004,
+          smoothing: 1,
+          debounceDistance: TARGET_ROUTE_MIN_POINT_DISTANCE
+        })
+      : undefined
     const changedItem = persistAdvancedItem((item) => ({
       ...item,
       targetMode: 'target',
       targetPosition,
+      motionPath: optimizedPath ?? undefined,
       targetLoop: targetDraftLoop,
       hideAfterTarget: !targetDraftLoop && targetDraftHideAfterTarget
     }))
@@ -4926,6 +5166,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     if (!offset) return
 
     event.preventDefault()
+    if (targetRouteMode && selectedItem && targetRouteDraftRef.current.length >= 2) {
+      const currentPoints = targetRouteDraftRef.current
+      const lastPoint = currentPoints[currentPoints.length - 1] ?? { x: 0, y: 0 }
+      setDraftRoutePoints([
+        ...currentPoints.slice(0, -1),
+        {
+          x: clamp(lastPoint.x + offset.x, -selectedItem.position.x, 1 - selectedItem.position.x),
+          y: clamp(lastPoint.y + offset.y, -selectedItem.position.y, 1 - selectedItem.position.y)
+        }
+      ], selectedItem)
+      return
+    }
     setTargetDraftPosition((currentPosition) => currentPosition ? {
       x: clamp(currentPosition.x + offset.x, 0, 1),
       y: clamp(currentPosition.y + offset.y, 0, 1)
@@ -5278,6 +5530,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
           'targetMode',
           'targetLoop',
           'targetPosition',
+          'motionPath',
           'appearanceDelayMs',
           'appearanceHideMs',
           'appearanceByBackground',
@@ -6750,7 +7003,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
     const primary = displayedAppearMode === 'all' || !appearanceOrder
       ? [t('control.layerAppearanceSimultaneous')]
       : [t('control.layerAppearanceOrder', { value: appearanceOrder })]
-    if (item.targetMode === 'target' && item.targetPosition) {
+    if (item.targetMode === 'target' && (item.targetPosition || item.motionPath)) {
       primary.push(t('control.layerMoveTime', {
         value: Number((getTargetMotionDurationMs(getItemMoveSpeed(item)) / 1000).toFixed(1))
       }))
@@ -7090,10 +7343,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   </button>
                   <button
                     type="button"
-                    className="ipad-button preview-action primary-button success-button"
+                    className="ipad-button preview-action dynamic-preview-entry-button primary-button success-button"
                     onClick={() => setPreviewModeEnabled(true)}
+                    aria-label={t('control.previewAria')}
+                    title={t('control.preview')}
                   >
-                    {t('control.preview')}
+                    <img
+                      src={RIGHT_LOGO_URL}
+                      alt=""
+                      className="dynamic-preview-brand-icon"
+                      draggable={false}
+                    />
+                    <Play size={18} fill="currentColor" strokeWidth={2.4} aria-hidden="true" />
                   </button>
                 </>
               )}
@@ -7164,16 +7425,16 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                   type="button"
                   className={`ipad-button dynamic-background-quick-play ${stagePlaybackActive ? 'is-playing' : ''}`}
                   onClick={handleCurrentBackgroundPlayback}
-                  aria-label={t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}
+                  aria-label={t(stagePlaybackActive ? 'control.backgroundQuickStop' : 'control.backgroundQuickPlay')}
                   aria-pressed={stagePlaybackActive}
-                  title={t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}
+                  title={t(stagePlaybackActive ? 'control.backgroundQuickStop' : 'control.backgroundQuickPlay')}
                 >
                   {stagePlaybackActive ? (
                     <Square size={18} fill="currentColor" aria-hidden="true" />
                   ) : (
                     <Play size={18} fill="currentColor" aria-hidden="true" />
                   )}
-                  <span>{t(stagePlaybackActive ? 'control.stopBackgroundPlayback' : 'control.playSelectedBackground')}</span>
+                  <span>{t(stagePlaybackActive ? 'control.stopShort' : 'control.playShort')}</span>
                 </button>
               </section>
             )}
@@ -7222,6 +7483,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const startY = targetEditingItem.position.y * height
               const endX = targetDraftPosition.x * width
               const endY = targetDraftPosition.y * height
+              const routeAbsolutePoints = targetRouteMode
+                ? getDraftRouteAbsolutePoints(targetEditingItem)
+                : []
+              const hasRoute = routeAbsolutePoints.length >= 2
+              const routeSvgPoints = routeAbsolutePoints
+                .map((point) => `${point.x * width},${point.y * height}`)
+                .join(' ')
               const distance = Math.hypot(endX - startX, endY - startY)
               const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI
               const coordinatesOverlap = distance < 8
@@ -7300,15 +7568,52 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                     aria-hidden="true"
                     style={{ zIndex: 10 + targetEditingItem.order }}
                   >
-                    <span
-                      className={`dynamic-target-path ${coordinatesOverlap ? 'is-overlapping' : ''}`}
-                      style={{
-                        left: `${startX}px`,
-                        top: `${startY}px`,
-                        width: `${distance}px`,
-                        transform: `rotate(${angle}deg)`
-                      }}
-                    />
+                    {hasRoute ? (
+                      <svg
+                        className="dynamic-target-route-svg"
+                        viewBox={`0 0 ${width} ${height}`}
+                        preserveAspectRatio="none"
+                        aria-hidden="true"
+                      >
+                        <defs>
+                          <marker
+                            id={`dynamic-target-route-arrow-${targetEditingItem.id}`}
+                            viewBox="0 0 10 10"
+                            refX="8"
+                            refY="5"
+                            markerWidth="7"
+                            markerHeight="7"
+                            orient="auto-start-reverse"
+                          >
+                            <path d="M 0 0 L 10 5 L 0 10 z" />
+                          </marker>
+                        </defs>
+                        <polyline
+                          className="dynamic-target-route-line"
+                          points={routeSvgPoints}
+                          markerEnd={`url(#dynamic-target-route-arrow-${targetEditingItem.id})`}
+                        />
+                        {routeAbsolutePoints.map((point, index) => (
+                          <circle
+                            key={`${targetEditingItem.id}-route-node-${index}`}
+                            className={`dynamic-target-route-node ${index === 0 ? 'origin' : index === routeAbsolutePoints.length - 1 ? 'destination' : ''}`}
+                            cx={point.x * width}
+                            cy={point.y * height}
+                            r={index === 0 || index === routeAbsolutePoints.length - 1 ? 8 : 5}
+                          />
+                        ))}
+                      </svg>
+                    ) : (
+                      <span
+                        className={`dynamic-target-path ${coordinatesOverlap ? 'is-overlapping' : ''}`}
+                        style={{
+                          left: `${startX}px`,
+                          top: `${startY}px`,
+                          width: `${distance}px`,
+                          transform: `rotate(${angle}deg)`
+                        }}
+                      />
+                    )}
                     <span
                       className="dynamic-target-origin-ghost"
                       data-dynamic-item-id={targetEditingItem.id}
@@ -7364,6 +7669,18 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                       <span>{endPointLabel}</span>
                     </span>
                   </div>
+                  {targetRouteMode && (
+                    <div
+                      className={`dynamic-target-route-interaction ${targetRouteDrawing ? 'is-drawing' : ''}`}
+                      role="application"
+                      aria-label={t('control.motionPathEditing')}
+                      onPointerDown={handleTargetRoutePointerDown}
+                      onPointerMove={handleTargetRoutePointerMove}
+                      onPointerUp={handleTargetRoutePointerEnd}
+                      onPointerCancel={handleTargetRoutePointerEnd}
+                      onLostPointerCapture={handleTargetRoutePointerEnd}
+                    />
+                  )}
                 </>
               )
             })()}
@@ -7379,7 +7696,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
               const isAmplitudeStatic = resolvedMoveMode !== 'left' && resolvedMoveMode !== 'right' && item.movePercent <= 0
               const targetEnabled = advancedFeaturesEnabled
                 && item.targetMode === 'target'
-                && Boolean(item.targetPosition)
+                && Boolean(item.targetPosition || item.motionPath)
               const shouldPlayMotion = playbackActive && !isManipulating && !isAmplitudeStatic && !targetEnabled
               const motionMode = shouldPlayMotion ? resolvedMoveMode : 'none'
               const appearDelayMs = appearanceTiming.appearanceDelayMs ?? (
@@ -7460,6 +7777,13 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         targetPosition={targetEditingItemId === item.id
                           ? targetDraftPosition ?? item.position
                           : item.targetPosition}
+                        motionPath={targetEditingItemId === item.id
+                          ? (targetRouteMode
+                            ? (targetDraftPath.length >= 2
+                              ? { version: 1, points: targetDraftPath }
+                              : undefined)
+                            : undefined)
+                          : item.motionPath}
                         stageSize={stageSize}
                         appearDelayMs={appearDelayMs}
                         appearAnimation={displayedAppearAnimation}
@@ -7691,7 +8015,19 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
             <div className="dynamic-layer-header">
               <div>
                 <p className="eyebrow">{t('control.stageStructure')}</p>
-                <h2 data-flow-step-heading tabIndex={-1}>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
+                <div className="dynamic-layer-title-row">
+                  <h2 data-flow-step-heading tabIndex={-1}>{t('control.layers')} <span>{group.items.length}/{MAX_DYNAMIC_ITEMS_PER_GROUP}</span></h2>
+                  <button
+                    ref={layerRulesButtonRef}
+                    type="button"
+                    className="dynamic-layer-rules-button"
+                    onClick={() => setLayerRulesOpen(true)}
+                    aria-label={t('control.layerRules')}
+                    title={t('control.layerRules')}
+                  >
+                    <CircleHelp size={15} strokeWidth={2.4} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               <div className="dynamic-add-item-menu-anchor">
                 <button
@@ -8034,16 +8370,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         <>
                         <button
                           type="button"
-                          className={`dynamic-target-mode-choice ${selectedTargetForControls ? 'active' : ''}`}
-                          onClick={() => handleTargetModeChange('target')}
-                          aria-pressed={selectedTargetForControls}
+                          className={`dynamic-target-mode-choice ${!targetRouteMode ? 'active' : ''}`}
+                          onClick={() => handleTargetRouteModeChange(false)}
+                          aria-pressed={!targetRouteMode}
                         >
                           <Target size={18} strokeWidth={2.3} aria-hidden="true" />
                           <span>
                             <strong>{t('control.moveToDestination')}</strong>
-                            <small>{selectedTargetActive ? t('control.destinationReady') : t('control.setDestination')}</small>
+                            <small>{t('control.directDestination')}</small>
                           </span>
-                          {selectedTargetForControls && <Check size={17} strokeWidth={2.5} aria-hidden="true" />}
+                          {!targetRouteMode && <Check size={17} strokeWidth={2.5} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dynamic-target-mode-choice ${targetRouteMode ? 'active' : ''}`}
+                          onClick={() => handleTargetRouteModeChange(true)}
+                          aria-pressed={targetRouteMode}
+                        >
+                          <Pencil size={18} strokeWidth={2.3} aria-hidden="true" />
+                          <span>
+                            <strong>{t('control.editMotionPath')}</strong>
+                            <small>{t('control.motionPathHint')}</small>
+                          </span>
+                          {targetRouteMode && <Check size={17} strokeWidth={2.5} aria-hidden="true" />}
                         </button>
                         <button
                           type="button"
@@ -8075,7 +8424,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                           id={`dynamic-target-edit-help-${selectedItem.id}`}
                           className="dynamic-visually-hidden"
                         >
-                          {t('control.targetEditingInstructions')}
+                          {targetRouteMode
+                            ? t('control.motionPathEditing')
+                            : t('control.targetEditingInstructions')}
                         </span>
                         <span
                           id={`dynamic-target-edit-position-${selectedItem.id}`}
@@ -8089,6 +8440,27 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                             y: Math.round((targetDraftPosition?.y ?? selectedItem.position.y) * 100)
                           })}
                         </span>
+                        {targetRouteMode && (
+                          <div className="dynamic-target-route-actions">
+                            <button
+                              type="button"
+                              className="ipad-button secondary-button"
+                              onClick={optimizeTargetRouteDraft}
+                              disabled={targetDraftPath.length < 2}
+                            >
+                              <Sparkles size={16} strokeWidth={2.2} aria-hidden="true" />
+                              {t('control.optimizeMotionPath')}
+                            </button>
+                            <button
+                              type="button"
+                              className="ipad-button secondary-button"
+                              onClick={handleRedrawTargetRoute}
+                            >
+                              <Pencil size={16} strokeWidth={2.2} aria-hidden="true" />
+                              {t('control.redrawMotionPath')}
+                            </button>
+                          </div>
+                        )}
                         <button type="button" className="ipad-button secondary-button" onClick={cancelTargetEditing}>
                           {t('common.cancel')}
                         </button>
@@ -8102,7 +8474,7 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                         ref={targetSetButtonRef}
                         type="button"
                         className="dynamic-target-set-button"
-                        onClick={startTargetEditing}
+                        onClick={() => startTargetEditing()}
                         aria-expanded={targetEditorOpen}
                         aria-controls={`dynamic-target-mode-${selectedItem.id}`}
                       >
@@ -9584,6 +9956,72 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
         onCancel={closeBubbleEditor}
         onSubmit={handleBubbleSubmit}
       />
+
+      {layerRulesOpen && (
+        <div className="dynamic-modal-overlay dynamic-layer-rules-overlay" role="presentation">
+          <button
+            type="button"
+            className="settings-scrim"
+            onClick={() => {
+              setLayerRulesOpen(false)
+              window.requestAnimationFrame(() => layerRulesButtonRef.current?.focus({ preventScroll: true }))
+            }}
+            aria-label={t('control.layerRulesDismiss')}
+          />
+          <section
+            className="dynamic-layer-rules-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dynamic-layer-rules-title"
+          >
+            <div className="dynamic-layer-rules-heading">
+              <div>
+                <p className="eyebrow">{t('control.layerRules')}</p>
+                <h2 id="dynamic-layer-rules-title">{t('control.layerRulesTitle')}</h2>
+              </div>
+              <button
+                ref={layerRulesCloseButtonRef}
+                type="button"
+                className="dynamic-panel-close"
+                onClick={() => {
+                  setLayerRulesOpen(false)
+                  window.requestAnimationFrame(() => layerRulesButtonRef.current?.focus({ preventScroll: true }))
+                }}
+                aria-label={t('control.layerRulesDismiss')}
+                title={t('control.layerRulesDismiss')}
+              >
+                <X size={18} strokeWidth={2.4} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="dynamic-layer-rules-list">
+              <div className="dynamic-layer-rule">
+                <span className="dynamic-layer-rule-index">1</span>
+                <div>
+                  <strong>{t('control.layerRulesTopTitle')}</strong>
+                  <p>{t('control.layerRulesTopDescription')}</p>
+                </div>
+              </div>
+              <div className="dynamic-layer-rule">
+                <span className="dynamic-layer-rule-index">2</span>
+                <div>
+                  <strong>{t('control.layerRulesOrderTitle')}</strong>
+                  <p>{t('control.layerRulesOrderDescription')}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="ipad-button primary-button dynamic-layer-rules-dismiss"
+              onClick={() => {
+                setLayerRulesOpen(false)
+                window.requestAnimationFrame(() => layerRulesButtonRef.current?.focus({ preventScroll: true }))
+              }}
+            >
+              {t('control.layerRulesDismiss')}
+            </button>
+          </section>
+        </div>
+      )}
 
       {controlConfirmDialog}
     </main>

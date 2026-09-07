@@ -143,6 +143,40 @@ const normalizeRuntimeClickAnimationIds = (value) => {
 const DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION = 4
 const MAX_DYNAMIC_APPEARANCE_TIME_MS = 86400000
 const APPEARANCE_FADE_DURATION_MS = 420
+const MAX_MOTION_PATH_POINTS = 64
+const MOTION_PATH_VERSION = 1
+
+const normalizeMotionPath = (value) => {
+  if (!value || Number(value.version) !== MOTION_PATH_VERSION || !Array.isArray(value.points)) {
+    return undefined
+  }
+
+  const points = value.points.map((point) => ({
+    x: Number.isFinite(Number(point?.x)) ? Number(point.x) : 0,
+    y: Number.isFinite(Number(point?.y)) ? Number(point.y) : 0
+  }))
+  if (points.length < 2) return undefined
+
+  points[0] = { x: 0, y: 0 }
+  const unique = [points[0]]
+  for (const point of points.slice(1)) {
+    const previous = unique[unique.length - 1]
+    if (Math.hypot(point.x - previous.x, point.y - previous.y) > 1e-6) {
+      unique.push(point)
+    }
+  }
+  if (unique.length < 2) return undefined
+
+  const limited = unique.length <= MAX_MOTION_PATH_POINTS
+    ? unique
+    : Array.from({ length: MAX_MOTION_PATH_POINTS }, (_, index) => (
+      unique[Math.round(index * (unique.length - 1) / (MAX_MOTION_PATH_POINTS - 1))]
+    ))
+  return {
+    version: MOTION_PATH_VERSION,
+    points: limited.map((point) => ({ x: point.x, y: point.y }))
+  }
+}
 
 const normalizeAppearanceTime = (value, fallback = 0) => {
   const numericValue = Number(value)
@@ -791,6 +825,8 @@ const defaultItem = (payload, order = 0) => {
   const kind = payload.kind === 'bubble' ? 'bubble' : 'media'
   const hasImageAssetId = Object.prototype.hasOwnProperty.call(payload, 'imageAssetId')
   const hasNestedImageAssetId = Object.prototype.hasOwnProperty.call(payload.bubble ?? {}, 'imageAssetId')
+  const hasMotionPath = Object.prototype.hasOwnProperty.call(payload, 'motionPath')
+  const motionPath = normalizeMotionPath(payload.motionPath)
   const imageAssetId = kind === 'bubble'
     ? hasImageAssetId
       ? payload.imageAssetId || null
@@ -827,9 +863,14 @@ const defaultItem = (payload, order = 0) => {
     movePercent: payload.movePercent ?? 50,
     moveSpeed: payload.moveSpeed ?? 50,
     moveTrack: payload.moveTrack ?? 'middle',
-    targetMode: payload.targetMode === 'target' && payload.targetPosition ? 'target' : 'loop',
+    targetMode: payload.targetMode === 'target' && (payload.targetPosition || motionPath) ? 'target' : 'loop',
     targetLoop: payload.targetLoop === true,
     targetPosition: payload.targetPosition ?? null,
+    ...(motionPath
+      ? { motionPath }
+      : hasMotionPath
+        ? { motionPath: undefined }
+        : {}),
     audioId: payload.audioId ?? null,
     audioTrigger: payload.audioTrigger ?? 'appearance',
     audioDelayMs: Math.max(0, Number(payload.audioDelayMs) || 0),
@@ -1396,13 +1437,17 @@ const applyDynamicEvent = (eventName, payload) => {
       const existingItems = new Map(group.items.map((item) => [item.itemId, item]))
       const incomingItems = (payload.items ?? []).map((itemPayload, index) => {
         const existing = existingItems.get(itemPayload.itemId) ?? {}
-        const nextItem = defaultItem({
+        const mergedPayload = {
           ...existing,
           ...itemPayload,
           bubble: (itemPayload.kind ?? existing.kind) === 'bubble'
             ? { ...(existing.bubble ?? {}), ...(itemPayload.bubble ?? {}) }
             : itemPayload.bubble
-        }, index)
+        }
+        if (!Object.prototype.hasOwnProperty.call(itemPayload, 'motionPath')) {
+          mergedPayload.motionPath = undefined
+        }
+        const nextItem = defaultItem(mergedPayload, index)
 
         upsertItemAssetMetadata(group, nextItem)
 
@@ -1657,6 +1702,11 @@ const applyDynamicEvent = (eventName, payload) => {
         if (Object.prototype.hasOwnProperty.call(payload, 'targetMode')) item.targetMode = payload.targetMode
         if (Object.prototype.hasOwnProperty.call(payload, 'targetLoop')) item.targetLoop = payload.targetLoop === true
         if (Object.prototype.hasOwnProperty.call(payload, 'targetPosition')) item.targetPosition = payload.targetPosition
+        if (Object.prototype.hasOwnProperty.call(payload, 'motionPath')) {
+          item.motionPath = payload.motionPath === null
+            ? undefined
+            : normalizeMotionPath(payload.motionPath)
+        }
         const appearanceBackgroundId = String(payload.backgroundId ?? '').trim()
         const hasAppearanceByBackground = Object.prototype.hasOwnProperty.call(payload, 'appearanceByBackground')
         if (hasAppearanceByBackground) {

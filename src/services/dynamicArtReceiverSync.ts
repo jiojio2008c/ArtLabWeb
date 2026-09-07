@@ -9,6 +9,7 @@ import {
   type DynamicItem,
   type DynamicMedia,
   type DynamicAudioMedia,
+  type DynamicMotionPath,
   isDynamicBubbleItem,
   isDynamicMediaItem
 } from './dynamicArtStorage.ts'
@@ -29,6 +30,7 @@ import {
   normalizeDynamicBackgroundTransitionDurations,
   type DynamicBackgroundTransitionDurations
 } from '../../desktop-runtime/renderer/background-transition-core.js'
+import { normalizeMotionPath } from '../../desktop-runtime/renderer/dynamic-motion-path-core.js'
 
 const DYNAMIC_RECEIVER_SYNC_KEY = 'magicfloor_dynamic_receiver_sync_v1'
 
@@ -96,6 +98,16 @@ const cloneAppearanceByBackground = (
   )
 }
 
+const cloneMotionPath = (motionPath: DynamicItem['motionPath']): DynamicMotionPath | undefined => {
+  const normalized = normalizeMotionPath(motionPath)
+  return normalized
+    ? {
+        version: 1,
+        points: normalized.points.map((point) => ({ ...point }))
+      }
+    : undefined
+}
+
 const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
   ...group,
   thumbnail: group.thumbnail ? cloneDynamicMedia(group.thumbnail) : group.thumbnail,
@@ -103,10 +115,16 @@ const snapshotDynamicGroupForSync = (group: DynamicGroup): DynamicGroup => ({
   backgrounds: group.backgrounds?.map(cloneDynamicBackground),
   audioLibrary: group.audioLibrary?.map((audio) => cloneDynamicMedia(audio)),
   items: group.items.map((item) => {
+    const motionPath = cloneMotionPath(item.motionPath)
     const baseItem = {
       ...item,
       position: item.position ? { ...item.position } : { x: 0.5, y: 0.5 },
       targetPosition: item.targetPosition ? { ...item.targetPosition } : item.targetPosition,
+      ...(motionPath
+        ? { motionPath }
+        : Object.prototype.hasOwnProperty.call(item, 'motionPath')
+          ? { motionPath: undefined }
+          : {}),
       ...(Array.isArray(item.clickAnimationIds)
         ? { clickAnimationIds: [...item.clickAnimationIds] }
         : {}),
@@ -201,6 +219,7 @@ const toItemPayload = (item: DynamicItem) => {
     targetMode: item.targetMode ?? 'loop',
     targetLoop: item.targetLoop === true,
     targetPosition: item.targetPosition ?? null,
+    motionPath: cloneMotionPath(item.motionPath) ?? null,
     appearanceDelayMs: item.appearanceDelayMs ?? 0,
     appearanceHideMs: item.appearanceHideMs ?? null,
     hideAfterTarget: item.hideAfterTarget === true,
@@ -458,6 +477,7 @@ const getGroupSyncSignature = (group: DynamicGroup) => {
         item.targetLoop === true,
         item.targetPosition?.x ?? null,
         item.targetPosition?.y ?? null,
+        JSON.stringify(cloneMotionPath(item.motionPath) ?? null),
         item.appearanceDelayMs ?? 0,
         item.appearanceHideMs ?? null,
         item.hideAfterTarget === true,

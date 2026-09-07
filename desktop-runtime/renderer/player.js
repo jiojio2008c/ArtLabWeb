@@ -57,6 +57,10 @@ import {
   getDynamicVerticalWaveOffsets,
   sampleDynamicVerticalWave
 } from './dynamic-motion-core.js'
+import {
+  normalizeMotionPath,
+  sampleMotionPath
+} from './dynamic-motion-path-core.js'
 import { getDynamicMoveDurationSeconds } from './dynamic-speed-core.js'
 import {
   drawBubble,
@@ -932,7 +936,7 @@ const getItemAudioTriggerElapsedMs = (item, itemEpoch) => {
     return schedule.activeStartMs + clamp(Number(item.audioDelayMs ?? 0), 0, 600000)
   }
   if (trigger === 'targetArrival') {
-    if (item.targetMode !== 'target' || !item.targetPosition) return null
+    if (item.targetMode !== 'target' || (!item.targetPosition && !normalizeMotionPath(item.motionPath))) return null
     return schedule.activeStartMs
       + getTargetMotionDurationMs(item.moveSpeed, 3.8)
       + TARGET_ARRIVAL_SETTLE_MS
@@ -1762,6 +1766,14 @@ const getItemAppearanceSample = (item, itemIndex, now) => {
   }
 }
 
+const getMotionPathOffset = (motionPath, progress) => {
+  const pathPoint = sampleMotionPath(motionPath, progress)
+  return {
+    x: pathPoint.x * STAGE_WIDTH,
+    y: pathPoint.y * STAGE_HEIGHT
+  }
+}
+
 const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFrame, appearanceSample) => {
   if (!isAdvancedPreviewEnabled()) {
     return {
@@ -1808,7 +1820,8 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
     })
   }
 
-  const targetActive = item.targetMode === 'target' && item.targetPosition
+  const motionPath = normalizeMotionPath(item.motionPath)
+  const targetActive = item.targetMode === 'target' && (item.targetPosition || motionPath)
   let targetX = 0
   let targetY = 0
   let targetHidden = false
@@ -1824,8 +1837,14 @@ const getAdvancedItemPlaybackState = (item, itemIndex, now, image, backgroundFra
         settleMs: TARGET_ARRIVAL_SETTLE_MS
       }
     )
-    targetX = (Number(item.targetPosition.x) - positionX) * STAGE_WIDTH * targetState.progress
-    targetY = (Number(item.targetPosition.y) - positionY) * STAGE_HEIGHT * targetState.progress
+    if (motionPath) {
+      const pathOffset = getMotionPathOffset(motionPath, targetState.progress)
+      targetX = pathOffset.x
+      targetY = pathOffset.y
+    } else {
+      targetX = (Number(item.targetPosition.x) - positionX) * STAGE_WIDTH * targetState.progress
+      targetY = (Number(item.targetPosition.y) - positionY) * STAGE_HEIGHT * targetState.progress
+    }
     targetHidden = targetState.hidden
   }
 

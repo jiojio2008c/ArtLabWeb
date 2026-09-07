@@ -14,6 +14,7 @@ import {
   updateDynamicGroupAppearMode
 } from '../src/services/dynamicArtStorage.ts'
 import { getDefaultClickAnimationIds } from '../desktop-runtime/renderer/dynamic-animation-catalog.js'
+import { normalizeMotionPath } from '../desktop-runtime/renderer/dynamic-motion-path-core.js'
 
 const now = 1_700_000_000_000
 const background = {
@@ -61,6 +62,14 @@ const item = {
   hideAfterTarget: true,
   targetPosition: { x: 0.8, y: 0.3 },
   targetLoop: false,
+  motionPath: {
+    version: 1,
+    points: [
+      { x: 0.12, y: -0.08 },
+      { x: 0.22, y: -0.02 },
+      { x: 0.8, y: -0.3 }
+    ]
+  },
   audioId: 'audio-1',
   audioTrigger: 'appearanceDelay',
   audioDelayMs: 1200,
@@ -323,6 +332,23 @@ assert.equal(payload.stateRevision, group.updatedAt)
 assert.ok(payload.selectionRevision > 0)
 assert.equal(payload.items[0].scale, 1)
 assert.deepEqual(payload.items[0].targetPosition, { x: 0.8, y: 0.3 })
+assert.deepEqual(
+  payload.items[0].motionPath,
+  {
+    version: 1,
+    points: [
+      { x: 0, y: 0 },
+      { x: 0.22, y: -0.02 },
+      { x: 0.8, y: -0.3 }
+    ]
+  },
+  'Motion paths must be normalized before reaching the EXE payload.'
+)
+const longMotionPath = normalizeMotionPath({
+  version: 1,
+  points: Array.from({ length: 80 }, (_, index) => ({ x: index / 79, y: index / 158 }))
+})
+assert.equal(longMotionPath.points.length, 64, 'Long motion paths must be capped at 64 points.')
 assert.equal(payload.items[0].appearanceDelayMs, 1350)
 assert.equal(payload.items[0].appearanceHideMs, 4200)
 assert.equal(payload.items[0].hideAfterTarget, true)
@@ -363,6 +389,14 @@ assert.equal(payload.items[1].bubble.outlineColor, '#3b9089')
 assert.equal(payload.backgroundTransition, 'curtain')
 assert.equal(payload.backgroundIntervalMs, 4500)
 assert.equal(payload.backgroundPlaybackLoop, false)
+assert.equal(
+  buildGroupSyncPayload({
+    ...group,
+    items: [{ ...item, motionPath: undefined }]
+  }).items[0].motionPath,
+  null,
+  'Items without a motion path must explicitly clear the desktop path on full sync.'
+)
 const disabledClickPayload = buildGroupSyncPayload({
   ...group,
   items: [{ ...item, clickAnimationIds: [0] }]
@@ -402,6 +436,7 @@ const queuedSnapshotSignature = getGroupSyncSignature(queuedSnapshot)
 const queuedSnapshotAssetSignature = getGroupAssetSignature(queuedSnapshot)
 queuedSource.items[0].position.x = 0.12
 queuedSource.items[0].targetPosition.y = 0.91
+queuedSource.items[0].motionPath.points[1].x = 0.99
 queuedSource.items[0].linkedAppearance = {
   triggerItemId: 'new-trigger',
   mode: 'showAfter',
@@ -423,6 +458,8 @@ assert.equal(
 )
 assert.equal(queuedSnapshot.items[0].position.x, 0.4)
 assert.equal(queuedSnapshot.items[0].targetPosition.y, 0.3)
+assert.equal(queuedSnapshot.items[0].motionPath.points[1].x, 0.22)
+assert.deepEqual(queuedSnapshot.items[0].motionPath.points[0], { x: 0, y: 0 })
 assert.equal(queuedSnapshot.items[1].bubble.bodyText, 'Hello')
 assert.equal(queuedSnapshot.backgrounds[0].backgroundTransition, 'curtain')
 assert.equal(queuedSnapshot.audioLibrary[0].name, 'Effect')
@@ -589,6 +626,12 @@ assert.notEqual(
 )
 
 const storageSource = readFileSync(new URL('../src/services/dynamicArtStorage.ts', import.meta.url), 'utf8')
+const runtimeSource = readFileSync(new URL('../desktop-runtime/main.js', import.meta.url), 'utf8')
+assert.match(runtimeSource, /const normalizeMotionPath = \(value\) =>/)
+assert.match(runtimeSource, /MAX_MOTION_PATH_POINTS = 64/)
+assert.match(runtimeSource, /if \(Object\.prototype\.hasOwnProperty\.call\(payload, 'motionPath'\)\)/)
+assert.match(runtimeSource, /payload\.motionPath === null[\s\S]*?normalizeMotionPath\(payload\.motionPath\)/)
+assert.match(runtimeSource, /if \(!Object\.prototype\.hasOwnProperty\.call\(itemPayload, 'motionPath'\)\)[\s\S]*?mergedPayload\.motionPath = undefined/)
 const getFunctionBody = (name, nextName) => {
   const start = storageSource.indexOf(`const ${name} =`)
   const end = nextName ? storageSource.indexOf(`\nconst ${nextName} =`, start) : storageSource.length

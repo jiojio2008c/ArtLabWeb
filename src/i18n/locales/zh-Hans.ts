@@ -1,4 +1,5 @@
 import type { TranslationResource } from './zh-Hant.ts'
+import { LEGAL_CONTENT } from '../legalContent.ts'
 
 const zhHans = {
   'control.previewAudioOff': 'iPad 声音：关',
@@ -93,7 +94,7 @@ const zhHans = {
   'home.settings': '设置', 'home.keyboardControl': '键盘控制', 'home.dynamicArt': '动态艺术', 'home.interactiveArt': '互动艺术', 'home.archivePreview': '作品档案预览', 'home.openArchive': '打开 {{name}}', 'home.newArchive': '新作品档案',
   'homeReturn.title': '返回首页？', 'homeReturn.dynamicDescription': '返回首页会关闭当前的动态艺术体验。', 'homeReturn.interactiveDescription': '返回首页会关闭当前的互动艺术体验。', 'homeReturn.stay': '留在此页', 'homeReturn.confirm': '返回首页', 'homeReturn.returning': '正在返回…',
   'remoteKeyboard.back': '返回首页', 'remoteKeyboard.title': '键盘控制', 'remoteKeyboard.panel': 'MagicFloor 机械键盘控制器', 'remoteKeyboard.keyEscape': 'Escape', 'remoteKeyboard.keyHome': 'Home', 'remoteKeyboard.keyControlShift': 'Control 与 Shift', 'remoteKeyboard.keyAltF4': 'Alt 与 F4', 'remoteKeyboard.keySpaceN': 'Space 与 N', 'remoteKeyboard.keySpaceF': 'Space 与 F', 'remoteKeyboard.keyEnd': 'End', 'remoteKeyboard.keyPageDown': 'Page Down', 'remoteKeyboard.keyShortcut': '快捷键 {{number}}', 'remoteKeyboard.volumeKnob': '音量控制', 'remoteKeyboard.verticalKnob': '上下控制', 'remoteKeyboard.horizontalKnob': '左右控制',
-  'settings.title': '设置', 'settings.close': '关闭设置', 'settings.accountLoading': '正在加载账号资料', 'settings.currentAccount': '当前账号：{{name}}', 'settings.galleryIp': '艺术画廊 IP', 'settings.dynamicPort': '动态艺术端口', 'settings.interactivePort': '互动艺术端口', 'settings.showQrCode': '显示二维码', 'settings.signOut': '退出登录', 'settings.signingOut': '正在退出', 'settings.signOutFailed': '无法退出登录，请稍后再试。', 'settings.language': '界面语言', 'settings.languageTitle': '选择语言', 'settings.backToSettings': '返回设置', 'settings.advancedFeatures': '进阶功能', 'settings.advancedFeaturesSummary': '创作流程、出场编排、音源、背景与进阶转场', 'settings.stageWatermark': '舞台水印', 'settings.stageWatermarkSummary': '在控制页显示 MagicFloor',
+  'settings.title': '设置', 'settings.close': '关闭设置', 'settings.accountLoading': '正在加载账号资料', 'settings.currentAccount': '当前账号：{{name}}', 'settings.galleryIp': '艺术画廊 IP', 'settings.dynamicPort': '动态艺术端口', 'settings.interactivePort': '互动艺术端口', 'settings.showQrCode': '显示二维码', 'settings.signOut': '退出登录', 'settings.signingOut': '正在退出', 'settings.signOutFailed': '无法退出登录，请稍后再试。', 'settings.language': '界面语言', 'settings.languageTitle': '选择语言', 'settings.backToSettings': '返回设置', 'settings.advancedFeatures': '进阶功能', 'settings.advancedFeaturesSummary': '创作流程、出场编排、音源、背景与进阶转场', 'settings.stageWatermark': '舞台水印', 'settings.stageWatermarkSummary': '在控制页显示 MagicFloor', 'settings.accountSection': '账户', 'settings.generalSection': '通用', 'settings.connectionSection': '设备连接', 'settings.supportSection': '帮助与支持', 'settings.legalSection': '法律与许可', 'settings.technicalSection': '技术人员设置', 'settings.technicalSummary': '用于测试设备的 IP 地址和端口', 'settings.technicalLocked': '仅限测试人员使用', 'settings.technicalUnlockHint': '连续点击六次解锁', 'settings.technicalPasswordTitle': '技术人员设置', 'settings.technicalPasswordPrompt': '请输入测试人员密码', 'settings.technicalPasswordPlaceholder': '密码', 'settings.technicalPasswordError': '密码不正确', 'settings.technicalUnlock': '解锁', 'settings.technicalCancel': '取消', 'settings.technicalTitle': '技术人员设置', 'settings.technicalNetworkHint': '用于连接 Unity 与舞台设备', 'settings.helpCenter': '帮助中心', 'settings.helpCenterSummary': '获取使用说明与支持', 'settings.feedback': '发送意见', 'settings.feedbackSummary': '报告问题或分享建议', 'settings.terms': '条款', 'settings.termsSummary': '阅读 MagicFloor 使用条款', 'settings.privacyPolicy': '隐私政策', 'settings.privacyPolicySummary': '了解 MagicFloor 如何处理数据', 'settings.licenses': '许可与第三方声明', 'settings.licensesSummary': '查看第三方软件及媒体', 'settings.aboutMagicFloor': '关于 MagicFloor', 'settings.versionLabel': '版本 {{version}}', 'settings.helpGettingStarted': '开始使用', 'settings.helpConnectExe': '连接 EXE', 'settings.helpUpload': '上传图片与音频', 'settings.helpStageControl': '舞台控制', 'settings.helpFaq': '常见问题', 'settings.helpContact': '联系我们', 'settings.helpBack': '返回帮助中心', 'settings.legalEffectiveDate': '生效日期：{{date}}', 'settings.legalPlaceholderNotice': '正式法律内容将在发布前加入。', 'settings.helpContentUnavailable': '此说明暂不可用。', 'settings.technicalTapHint': '请在三秒内连续点击六次解锁。', 'settings.qrSummary': '显示用于设备连接的二维码', 'settings.helpIntro': '选择一个主题以查看简短说明。', 'settings.helpGettingStartedBody': '了解如何建立作品并开始播放。', 'settings.helpConnectExeBody': '确认 iPad 与电脑使用同一个网络。', 'settings.helpUploadBody': '从相簿、相机或文件添加图片和音频。', 'settings.helpStageControlBody': '在舞台控制页编排物件、背景和播放。', 'settings.helpFaqBody': '查看常见操作问题与解决方法。', 'settings.termsBody': '使用 MagicFloor 前，请阅读并同意适用的使用条款。', 'settings.privacyBody': 'MagicFloor 只会按隐私政策处理账户、作品及设备连接数据。', 'settings.licensesBody': '此页列出 MagicFloor 使用的第三方软件、媒体及相关许可。',
   'directSelect.back': '返回首页', 'directSelect.title': '选择快速上传类型', 'directSelect.section': '互动艺术', 'directSelect.animals': '多种动物', 'directSelect.buildings': '缤纷建筑', 'directSelect.fish': '多种鱼类',
   'directComplete.eyebrow': '快速上传', 'directComplete.title': '上传完成', 'directComplete.previewAlt': '快速上传预览', 'directComplete.result': '结果', 'directComplete.sent': '图片已发送', 'directComplete.unknownFile': '未记录文件名', 'directComplete.backToOptions': '返回选项', 'directComplete.uploadAgain': '重新上传', 'directComplete.uploadAnother': '再上传一张', 'directComplete.reuploadDialogTitle': '重新上传图片？', 'directComplete.reuploadDialogSafety': '已发送的图片不会受到影响。', 'directComplete.reuploadDialogDestination': '你将返回图片与遮罩选择页，开始另一次上传。', 'directComplete.startUpload': '开始上传',
   'upload.noFile': '未选择文件', 'upload.directHttp': 'HTTP 直传', 'upload.quickPhotoTitle': '快速拍照上传', 'upload.artworkTitle': '上传作品', 'upload.quickEyebrow': '快速上传', 'upload.slotEyebrow': '槽位 {{index}}', 'upload.sendQuick': '上传图片', 'upload.sendGallery': '发送到艺术画廊', 'upload.galleryIp': '艺术画廊 IP',
@@ -129,6 +130,24 @@ const zhHans = {
   'control.linkageTriggerMissing': '没有可用的当前物件。',
   'control.startPoint': '起始点',
   'control.endPoint': '终点',
+  'control.playShort': 'Play',
+  'control.stopShort': 'Stop',
+  'control.backgroundQuickPlay': '播放选中背景',
+  'control.backgroundQuickStop': '停止播放',
+  'control.previewAria': '预览作品',
+  'control.directDestination': '直达终点',
+  'control.editMotionPath': '绘制路线',
+  'control.motionPathHint': '在舞台上拖动',
+  'control.optimizeMotionPath': '优化路线',
+  'control.redrawMotionPath': '重新绘制',
+  'control.motionPathEditing': '绘制物件移动路线',
+  'control.layerRules': '图层规则',
+  'control.layerRulesTitle': '图层怎样排列？',
+  'control.layerRulesTopTitle': '最上方会最先看到',
+  'control.layerRulesTopDescription': '列表越上方，物件在舞台越前面。',
+  'control.layerRulesOrderTitle': '拖动即可调整',
+  'control.layerRulesOrderDescription': '拖动物件卡片，改变前后层次。',
+  'control.layerRulesDismiss': '知道了',
   'control.targetEditingInstructions': '使用方向键移动终点，按住 Shift 可快速移动。按 Enter 完成，按 Escape 取消。',
   'control.targetPositionPercent': '终点位置：横向 {{x}}%，纵向 {{y}}%。',
   'flow.modeLabel': '编辑方式',
@@ -387,5 +406,12 @@ const zhHans = {
   'animation.none': '无动画', 'animation.breathe': '呼吸缩放', 'animation.swing': '摇摆', 'animation.blink': '闪烁', 'animation.rotate': '轻微旋转', 'animation.bounce': '弹跳', 'animation.wave': '波动', 'animation.flip': '快速翻转', 'animation.pulse': '透明脉冲', 'animation.walk': '行走', 'animation.danceOne': '舞动一', 'animation.danceTwo': '舞动二', 'animation.jellyJump': '果冻跳跃', 'animation.jumpFlip': '翻转跳跃', 'animation.pullRight': '向右拉伸', 'animation.raiseHand': '举手', 'animation.rolling': '滚动', 'animation.unityWave': '挥动', 'animation.shortNone': '无', 'animation.shortBreathe': '呼吸', 'animation.shortSwing': '摇摆', 'animation.shortBlink': '闪烁', 'animation.shortRotate': '旋转', 'animation.shortBounce': '弹跳', 'animation.shortWave': '波动', 'animation.shortFlip': '翻转', 'animation.shortPulse': '脉冲', 'animation.shortWalk': '行走', 'animation.shortDanceOne': '舞动一', 'animation.shortDanceTwo': '舞动二', 'animation.shortJellyJump': '果冻', 'animation.shortJumpFlip': '翻跳', 'animation.shortPullRight': '拉伸', 'animation.shortRaiseHand': '举手', 'animation.shortRolling': '滚动', 'animation.shortUnityWave': '挥动', 'animation.preview': '{{name}}预览', 'animation.walkPreview': '行走动画预览', 'animation.namedWalk': '{{name}}行走动画', 'animation.namedPreview': '{{name}}：{{animation}}', 'animation.mode': '动画模式', 'animation.random': '随机动画', 'animation.previous': '上一个动画', 'animation.next': '下一个动画', 'animation.selectedCount': '已选 {{count}} 项', 'animation.clickRange': '点击动画范围', 'animation.clickRangeTitle': '选择点击动画', 'animation.clickRangeHint': '选择此物件在 PC 上被点击时播放的动画。', 'animation.clickRangeConfirm': '应用范围', 'animation.clickRangeCancel': '取消'
   , 'control.backgroundTransitionDuration': '转场时长'
 } satisfies TranslationResource
+
+Object.assign(zhHans, {
+  'settings.legalPlaceholderNotice': LEGAL_CONTENT['zh-Hans'].notice,
+  'settings.termsBody': LEGAL_CONTENT['zh-Hans'].terms,
+  'settings.privacyBody': LEGAL_CONTENT['zh-Hans'].privacy,
+  'settings.licensesBody': LEGAL_CONTENT['zh-Hans'].licenses,
+})
 
 export default zhHans

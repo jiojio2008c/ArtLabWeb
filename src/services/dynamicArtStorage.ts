@@ -28,6 +28,10 @@ import {
   normalizeDynamicBackgroundTransitionDurations,
   type DynamicBackgroundTransitionDurations
 } from '../../desktop-runtime/renderer/background-transition-core.js'
+import {
+  normalizeMotionPath,
+  type DynamicMotionPath
+} from '../../desktop-runtime/renderer/dynamic-motion-path-core.js'
 
 const DYNAMIC_GROUPS_KEY = 'magicfloor_dynamic_groups_v1'
 const DYNAMIC_DB_NAME = 'magicfloor_dynamic_media'
@@ -236,6 +240,7 @@ interface DynamicItemBase {
     x: number
     y: number
   }
+  motionPath?: DynamicMotionPath
   appearanceDelayMs?: number
   appearanceHideMs?: number | null
   hideAfterTarget?: boolean
@@ -466,8 +471,24 @@ const normalizeDynamicItemClickAnimationIds = (item: DynamicItem): DynamicItem =
   }
 }
 
+const normalizeDynamicItemMotionPath = (item: DynamicItem): DynamicItem => {
+  const motionPath = normalizeMotionPath(item.motionPath)
+  if (motionPath) {
+    return {
+      ...item,
+      motionPath
+    }
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(item, 'motionPath')) return item
+  const { motionPath: _motionPath, ...itemWithoutMotionPath } = item
+  return itemWithoutMotionPath as DynamicItem
+}
+
 const normalizeDynamicItemKind = (item: DynamicItem): DynamicItem => {
-  const normalizedItem = normalizeDynamicItemClickAnimationIds(item)
+  const normalizedItem = normalizeDynamicItemMotionPath(
+    normalizeDynamicItemClickAnimationIds(item)
+  )
 
   if (normalizedItem.kind === 'bubble' && (normalizedItem as DynamicBubbleItem).bubble) {
     const bubbleItem = normalizedItem as DynamicBubbleItem
@@ -775,18 +796,21 @@ const normalizeLegacyDynamicItemLinks = (items: DynamicItem[]) => {
   return validatedItems
 }
 
-const normalizeDynamicIndependentAppearance = (items: DynamicItem[]) => items.map((item) => ({
-  ...item,
-  appearanceDelayMs: normalizeDynamicAppearanceTimeMs(item.appearanceDelayMs),
-  appearanceHideMs: item.appearanceHideMs !== null
-    && item.appearanceHideMs !== undefined
-    && Number.isFinite(Number(item.appearanceHideMs))
-    ? normalizeDynamicAppearanceTimeMs(item.appearanceHideMs)
-    : undefined,
-  hideAfterTarget: item.hideAfterTarget === true,
-  appearanceByBackground: normalizeDynamicAppearanceByBackground(item.appearanceByBackground),
-  linkedAppearance: undefined
-}))
+const normalizeDynamicIndependentAppearance = (items: DynamicItem[]) => items.map((sourceItem) => {
+  const item = normalizeDynamicItemMotionPath(sourceItem)
+  return {
+    ...item,
+    appearanceDelayMs: normalizeDynamicAppearanceTimeMs(item.appearanceDelayMs),
+    appearanceHideMs: item.appearanceHideMs !== null
+      && item.appearanceHideMs !== undefined
+      && Number.isFinite(Number(item.appearanceHideMs))
+      ? normalizeDynamicAppearanceTimeMs(item.appearanceHideMs)
+      : undefined,
+    hideAfterTarget: item.hideAfterTarget === true,
+    appearanceByBackground: normalizeDynamicAppearanceByBackground(item.appearanceByBackground),
+    linkedAppearance: undefined
+  }
+})
 
 const migrateDynamicLinkedAppearanceModel = (group: DynamicGroup): DynamicGroup => {
   const sourceItems = Array.isArray(group.items) ? group.items : []
@@ -1071,10 +1095,10 @@ const serializeBackgroundForStorage = (background?: DynamicBackground): DynamicB
 const serializeDynamicItemForStorage = (item: DynamicItem): DynamicItem => {
   const normalizedClickAnimationItem = normalizeDynamicItemClickAnimationIds(item)
   const appearanceByBackground = normalizeDynamicAppearanceByBackground(normalizedClickAnimationItem.appearanceByBackground)
-  const normalizedItem = {
+  const normalizedItem = normalizeDynamicItemMotionPath({
     ...normalizedClickAnimationItem,
     ...(Object.keys(appearanceByBackground).length > 0 ? { appearanceByBackground } : {})
-  }
+  })
 
   if (isDynamicBubbleItem(normalizedClickAnimationItem)) {
     const bubble = normalizeDynamicBubbleContent(normalizedClickAnimationItem.bubble)
@@ -1276,6 +1300,7 @@ const hydrateGroup = async (group: DynamicGroup): Promise<DynamicGroup> => {
         targetMode: getDynamicTargetModeFromItem(item),
         targetLoop: item.targetLoop === true,
         targetPosition: normalizeDynamicPosition(item.targetPosition),
+        motionPath: normalizeMotionPath(item.motionPath),
         appearanceDelayMs: normalizeDynamicAppearanceTimeMs(item.appearanceDelayMs),
         appearanceHideMs: item.appearanceHideMs !== null
           && item.appearanceHideMs !== undefined
@@ -2176,6 +2201,9 @@ const copyDynamicItemSettings = async (
       targetPosition: fieldSet.has('motion')
         ? source.targetPosition ? { ...source.targetPosition } : undefined
         : item.targetPosition,
+      motionPath: fieldSet.has('motion')
+        ? normalizeMotionPath(source.motionPath)
+        : item.motionPath,
       appearanceDelayMs: fieldSet.has('motion')
         ? normalizeDynamicAppearanceTimeMs(source.appearanceDelayMs)
         : item.appearanceDelayMs,
@@ -2555,6 +2583,7 @@ export type {
   DynamicMedia,
   DynamicMediaItem,
   DynamicMediaType,
+  DynamicMotionPath,
   DynamicMoveMode,
   DynamicMoveTrack,
   DynamicTargetMode

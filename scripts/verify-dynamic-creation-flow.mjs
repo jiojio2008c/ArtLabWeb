@@ -896,8 +896,8 @@ for (const [locale, resource] of localizedFlowCopy) {
 
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0 && visibleBackgrounds\.length >= 2/,
-  'The background rail must appear only when at least two visible backgrounds are available.'
+  /const showBackgroundQuickSwitcher = !previewMode && visibleBackgrounds\.length > 0/,
+  'The background rail must appear whenever at least one visible background is available.'
 )
 assert.match(
   dynamicControlSource,
@@ -1139,8 +1139,8 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
-  /const showBackgroundQuickSwitcher = !previewMode && backgrounds\.length > 0 && visibleBackgrounds\.length >= 2/,
-  'The current-background controls must stay hidden during full preview and until at least two backgrounds are available.'
+  /const showBackgroundQuickSwitcher = !previewMode && visibleBackgrounds\.length > 0/,
+  'The current-background controls must stay hidden during full preview and appear for one or more backgrounds.'
 )
 assert.match(
   dynamicControlSource,

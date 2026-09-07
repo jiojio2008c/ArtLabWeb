@@ -9,6 +9,7 @@
     "test:appearance": "node --no-warnings scripts/verify-advanced-appearance.mjs && node --no-warnings --test renderer/desktop-appearance-motion-core.test.mjs",
     "test:item-copy": "node scripts/verify-item-settings-copy.cjs",
     "test:target-motion": "node --no-warnings scripts/verify-target-motion.mjs",
+    "test:motion-path": "node --no-warnings renderer/dynamic-motion-path-core.test.mjs",
     "test:motion": "node --no-warnings renderer/dynamic-motion-core.test.mjs",
     "test:speed": "node --no-warnings --test renderer/dynamic-speed-core.test.mjs",
     "test:transition-audio": "node --no-warnings scripts/verify-background-transition-audio.mjs",
