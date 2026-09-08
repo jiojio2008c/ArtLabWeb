@@ -1104,6 +1104,16 @@ assert.match(
 )
 assert.match(
   dynamicControlSource,
+  /className="dynamic-appearance-item-wheel"[\s\S]*?step=\{0\.5\}[\s\S]*?allowDirectInput=\{true\}/,
+  'Object appearance cards must accept typed seconds and 0.5s wheel steps.'
+)
+assert.match(
+  dynamicControlSource,
+  /className="dynamic-speed-control-row"[\s\S]*?className="ipad-slider"[\s\S]*?className="dynamic-speed-input"/,
+  'Motion speed must expose a live numeric input beside the slider.'
+)
+assert.match(
+  dynamicControlSource,
   /appearanceEditorMode === 'all'[\s\S]*?t\('control\.layerAppearanceSimultaneous'\)[\s\S]*?appearanceEditorMode === 'sequence'[\s\S]*?className="dynamic-appearance-timing-grid"/,
   'All-at-once mode must remain simultaneous while one-by-one mode exposes timing choices.'
 )

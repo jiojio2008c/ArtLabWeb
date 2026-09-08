@@ -54,7 +54,8 @@ interface DynamicGroupsPageProps {
   onUpdateGroup: (group: DynamicGroup) => void
   onDeleteGroup: (groupId: string) => void
   onSelectGroup: (group: DynamicGroup, origin?: DynamicTransitionOrigin) => void
-  onImportPublicCase?: (templateId: string, origin?: DynamicTransitionOrigin) => Promise<DynamicGroup | void>
+  onPreviewPublicCase?: (templateId: string, origin?: DynamicTransitionOrigin) => void | Promise<void>
+  onImportPublicCase?: (templateId: string, destinationFolderId?: string, origin?: DynamicTransitionOrigin) => Promise<DynamicGroup | void>
   portalArrival?: boolean
   transitionPrepared?: boolean
   archiveReplayId?: string
@@ -63,6 +64,11 @@ interface DynamicGroupsPageProps {
 interface MenuPosition {
   x: number
   y: number
+}
+
+interface PublicCaseCopyTarget {
+  caseItem: PublicLibraryEntity & { kind: 'public-case' }
+  origin?: DynamicTransitionOrigin
 }
 
 type LibraryEntity =
@@ -168,6 +174,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   onUpdateGroup,
   onDeleteGroup,
   onSelectGroup,
+  onPreviewPublicCase,
   onImportPublicCase,
   portalArrival = false,
   transitionPrepared = false,
@@ -217,8 +224,11 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const [failedPreviewIds, setFailedPreviewIds] = useState<string[]>([])
   const [folderTransitioning, setFolderTransitioning] = useState(false)
   const [incomingFolderId, setIncomingFolderId] = useState<string | null>(null)
+  const [previewingPublicCaseId, setPreviewingPublicCaseId] = useState<string | null>(null)
   const [importingPublicCaseId, setImportingPublicCaseId] = useState<string | null>(null)
   const [publicCaseErrorId, setPublicCaseErrorId] = useState<string | null>(null)
+  const [publicCaseCopyTarget, setPublicCaseCopyTarget] = useState<PublicCaseCopyTarget | null>(null)
+  const [publicCaseDestinationId, setPublicCaseDestinationId] = useState('')
 
   const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const currentFolder = currentFolderId === PUBLIC_CASES_FOLDER_ID
@@ -417,13 +427,59 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     onSelectGroup(group, getEntityOrigin(sourceElement))
   }
 
-  const handlePublicCaseImport = async (caseItem: PublicLibraryEntity & { kind: 'public-case' }, sourceElement?: HTMLElement) => {
+  const handlePublicCasePreview = async (
+    caseItem: PublicLibraryEntity & { kind: 'public-case' },
+    sourceElement?: HTMLElement
+  ) => {
+    if (!onPreviewPublicCase || importingPublicCaseId || previewingPublicCaseId) return
+    setPreviewingPublicCaseId(caseItem.templateId)
+    try {
+      await onPreviewPublicCase(caseItem.templateId, getEntityOrigin(sourceElement))
+    } catch (error) {
+      console.warn('Public case preview failed:', error)
+    } finally {
+      setPreviewingPublicCaseId(null)
+    }
+  }
+
+  const stopPublicActionPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+  }
+
+  const openPublicCaseCopyDialog = (
+    caseItem: PublicLibraryEntity & { kind: 'public-case' },
+    sourceElement?: HTMLElement
+  ) => {
     if (!onImportPublicCase || importingPublicCaseId) return
+    setPublicCaseErrorId(null)
+    setPublicCaseDestinationId('')
+    setPublicCaseCopyTarget({
+      caseItem,
+      origin: getEntityOrigin(sourceElement)
+    })
+  }
+
+  const closePublicCaseCopyDialog = () => {
+    if (importingPublicCaseId) return
+    setPublicCaseCopyTarget(null)
+    setPublicCaseDestinationId('')
+    setPublicCaseErrorId(null)
+  }
+
+  const handlePublicCaseImport = async () => {
+    if (!onImportPublicCase || !publicCaseCopyTarget || importingPublicCaseId) return
+    const { caseItem, origin } = publicCaseCopyTarget
     setPublicCaseErrorId(null)
     setImportingPublicCaseId(caseItem.templateId)
     try {
-      const importedGroup = await onImportPublicCase(caseItem.templateId, getEntityOrigin(sourceElement))
-      if (importedGroup) onSelectGroup(importedGroup, getEntityOrigin(sourceElement))
+      const importedGroup = await onImportPublicCase(
+        caseItem.templateId,
+        publicCaseDestinationId || undefined,
+        origin
+      )
+      setPublicCaseCopyTarget(null)
+      setPublicCaseDestinationId('')
+      if (importedGroup) onSelectGroup(importedGroup, origin)
     } catch (error) {
       console.warn('Public case import failed:', error)
       setPublicCaseErrorId(caseItem.templateId)
@@ -440,7 +496,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
     if (entity.kind === 'folder' || entity.kind === 'public-folder') {
       transitionToFolder(entity.folder.id, sourceElement)
     } else if (entity.kind === 'public-case') {
-      void handlePublicCaseImport(entity, sourceElement)
+      void handlePublicCasePreview(entity, sourceElement)
     } else {
       handleMaterialSelect(entity.group, sourceElement)
     }
@@ -1014,7 +1070,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const renderIconEntity = (entity: LibraryBrowserEntity, layerKey = 'current', interactive = true) => (
     <article
       key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
-      className={`dynamic-library-icon-card dynamic-library-entity-card ${entity.kind} ${importingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-importing' : ''} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
+      className={`dynamic-library-icon-card dynamic-library-entity-card ${entity.kind} ${importingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-importing' : ''} ${previewingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-previewing' : ''} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
       data-library-entity-id={getEntityId(entity)}
       data-library-entity-kind={entity.kind}
       onPointerDown={interactive ? (event) => handleEntityPointerDown(event, entity) : undefined}
@@ -1032,9 +1088,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         className="dynamic-library-icon-main"
          onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
          aria-label={entity.kind === 'public-case'
-           ? `${getBrowserEntityName(entity)}: ${importingPublicCaseId === entity.templateId ? t('groups.importingPublicCase') : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}`
+           ? `${getBrowserEntityName(entity)}: ${t('groups.previewPublicCase')}`
            : undefined}
-        disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onImportPublicCase || Boolean(importingPublicCaseId)))}
+        disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onPreviewPublicCase || Boolean(importingPublicCaseId) || Boolean(previewingPublicCaseId)))}
       >
          <span className="dynamic-library-icon-preview">
            {entity.kind === 'public-case'
@@ -1050,14 +1106,36 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
              <span className="dynamic-library-public-badge">{t('groups.publicCaseBadge')}</span>
            )}
          </span>
-         {entity.kind === 'public-case' && (
-           <span className="dynamic-library-public-action" aria-hidden="true">
-             {importingPublicCaseId === entity.templateId
-               ? <><LoaderCircle className="dynamic-library-public-spinner" />{t('groups.importingPublicCase')}</>
-                : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
-           </span>
-         )}
        </button>
+         {entity.kind === 'public-case' && (
+           <div
+             className="dynamic-library-public-actions"
+             role="group"
+             aria-label={`${getBrowserEntityName(entity)}: ${t('groups.publicCaseBadge')}`}
+           >
+             <button
+               type="button"
+               className="dynamic-library-public-action dynamic-library-public-copy-action"
+               disabled={!interactive || folderTransitioning || !onImportPublicCase || Boolean(importingPublicCaseId) || Boolean(previewingPublicCaseId)}
+               onPointerDown={interactive ? stopPublicActionPointer : undefined}
+               onClick={interactive ? (event) => {
+                 event.stopPropagation()
+                 openPublicCaseCopyDialog(entity, event.currentTarget)
+               } : undefined}
+               aria-label={`${t('groups.copyAndEdit')}: ${getBrowserEntityName(entity)}`}
+               title={t('groups.copyAndEdit')}
+             >
+               {importingPublicCaseId === entity.templateId
+                 ? <LoaderCircle className="dynamic-library-public-spinner" aria-hidden="true" />
+                 : null}
+               <span>
+                 {importingPublicCaseId === entity.templateId
+                   ? t('groups.importingPublicCase')
+                   : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
+               </span>
+             </button>
+           </div>
+         )}
       {renderMoreButton(entity, interactive)}
     </article>
   )
@@ -1065,7 +1143,7 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
   const renderDetailEntity = (entity: LibraryBrowserEntity, layerKey = 'current', interactive = true) => (
     <article
       key={`${layerKey}-${entity.kind}-${getEntityId(entity)}`}
-      className={`dynamic-library-detail-row dynamic-library-entity-card ${entity.kind} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
+      className={`dynamic-library-detail-row dynamic-library-entity-card ${entity.kind} ${importingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-importing' : ''} ${previewingPublicCaseId === (entity.kind === 'public-case' ? entity.templateId : '') ? 'public-case-previewing' : ''} ${menuTarget && getEntityId(menuTarget) === getEntityId(entity) ? 'menu-active' : ''}`}
       data-library-entity-id={getEntityId(entity)}
       data-library-entity-kind={entity.kind}
       onPointerDown={interactive ? (event) => handleEntityPointerDown(event, entity) : undefined}
@@ -1082,9 +1160,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         type="button"
         className="dynamic-library-detail-main"
         onClick={interactive ? (event) => handleEntityOpen(entity, event.currentTarget) : undefined}
-         disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onImportPublicCase || Boolean(importingPublicCaseId)))}
+         disabled={!interactive || folderTransitioning || (entity.kind === 'public-case' && (!onPreviewPublicCase || Boolean(importingPublicCaseId) || Boolean(previewingPublicCaseId)))}
          aria-label={entity.kind === 'public-case'
-           ? `${getBrowserEntityName(entity)}: ${importingPublicCaseId === entity.templateId ? t('groups.importingPublicCase') : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}`
+           ? `${getBrowserEntityName(entity)}: ${t('groups.previewPublicCase')}`
            : undefined}
       >
         <span className="dynamic-library-detail-name">
@@ -1102,11 +1180,33 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         <span>{getBrowserEntityContent(entity)}</span>
       </button>
       {entity.kind === 'public-case' ? (
-        <span className="dynamic-library-public-detail-action" aria-hidden="true">
-          {importingPublicCaseId === entity.templateId
-            ? <LoaderCircle className="dynamic-library-public-spinner" />
-            : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
-        </span>
+        <div
+          className="dynamic-library-public-detail-actions"
+          role="group"
+          aria-label={`${getBrowserEntityName(entity)}: ${t('groups.publicCaseBadge')}`}
+        >
+          <button
+            type="button"
+            className="dynamic-library-public-detail-action dynamic-library-public-detail-copy-action"
+            disabled={!interactive || folderTransitioning || !onImportPublicCase || Boolean(importingPublicCaseId) || Boolean(previewingPublicCaseId)}
+            onPointerDown={interactive ? stopPublicActionPointer : undefined}
+            onClick={interactive ? (event) => {
+              event.stopPropagation()
+              openPublicCaseCopyDialog(entity, event.currentTarget)
+            } : undefined}
+            aria-label={`${t('groups.copyAndEdit')}: ${getBrowserEntityName(entity)}`}
+            title={t('groups.copyAndEdit')}
+          >
+            {importingPublicCaseId === entity.templateId
+              ? <LoaderCircle className="dynamic-library-public-spinner" aria-hidden="true" />
+              : null}
+            <span>
+              {importingPublicCaseId === entity.templateId
+                ? t('groups.importingPublicCase')
+                : publicCaseErrorId === entity.templateId ? t('groups.publicCaseRetry') : t('groups.copyAndEdit')}
+            </span>
+          </button>
+        </div>
       ) : renderMoreButton(entity, interactive)}
     </article>
   )
@@ -1154,7 +1254,9 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
           <span />
         </div>
       )}
-      <div className={viewMode === 'icons' ? 'dynamic-library-icon-grid' : 'dynamic-library-detail-list'}>
+      <div className={viewMode === 'icons'
+        ? `dynamic-library-icon-grid ${list.some((entity) => entity.kind === 'public-case') ? 'has-public-cases' : ''}`
+        : 'dynamic-library-detail-list'}>
         {list.map((entity) => viewMode === 'icons'
           ? renderIconEntity(entity, layerKey, interactive)
           : renderDetailEntity(entity, layerKey, interactive))}
@@ -1407,6 +1509,90 @@ const DynamicGroupsPage: React.FC<DynamicGroupsPageProps> = ({
         </div>
       )}
 
+      {publicCaseCopyTarget && (
+        <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
+          <button
+            type="button"
+            className="settings-scrim"
+            disabled={Boolean(importingPublicCaseId)}
+            onClick={closePublicCaseCopyDialog}
+            aria-label={t('common.close')}
+          />
+          <section
+            className="dynamic-library-form-modal dynamic-library-move-modal dynamic-library-public-copy-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="library-public-copy-title"
+          >
+            <div className="dynamic-library-modal-heading">
+              <div>
+                <p className="eyebrow">{getBrowserEntityName(publicCaseCopyTarget.caseItem)}</p>
+                <h2 id="library-public-copy-title">{t('groups.chooseCopyDestination')}</h2>
+              </div>
+              <button
+                type="button"
+                className="dynamic-panel-close"
+                disabled={Boolean(importingPublicCaseId)}
+                onClick={closePublicCaseCopyDialog}
+                aria-label={t('common.close')}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            <p className="dynamic-library-public-copy-note">{t('groups.copyDestinationHint')}</p>
+            <div className="dynamic-library-folder-destinations" role="radiogroup" aria-label={t('groups.destination')}>
+              <label className={!publicCaseDestinationId ? 'active' : ''}>
+                <input
+                  type="radio"
+                  name="public-case-destination"
+                  value=""
+                  checked={!publicCaseDestinationId}
+                  onChange={() => setPublicCaseDestinationId('')}
+                />
+                <span><Folder aria-hidden="true" /><strong>{t('groups.archive')}</strong></span>
+              </label>
+              {folders.map((folder) => (
+                <label key={folder.id} className={publicCaseDestinationId === folder.id ? 'active' : ''}>
+                  <input
+                    type="radio"
+                    name="public-case-destination"
+                    value={folder.id}
+                    checked={publicCaseDestinationId === folder.id}
+                    onChange={() => setPublicCaseDestinationId(folder.id)}
+                  />
+                  <span><Folder aria-hidden="true" /><strong>{getFolderPathLabel(folder)}</strong></span>
+                </label>
+              ))}
+            </div>
+            {publicCaseErrorId === publicCaseCopyTarget.caseItem.templateId && (
+              <p className="dynamic-library-public-copy-error" role="alert">{t('groups.publicCaseCopyFailed')}</p>
+            )}
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="ipad-button secondary-button"
+                disabled={Boolean(importingPublicCaseId)}
+                onClick={closePublicCaseCopyDialog}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="ipad-button primary-button"
+                disabled={Boolean(importingPublicCaseId)}
+                onClick={() => void handlePublicCaseImport()}
+              >
+                {importingPublicCaseId
+                  ? <><LoaderCircle className="dynamic-library-public-spinner" />{t('groups.importingPublicCase')}</>
+                  : publicCaseErrorId === publicCaseCopyTarget.caseItem.templateId
+                    ? t('groups.publicCaseRetry')
+                    : t('groups.copyHere')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {deleteTarget && (
         <div className="dynamic-modal-overlay dynamic-library-modal-overlay">
           <button type="button" className="settings-scrim" onClick={() => setDeleteTarget(null)} aria-label={t('common.close')} />
@@ -1463,6 +1649,7 @@ const areDynamicGroupsPropsEqual = (
   && previous.portalArrival === next.portalArrival
   && previous.transitionPrepared === next.transitionPrepared
   && previous.archiveReplayId === next.archiveReplayId
+  && previous.onPreviewPublicCase === next.onPreviewPublicCase
   && previous.onImportPublicCase === next.onImportPublicCase
 
 export default memo(DynamicGroupsPage, areDynamicGroupsPropsEqual)

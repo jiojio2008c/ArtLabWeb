@@ -310,7 +310,7 @@ iPad 点击动态艺术
 - 延迟或重复的旧 `replayId` 会被忽略。
 - 舞台状态向 renderer 发布时会剥离大 JPEG，避免 Electron IPC 持续搬运大字符串。
 
-**PC 不拥有、不读取、不生成独立的作品档案 UI。** 它只显示 iPad 截图镜像，因此不能在 PC 上浏览、创建或编辑资料夹/作品档案。
+**PC 不拥有用户自己的作品档案，也不能在 PC 上创建或编辑资料夹。** 无人控制时 EXE 会显示内置公共案例选择页（见第 83 节）；iPad 接入后仍只显示 iPad 截图镜像，并由 `GroupStateSync` / `GroupSelectAndSync` / `PreviewMode` 进入真实舞台。
 
 #### 舞台资料同步
 
@@ -382,7 +382,9 @@ EXE 默认：
 - 支持舞台窗帘、相机闪光和皮影戏背景切换；相机快门音由程序生成，不依赖外部音效文件。
 - 相邻背景共用同一 BGM 时不重播；不同 BGM 切换时交叉淡化。背景图片和视频会预载，但不会改变既有切换动画时长或曲线。
 - 背景点击显示逼真水涟漪；物件点击按配置切换动画并播放声音。
-- 档案模式显示 iPad JPEG 镜像；舞台模式不展示 PC 自有档案。
+- 启动且未被 iPad 控制时，进入公共案例选择页；点选案例后本地直接预览播放，Esc 返回选择页。
+- iPad 发来档案镜像、完整同步或预览后，切回原有档案镜像 / 舞台流程。
+- iPad 停止发送指令约 5 分钟后，自动回到公共案例选择页。
 
 运行数据位于 Electron `userData` 下的 runtime 目录，包含资产与 `runtime-state.json`。档案镜像不持久化。更换 EXE 或清理 userData 后，iPad 可通过“设置保存后重新进入作品”的流程重发媒体和参数。
 
@@ -4280,7 +4282,7 @@ dist/assets/web-3ui0Ni4Z.js
 - iPad 作品档案根目录新增置顶的虚拟资料夹「公共案例」，内置五套只读母版：`龜兔賽跑`、`幼稚園頒獎典禮`、`海底歷奇`、`城市交通`、`非洲大草原`。
 - 母版资源位于 `public/dynamic-cases`，包含 `manifest.json`、各案例 `template.json`、海报、背景、物件、气泡图片和音源；五套案例共 102 条资源记录，构建目录约 100 MB。
 - 公共案例资料夹及案例卡不可编辑、删除、移动或加入普通资料夹；母版不会写入普通 `DynamicGroup` 存储。
-- 用户点击案例后，应用会下载并校验清单内资源，复制至本地持久化存储，并生成全新的作品、物件和媒体 ID；复制完成后才进入既有控制页，可继续编辑及通过原有流程同步至 EXE。
+- 初版曾设定点击案例后立即下载并复制；该行为已由第 79 节的只读预览与显式「复制」流程取代。当前版本不会因查看案例而写入存档。
 - 导入失败或取消会清理已写入素材和半成品作品；导入期间卡片锁定，失败后可重新复制。
 
 ### 实现与多语言
@@ -4300,3 +4302,129 @@ dist/assets/web-3ui0Ni4Z.js
 
 - 公共案例所含图片、影片、音频、Logo、背景和其他媒体的版权／授权仍需由公司确认；上架前应准备可向 Apple 提供的授权文件。
 - Windows 环境无法执行 Xcode Archive、签名或 App Store Connect 上传；iOS 真机、不同语言、VoiceOver、离线导入和 EXE 联调需在 macOS／实体设备完成。
+
+## 79. 2026-09-07 公共案例浏览与复制流程
+
+### 交互调整
+
+- 公共案例卡片标题改为可换行完整显示；图标模式与详细模式都预留了标题、案例摘要、官方标记和操作按钮的独立空间。
+- 官方案例保持只读：卡片主体点击只打开独立的只读预览页，不进入编辑器、不复制作品、不写入普通作品存档，也不会触发 Unity／EXE 同步。
+- 只读预览页使用内置 `manifest.json` 和打包资源 URL，支持查看背景、背景切换、图片、影片和气泡物件；预览数据使用 `public-case-preview:` 临时 ID，只存在内存。
+- 「复制」改为独立按钮，位于卡片主体之外；点击后先打开目的地弹窗，可选择作品档案根目录或任一现有资料夹，确认后才下载并持久化素材。
+- 复制品写入所选 `folderId`，生成全新的作品、物件和媒体 ID；取消目的地选择不会创建作品、写入素材或改变官方母版。
+
+### 验证与同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:public-cases`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run build`、`npm run sync:ios` 和 `git diff --check`。
+- 浏览器回归验证：点击案例后存档仍为空；返回后打开复制弹窗并取消，存档仍无变化；选择资料夹后复制成功，作品的 `folderId` 与所选资料夹一致，案例包含 16 个物件。
+- Web 与 iOS 均已更新至新的 `dist/assets` 构建文件；`dist/dynamic-cases` 与 `ios/App/App/public/dynamic-cases` 仍包含 5 套案例、113 个文件。
+
+## 80. 2026-09-08 公共案例显式预览按钮
+
+### 交互调整
+
+- 官方案例的图标模式和详细模式均新增独立、可见的「预览」按钮，并使用播放图标强化入口辨识度。
+- 点击「预览」只进入只读案例预览，不复制作品、不写入存档、不打开复制目的地，也不会触发 Unity／EXE 同步。
+- 案例卡片主体原有的点击预览行为保留；「复制」仍是唯一的复制入口。
+- 预览加载期间显示加载状态并暂时锁定预览与复制操作，避免重复点击或误触。
+- 新按钮已加入繁体中文、简体中文、英文、葡萄牙文和波兰文翻译。
+
+### 验证与同步
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:public-cases`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run build` 和 `git diff --check`。
+- 已执行 `npm run sync:ios`；`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 一致，两个平台的 `dynamic-cases` 均包含 113 个文件。
+- `npm run lint` 暂无法执行，因为项目当前没有 ESLint 配置文件；这与本次改动无关。
+
+## 81. 2026-09-08 内置案例页预览入口与复制文案
+
+### 交互调整
+
+- 预览入口确认放在「公共案例／内置案例」列表中的每一张案例卡片内部，位于卡片底部操作区；作品档案根目录的公共案例资料夹本身不显示额外的预览按钮。
+- 图标卡片和详细列表均保留独立的「预览」按钮；点击后进入只读案例预览页，不复制、不编辑、不写入存档。
+- 卡片上的原「复制并编辑」可见按钮文案统一缩短为「复制」（英文 `Copy`、葡萄牙文 `Copiar`、波兰文 `Kopiuj`），复制目的地选择与复制后的编辑流程不变。
+- 预览与复制按钮继续作为卡片主体按钮之外的独立 sibling，避免按钮嵌套和误触；预览按钮使用播放图标。
+
+### 验证
+
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:public-cases`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run build` 与 `git diff --check`。
+- 已执行 `npm run sync:ios`，确保 iPad 包同步最新按钮文案与样式。
+
+## 82. 2026-09-08 官方案例预览入口层级修正
+
+### 交互修正
+
+- 「公共案例」列表不再显示独立「预览」按钮；每张官方案例卡片只保留「复制」操作。
+- 点击案例卡片主体进入只读官方案例详情页，不会复制作品、写入存档或同步 Unity／EXE。
+- 「预览」按钮移到官方案例详情页顶部；进入详情页时舞台保持静态，用户明确点击后才开始播放。
+- 播放会按当前背景的出场时间线呈现物件，并执行目标点／路线移动与到达后隐藏；停止或切换背景会重置本地播放和影片。
+- 详情预览继续使用内存中的 `public-case-preview:` 临时资料，不改变官方案例母版。
+
+### 最终验证
+
+- 已重新执行 `npm run sync:ios`，将详情页播放入口、列表页按钮层级及相关样式同步至 iPad 包。
+- `dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `4EC141FAF07916319D4D740F5333125D63335040CD4E7C87DD32FEBB08448721`。
+- Web 与 iOS 均包含 113 个 `dynamic-cases` 资源文件。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:public-cases`、`npm run test:creation-flow`、`npm run test:receiver-sync` 与 `git diff --check`。
+
+### 验证
+
+- 已确认图标模式与详细模式均不存在列表层「预览」按钮 DOM，只保留「复制」按钮。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:public-cases`、`npm run test:creation-flow`、`npm run test:receiver-sync`、`npm run build` 与 `git diff --check`。
+- 已执行 `npm run sync:ios`；Web 与 iOS 的 `index.html` SHA-256 一致，公共案例资源数量保持一致。
+
+## 83. 2026-09-08 iOS 打包说明、公共案例复制同步、EXE 闲置选择页与控制页微调
+
+本日在 Windows 侧完成代码修改、`npm run sync:ios` 与 EXE 重新打包。macOS/Xcode Archive、真机 iPad 与现场投影仍需在目标设备确认。
+
+### iOS / CapApp-SPM 与 U 盘拷贝
+
+- Xcode 报 `Missing package product 'CapApp-SPM'` 不是工程引用写坏。`App.xcodeproj` 依赖本地包 `ios/App/CapApp-SPM`，该包再依赖 GitHub `capacitor-swift-pm` 8.3.0 以及相对路径 `../../../node_modules/@capacitor/filesystem`。
+- 不要在 `/Volumes/Untitled/...` 这类 U 盘卷上 Archive。先拷到 Mac 本地磁盘再打开 `ios/App/App.xcodeproj`。
+- 拷贝时不能只带 `ios/`。至少保留：
+
+```text
+ArtLabWeb/ios/
+ArtLabWeb/node_modules/@capacitor/filesystem/
+```
+
+- Windows 执行 `npx cap sync ios` 后必须再跑 `npm run fix:ios-spm`（已包含在 `npm run sync:ios`），把 `Package.swift` 里的反斜杠路径改成正斜杠。
+- 若仍缺包：在 Mac 工程根目录 `npm install`，Xcode 执行 File → Packages → Resolve Package Versions，必要时清 DerivedData。
+
+### 公共案例复制与 EXE 同步
+
+- 复制入口仍是案例卡上的「复制」，先选目的地（作品档案根目录或现有资料夹），确认后才写入普通存档并进入编辑。点卡片进入只读详情，不复制。
+- 初版复制曾把约 90MB 素材用 Capacitor Filesystem base64 再写进沙盒，iPad 上容易失败，界面统一显示「复制失败，请检查存储空间后再试」。
+- 随后一度改为只记录内置路径 `/dynamic-cases/...`，复制本身能成功，但作品没有 `filePath` / `storageKey`。进入控制页或点预览时，`getDynamicMediaFile()` 读不到可上传文件，整次 `syncDynamicGroupToReceiver` 失败；因此复制作品会「同步失败」，EXE 也收不到 `PreviewMode`。自己上传的作品不受影响。
+- 修改动画、移动、路线只改参数 JSON，不会补上素材文件，所以编辑后同步仍然失败。
+- **当前实现：** 复制时逐个读取内置素材，写入 IndexedDB（`preferIndexedDb: true`），不走 iOS Filesystem base64。复制作品因此带有 `storageKey`，后续同步与普通作品相同。读取内置文件时用普通 `fetch`，失败再试 XHR。
+- **已经用旧逻辑复制、一直同步失败的作品不会自动修好。** 装上本日 iPad 包后需要删除再重新复制，或再复制一份新的。
+- 官方案例只读预览仍用内存中的 `public-case-preview:` 临时资料和内置 URL，不写入存档，也不走 8080 上传。
+
+### EXE 无人控制时的公共案例页
+
+- 新增 `desktop-runtime/public-cases-core.cjs`：从 `public/dynamic-cases`（打包后为 `resources/dynamic-cases`）读取清单，并把素材 ID 加上 `pc_<slug>_` 前缀，避免和 iPad 上传的素材冲突。
+- 新增 `desktop-runtime/public-library-idle-core.cjs`：iPad 闲置超时为 5 分钟。
+- 启动且 `view.controller = local` 时，`view.mode = public-library`，画面样式贴近 iPad 作品档案（纸雕背景、五张官方案例卡、官方标记）。
+- 点击案例后本地直接进入舞台预览播放；Esc 仅在本地控制时返回选择页。iPad 控制期间 Esc 不退出到公共案例页。
+- iPad 向 8080 POST 动态事件或上传素材时调用 `enterIpadControl()`，切回原有档案镜像 / 舞台流程。
+- 约 5 分钟没有任何 iPad 指令后，`returnToUncontrolledIdle()` 回到公共案例选择页。期间若再有 iPad 请求会重新计时。
+- electron-builder 的 `files` 已加入 `public-cases-core.cjs`、`public-library-idle-core.cjs`；`extraResources` 复制 `../public/dynamic-cases` → `dynamic-cases`。便携包体积因此约 161 MB。
+
+### 控制页微调
+
+- 出场编排里，物件卡片秒数：可点击输入，也可滑动；滑动步进由 0.1 秒改为 0.5 秒。
+- 物件属性「移动」里的速度：保留 0–100 滑动条，右侧增加数字输入框，两者实时同步。五语文案新增 `control.speedInput`。
+- 复制案例同步超时：单文件上传 `UNITY_ASYNC_REQUEST_TIMEOUT_MS` 调整为 60 秒；预览等待同步 `PREVIEW_RECEIVER_SYNC_TIMEOUT_MS` 调整为 120 秒。
+
+### 构建与当日产物
+
+```powershell
+npm run sync:ios
+npm --prefix desktop-runtime run pack:all
+```
+
+- iOS：Web 已同步到 `ios/App/App/public`，当前入口资源为 `index-Bszzc4Mp.js`、`index-BpzsTpbX.css`、`web-B1tYZQQs.js`。`CapApp-SPM/Package.swift` 本地插件路径为正斜杠 `../../../node_modules/@capacitor/filesystem`。
+- 标准版 EXE：`desktop-runtime/release/MagicFloor Dynamic Player 0.1.0.exe`（约 161.49 MB）。
+- 翻转版 EXE：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（约 161.48 MB）。
+- 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm --prefix desktop-runtime run test:presentation`。
+- Windows 仍不能 Archive / 签名 / 上传 App Store。现场需安装本日新 iOS 包和新 EXE；只刷新旧安装包不会带上本次修复。

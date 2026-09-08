@@ -558,7 +558,7 @@ const advancedCopyFieldOptions: { id: DynamicCopyField; labelKey: string }[] = [
 
 const BASIC_COPY_FIELDS = basicCopyFieldOptions.map((option) => option.id)
 const ADVANCED_COPY_FIELDS = advancedCopyFieldOptions.map((option) => option.id)
-const PREVIEW_RECEIVER_SYNC_TIMEOUT_MS = 8000
+const PREVIEW_RECEIVER_SYNC_TIMEOUT_MS = 120000
 
 const propertyTabOptions = [
   { id: 'motion' as const, labelKey: 'control.motion', shortLabelKey: 'control.motionShort', icon: Move },
@@ -4886,9 +4886,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
   }
 
   const handleMotionSpeedChange = (value: number) => {
-    if (!selectedItem) return
+    if (!selectedItem || !Number.isFinite(value)) return
 
-    const moveSpeed = clamp(value, 0, 100)
+    const moveSpeed = clamp(Math.round(value), 0, 100)
     const changedItem = updateItemLocal(selectedItem.id, (item) => ({
       ...item,
       moveSpeed
@@ -8325,15 +8325,29 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                 </label>
                 <label className="dynamic-percent-control">
                   <span>{t('control.speedPercent', { percent: selectedMoveSpeed })}</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={selectedMoveSpeed}
-                    onChange={(event) => handleMotionSpeedChange(Number(event.target.value))}
-                    className="ipad-slider"
-                  />
+                  <div className="dynamic-speed-control-row">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={selectedMoveSpeed}
+                      onChange={(event) => handleMotionSpeedChange(Number(event.target.value))}
+                      className="ipad-slider"
+                      aria-label={t('control.speedPercent', { percent: selectedMoveSpeed })}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      inputMode="numeric"
+                      value={selectedMoveSpeed}
+                      onChange={(event) => handleMotionSpeedChange(Number(event.target.value))}
+                      className="dynamic-speed-input"
+                      aria-label={t('control.speedInput')}
+                    />
+                  </div>
                 </label>
                 <div className={`dynamic-track-selector ${selectedTargetForControls ? 'is-disabled' : ''}`} aria-label={t('control.trackSelection')}>
                   <span>{t('control.track')}</span>
@@ -9146,9 +9160,9 @@ const DynamicControlPage: React.FC<DynamicControlPageProps> = ({
                             value={appearanceSeconds}
                             min={0}
                             max={600}
-                            step={0.1}
+                            step={0.5}
                             inputMode="decimal"
-                            allowDirectInput={false}
+                            allowDirectInput={true}
                             onChange={(value) => handleAppearanceItemTimeChange(item.id, value, displayedBackgroundId)}
                             onSettled={(value) => commitAppearanceItemTime(item.id, value, displayedBackgroundId)}
                             onCancel={() => clearAppearanceTimingDraft(item.id, displayedBackgroundId)}

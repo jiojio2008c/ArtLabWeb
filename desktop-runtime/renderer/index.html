@@ -11,7 +11,18 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div id="displayRoot" class="display-root is-archive-view">
+    <div id="displayRoot" class="display-root is-public-library-view">
+      <section id="publicLibraryView" class="public-library-view" aria-label="公共案例">
+        <header class="public-library-topbar">
+          <div class="public-library-title-block">
+            <p class="public-library-eyebrow">動態藝術</p>
+            <h1 class="public-library-title">公共案例</h1>
+          </div>
+          <p class="public-library-hint">選擇案例開始播放，按 Esc 返回選擇頁</p>
+        </header>
+        <div id="publicLibraryGrid" class="public-library-grid" role="list"></div>
+      </section>
+
       <section id="archiveView" class="archive-view" aria-label="iPad 作品檔案同步畫面">
         <div id="archiveMirrorFallback" class="archive-mirror-fallback" aria-hidden="false">
           <img id="archiveSourceImage" class="archive-source-image" alt="" draggable="false" />

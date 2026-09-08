@@ -14,7 +14,7 @@
     "test:speed": "node --no-warnings --test renderer/dynamic-speed-core.test.mjs",
     "test:transition-audio": "node --no-warnings scripts/verify-background-transition-audio.mjs",
     "test:background-order": "node --no-warnings scripts/verify-background-playback-order.mjs",
-    "test:presentation": "node --no-warnings --test runtime-display-settings-core.test.cjs group-state-revision-core.test.cjs group-state-revision-integration.test.cjs renderer/stage-presentation-core.test.mjs renderer/background-playback-core.test.mjs renderer/background-transition-core.test.mjs renderer/interaction-core.test.mjs",
+    "test:presentation": "node --no-warnings --test runtime-display-settings-core.test.cjs group-state-revision-core.test.cjs group-state-revision-integration.test.cjs public-cases-core.test.cjs public-library-idle-core.test.cjs renderer/stage-presentation-core.test.mjs renderer/background-playback-core.test.mjs renderer/background-transition-core.test.mjs renderer/interaction-core.test.mjs",
     "clean:releases": "node scripts/clean-release-directories.cjs all",
     "clean:release:standard": "node scripts/clean-release-directories.cjs standard",
     "clean:release:vertical": "node scripts/clean-release-directories.cjs vertical",
@@ -42,9 +42,17 @@
       "main.vertical-flip.js",
       "runtime-display-settings-core.cjs",
       "group-state-revision-core.cjs",
+      "public-cases-core.cjs",
+      "public-library-idle-core.cjs",
       "preload.js",
       "renderer/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../public/dynamic-cases",
+        "to": "dynamic-cases"
+      }
     ],
     "win": {
       "target": [

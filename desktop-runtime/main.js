@@ -21,6 +21,16 @@ const {
   shouldApplyGroupUploadSideEffect,
   shouldApplySelectionRevision
 } = require('./group-state-revision-core.cjs')
+const {
+  buildPublicCaseCatalog,
+  buildPublicCasePlayback,
+  resolvePublicCaseFile,
+  resolvePublicCasesRoot
+} = require('./public-cases-core.cjs')
+const {
+  IPAD_CONTROL_IDLE_MS,
+  shouldReturnFromIpadControl
+} = require('./public-library-idle-core.cjs')
 
 const CONTROL_PORT = 8080
 const MAX_BODY_BYTES = 512 * 1024 * 1024
@@ -36,8 +46,11 @@ let server = null
 let dataDir = ''
 let assetsDir = ''
 let stateFile = ''
+let publicCasesRoot = ''
 let dynamicEventSequence = 0
 let lastDynamicEvent = null
+let lastIpadActivityAt = 0
+let ipadIdleTimer = null
 
 const DYNAMIC_STATE_REVISION_EVENTS = new Set([
   'GroupCreate',
@@ -72,7 +85,8 @@ const runtimeState = {
   assets: {},
   watermarkEnabled: DEFAULT_WATERMARK_ENABLED,
   view: {
-    mode: 'archive',
+    mode: 'public-library',
+    controller: 'local',
     mirror: {
       replayId: null,
       startedAt: 0,
@@ -644,7 +658,128 @@ const ensureRuntimeDirs = () => {
   dataDir = path.join(app.getPath('userData'), 'runtime-data')
   assetsDir = path.join(dataDir, 'assets')
   stateFile = path.join(dataDir, 'runtime-state.json')
+  publicCasesRoot = resolvePublicCasesRoot(app, __dirname)
   fs.mkdirSync(assetsDir, { recursive: true })
+}
+
+const getPublicLibraryState = () => {
+  let cases = []
+  try {
+    cases = buildPublicCaseCatalog(publicCasesRoot).map((item) => ({
+      ...item,
+      posterUrl: `http://127.0.0.1:${CONTROL_PORT}/public-cases/${item.posterPath.replace(/\\/g, '/')}`
+    }))
+  } catch (error) {
+    console.error('Failed to load public case catalog:', error)
+  }
+  return {
+    title: '公共案例',
+    eyebrow: '動態藝術',
+    hint: '選擇案例開始播放，按 Esc 返回選擇頁',
+    cases
+  }
+}
+
+const clearIpadIdleTimer = () => {
+  if (!ipadIdleTimer) return
+  clearTimeout(ipadIdleTimer)
+  ipadIdleTimer = null
+}
+
+const enterIpadControl = () => {
+  lastIpadActivityAt = Date.now()
+  runtimeState.view.controller = 'ipad'
+  if (runtimeState.view.mode === 'public-library') {
+    runtimeState.view.mode = 'archive'
+  }
+  scheduleIpadIdleReturn()
+}
+
+const clearLocalPublicCasePlayback = () => {
+  runtimeState.preview.enabled = false
+  runtimeState.preview.backgroundId = null
+  runtimeState.preview.startedAt = Date.now()
+  if (String(runtimeState.activeGroupId || '').startsWith('public-case:')) {
+    runtimeState.activeGroupId = null
+  }
+}
+
+const playLocalPublicCase = (templateId) => {
+  if (runtimeState.view.controller === 'ipad') {
+    return { ok: false, reason: 'ipad-control' }
+  }
+
+  const playback = buildPublicCasePlayback(publicCasesRoot, templateId)
+  playback.assets.forEach((asset) => {
+    runtimeState.assets[asset.assetId] = {
+      ...asset,
+      groupId: playback.group.groupId,
+      updatedAt: Date.now()
+    }
+  })
+
+  const group = ensureGroup(playback.group.groupId, playback.group.name)
+  group.name = playback.group.name
+  group.activeBackgroundId = playback.group.activeBackgroundId
+  group.backgrounds = playback.group.backgrounds
+  group.backgroundPlayMode = playback.group.backgroundPlayMode
+  group.backgroundIntervalMs = playback.group.backgroundIntervalMs
+  group.backgroundPlaybackLoop = normalizeBackgroundPlaybackLoop(playback.group.backgroundPlaybackLoop)
+  group.appearMode = playback.group.appearMode
+  group.appearIntervalMs = playback.group.appearIntervalMs
+  group.appearAnimation = normalizeAppearAnimation(playback.group.appearAnimation)
+  group.backgroundTransition = normalizeBackgroundTransition(playback.group.backgroundTransition)
+  group.backgroundTransitionDurations = normalizeStoredBackgroundTransitionDurations(
+    playback.group,
+    playback.group.backgrounds
+  )
+  group.audioLibrary = playback.group.audioLibrary
+  group.linkedAppearanceModelVersion = Number(playback.group.linkedAppearanceModelVersion)
+    || DYNAMIC_LINKED_APPEARANCE_MODEL_VERSION
+  group.items = normalizeGroupItemLinksForModel(
+    group,
+    playback.group.items.map((item, index) => defaultItem(item, index))
+  )
+  group.updatedAt = Date.now()
+  enforceFixedBackgroundSelection(group)
+
+  setActiveGroup(group.groupId, group.name)
+  runtimeState.view.mode = 'stage'
+  runtimeState.view.controller = 'local'
+  runtimeState.preview = {
+    enabled: true,
+    groupId: group.groupId,
+    backgroundId: resolvePreviewBackgroundId(group, group.activeBackgroundId),
+    advancedFeaturesEnabled: DESKTOP_ADVANCED_FEATURES_ENABLED,
+    appearMode: group.appearMode,
+    intervalMs: group.appearIntervalMs,
+    appearAnimation: group.appearAnimation,
+    backgroundPlayMode: group.backgroundPlayMode,
+    backgroundIntervalMs: group.backgroundIntervalMs,
+    backgroundPlaybackLoop: group.backgroundPlaybackLoop,
+    backgroundTransition: group.backgroundTransition,
+    backgroundTransitionDurations: group.backgroundTransitionDurations,
+    backgroundTransitionDurationMs: getBackgroundTransitionDuration(
+      group.backgroundTransition,
+      group.backgroundTransitionDurations
+    ),
+    replayId: Date.now(),
+    resolvedAnimationIds: {},
+    startedAt: Date.now()
+  }
+  broadcastState()
+  return { ok: true, groupId: group.groupId }
+}
+
+const exitLocalPublicCase = () => {
+  if (runtimeState.view.controller === 'ipad') {
+    return { ok: false, reason: 'ipad-control' }
+  }
+  clearLocalPublicCasePlayback()
+  runtimeState.view.mode = 'public-library'
+  runtimeState.view.controller = 'local'
+  broadcastState()
+  return { ok: true }
 }
 
 const loadState = () => {
@@ -660,7 +795,8 @@ const loadState = () => {
     runtimeState.assets = loaded.assets ?? {}
     runtimeState.watermarkEnabled = resolveWatermarkEnabled(runtimeState.watermarkEnabled, loaded)
     runtimeState.view = {
-      mode: 'archive',
+      mode: 'public-library',
+      controller: 'local',
       mirror: {
         replayId: null,
         startedAt: 0,
@@ -765,6 +901,7 @@ const getPublicState = () => {
     watermarkVisible: false,
     view: publicView,
     preview: runtimeState.preview,
+    publicLibrary: getPublicLibraryState(),
     server: runtimeState.server,
     lastEvent: lastDynamicEvent
   }
@@ -1121,6 +1258,41 @@ const clearArchiveSource = () => {
     capturedAt: 0,
     origin: null
   }
+}
+
+const returnToUncontrolledIdle = () => {
+  clearIpadIdleTimer()
+  if (runtimeState.view.controller !== 'ipad') return
+
+  runtimeState.view.controller = 'local'
+  runtimeState.view.mode = 'public-library'
+  runtimeState.activeGroupId = null
+  runtimeState.preview.enabled = false
+  runtimeState.preview.backgroundId = null
+  runtimeState.preview.startedAt = Date.now()
+  runtimeState.view.mirror.replayId = null
+  runtimeState.view.mirror.startedAt = 0
+  runtimeState.view.mirror.elapsedMs = 0
+  runtimeState.view.mirror.receivedAt = 0
+  runtimeState.view.mirror.transition = 'none'
+  clearArchiveSnapshot()
+  clearArchiveSource()
+  broadcastState()
+}
+
+const scheduleIpadIdleReturn = () => {
+  clearIpadIdleTimer()
+  if (runtimeState.view.controller !== 'ipad') return
+
+  const remainingMs = IPAD_CONTROL_IDLE_MS - (Date.now() - lastIpadActivityAt)
+  ipadIdleTimer = setTimeout(() => {
+    ipadIdleTimer = null
+    if (shouldReturnFromIpadControl(runtimeState.view.controller, lastIpadActivityAt)) {
+      returnToUncontrolledIdle()
+      return
+    }
+    scheduleIpadIdleReturn()
+  }, Math.max(250, remainingMs))
 }
 
 const normalizeArchiveSource = (value) => {
@@ -2058,6 +2230,21 @@ const handleAssetRequest = (request, response, pathname) => {
   fs.createReadStream(asset.filePath).pipe(response)
 }
 
+const handlePublicCaseRequest = (request, response, pathname) => {
+  const file = resolvePublicCaseFile(publicCasesRoot, decodeURIComponent(pathname))
+  if (!file) {
+    sendJson(response, 404, { ok: false, error: 'Public case file not found' })
+    return
+  }
+
+  writeCorsHeaders(response)
+  response.writeHead(200, {
+    'Content-Type': file.mimeType,
+    'Cache-Control': 'public, max-age=3600'
+  })
+  fs.createReadStream(file.filePath).pipe(response)
+}
+
 const requestHandler = async (request, response) => {
   writeCorsHeaders(response)
 
@@ -2075,6 +2262,11 @@ const requestHandler = async (request, response) => {
       return
     }
 
+    if (request.method === 'GET' && url.pathname.startsWith('/public-cases/')) {
+      handlePublicCaseRequest(request, response, url.pathname)
+      return
+    }
+
     if (request.method === 'GET' && url.pathname === '/status') {
       sendJson(response, 200, getPublicState())
       return
@@ -2089,6 +2281,7 @@ const requestHandler = async (request, response) => {
     const body = await readRequestBody(request)
 
     if (contentType.includes('multipart/form-data')) {
+      enterIpadControl()
       const result = handleUpload(body, contentType)
       sendJson(response, 200, result)
       return
@@ -2097,6 +2290,7 @@ const requestHandler = async (request, response) => {
     const message = body.toString('utf8').trim()
     const dynamicEvent = parseDynamicMessage(message)
     if (dynamicEvent) {
+      enterIpadControl()
       applyDynamicEvent(dynamicEvent.eventName, dynamicEvent.payload)
       sendJson(response, 200, { ok: true, eventName: dynamicEvent.eventName })
       return
@@ -2175,6 +2369,18 @@ app.whenReady().then(() => {
 ipcMain.on('request-runtime-state', () => {
   broadcastServerStatus()
   broadcastState()
+})
+
+ipcMain.on('play-public-case', (_event, templateId) => {
+  try {
+    playLocalPublicCase(String(templateId || ''))
+  } catch (error) {
+    console.error('Failed to play public case:', error)
+  }
+})
+
+ipcMain.on('exit-public-case', () => {
+  exitLocalPublicCase()
 })
 
 app.on('window-all-closed', () => {

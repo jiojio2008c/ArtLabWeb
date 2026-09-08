@@ -1,6 +1,7 @@
 import {
   deleteDynamicGroup,
   deletePersistedDynamicMedia,
+  getDynamicMediaFile,
   hydrateDynamicGroup,
   persistDynamicAudio,
   persistDynamicMedia,
@@ -172,8 +173,14 @@ interface PublicCaseImportProgress {
 interface PublicCaseImportOptions {
   locale?: string
   name?: string
+  folderId?: string
   signal?: AbortSignal
   onProgress?: (progress: PublicCaseImportProgress) => void
+}
+
+interface PublicCasePreviewOptions {
+  locale?: string
+  signal?: AbortSignal
 }
 
 class PublicCaseImportError extends Error {
@@ -200,7 +207,7 @@ type PersistedPublicCaseAsset = DynamicMedia | DynamicAudioMedia
 
 let cachedManifest: PublicCaseManifest | undefined
 
-const makeImportId = (prefix: 'group' | 'item') => {
+const makeImportId = (prefix: 'group' | 'item' | 'media') => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`
   }
@@ -475,98 +482,6 @@ const validatePublicCaseTemplate = (template: PublicCaseTemplate) => {
   }
 }
 
-const calculateSha256 = async (blob: Blob) => {
-  if (typeof crypto === 'undefined' || !crypto.subtle) return undefined
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-const downloadPublicCaseAsset = async (
-  template: PublicCaseTemplate,
-  asset: PublicCaseAsset,
-  signal?: AbortSignal
-) => {
-  throwIfAborted(signal)
-  let response: Response
-  try {
-    response = await fetch(getPublicCaseAssetUrl(asset), {
-      cache: 'force-cache',
-      signal
-    })
-  } catch (error) {
-    throw new PublicCaseImportError(
-      'asset-unavailable',
-      `Public case asset could not be loaded: ${asset.name}`,
-      { templateId: template.templateId, assetId: asset.assetId, originalError: error }
-    )
-  }
-
-  if (!response.ok) {
-    throw new PublicCaseImportError(
-      'asset-unavailable',
-      `Public case asset could not be loaded: ${asset.name} (${response.status})`,
-      { templateId: template.templateId, assetId: asset.assetId }
-    )
-  }
-
-  const sourceBlob = await response.blob()
-  throwIfAborted(signal)
-  if (Number.isFinite(asset.size) && asset.size >= 0 && sourceBlob.size !== asset.size) {
-    throw new PublicCaseImportError(
-      'asset-invalid',
-      `Public case asset size does not match its manifest: ${asset.name}`,
-      { templateId: template.templateId, assetId: asset.assetId }
-    )
-  }
-
-  if (asset.sha256?.trim()) {
-    const actualHash = await calculateSha256(sourceBlob)
-    if (actualHash && actualHash !== asset.sha256.trim().toLowerCase()) {
-      throw new PublicCaseImportError(
-        'asset-invalid',
-        `Public case asset checksum does not match its manifest: ${asset.name}`,
-        { templateId: template.templateId, assetId: asset.assetId }
-      )
-    }
-  }
-
-  const mimeType = asset.mimeType || sourceBlob.type || 'application/octet-stream'
-  return new File([sourceBlob], asset.name, {
-    type: mimeType,
-    lastModified: Date.now()
-  })
-}
-
-const persistPublicCaseAsset = async (
-  template: PublicCaseTemplate,
-  asset: PublicCaseAsset,
-  file: File,
-  groupId: string
-): Promise<PersistedPublicCaseAsset> => {
-  let persisted: PersistedPublicCaseAsset
-  try {
-    persisted = asset.mediaType === 'audio'
-      ? await persistDynamicAudio(file, `${groupId}/public-case/${template.slug}/audio`)
-      : await persistDynamicMedia(file, `${groupId}/public-case/${template.slug}/${asset.role}`)
-  } catch (error) {
-    throw new PublicCaseImportError(
-      'asset-persistence-failed',
-      `Public case asset could not be saved: ${asset.name}`,
-      { templateId: template.templateId, assetId: asset.assetId, originalError: error }
-    )
-  }
-
-  if (!persisted.filePath && !persisted.storageKey) {
-    URL.revokeObjectURL(persisted.url)
-    throw new PublicCaseImportError(
-      'asset-persistence-failed',
-      `Public case asset was not saved to durable storage: ${asset.name}`,
-      { templateId: template.templateId, assetId: asset.assetId }
-    )
-  }
-  return persisted
-}
-
 const requirePersistedVisual = (
   persistedBySourceId: Map<string, PersistedPublicCaseAsset>,
   sourceId: string,
@@ -603,14 +518,22 @@ const createDynamicGroupFromTemplate = (
   template: PublicCaseTemplate,
   persistedBySourceId: Map<string, PersistedPublicCaseAsset>,
   groupId: string,
-  groupName: string
+  groupName: string,
+  options: {
+    folderId?: string
+    makeItemId?: (sourceItemId: string) => string
+    timestamp?: number
+  } = {}
 ): DynamicGroup => {
-  const now = Date.now()
+  const now = options.timestamp ?? Date.now()
   const mediaIdMap = new Map(
     Array.from(persistedBySourceId, ([sourceId, media]) => [sourceId, media.id])
   )
   const itemIdMap = new Map(
-    template.group.items.map((item) => [item.itemId, makeImportId('item')])
+    template.group.items.map((item) => [
+      item.itemId,
+      options.makeItemId?.(item.itemId) ?? makeImportId('item')
+    ])
   )
 
   const backgrounds = template.group.backgrounds.map((source): DynamicBackground => {
@@ -730,6 +653,7 @@ const createDynamicGroupFromTemplate = (
   return {
     id: groupId,
     name: groupName,
+    folderId: options.folderId,
     thumbnail,
     background: activeBackground,
     backgrounds,
@@ -751,11 +675,144 @@ const createDynamicGroupFromTemplate = (
   }
 }
 
-const rollbackPersistedAssets = async (persistedAssets: PersistedPublicCaseAsset[]) => {
-  await Promise.allSettled(persistedAssets.map(async (media) => {
-    await deletePersistedDynamicMedia(media)
-    if (media.url.startsWith('blob:')) URL.revokeObjectURL(media.url)
+const createPublicCasePreviewAssetMap = (template: PublicCaseTemplate) => {
+  const previewAssetPrefix = `public-case-preview:${template.templateId}:asset:`
+  return new Map<string, PersistedPublicCaseAsset>(template.assets.map((asset) => {
+    const baseMedia = {
+      id: `${previewAssetPrefix}${asset.assetId}`,
+      name: asset.name,
+      mimeType: asset.mimeType,
+      url: getPublicCaseAssetUrl(asset),
+      updatedAt: 0
+    }
+    const media: PersistedPublicCaseAsset = asset.mediaType === 'audio'
+      ? { ...baseMedia, type: 'audio' }
+      : { ...baseMedia, type: asset.mediaType }
+    return [asset.assetId, media]
   }))
+}
+
+const downloadPublicCaseAsset = async (
+  template: PublicCaseTemplate,
+  asset: PublicCaseAsset,
+  signal?: AbortSignal
+) => {
+  throwIfAborted(signal)
+  const file = await getDynamicMediaFile({
+    id: asset.assetId,
+    name: asset.name,
+    type: asset.mediaType,
+    mimeType: asset.mimeType,
+    url: getPublicCaseAssetUrl(asset),
+    updatedAt: Date.now()
+  })
+  throwIfAborted(signal)
+  if (!file) {
+    throw new PublicCaseImportError(
+      'asset-unavailable',
+      `Public case asset could not be loaded: ${asset.name}`,
+      { templateId: template.templateId, assetId: asset.assetId }
+    )
+  }
+  return file
+}
+
+const persistImportedPublicCaseAsset = async (
+  template: PublicCaseTemplate,
+  asset: PublicCaseAsset,
+  file: File,
+  groupId: string
+): Promise<PersistedPublicCaseAsset> => {
+  const scope = `${groupId}/public-case/${template.slug}/${asset.role}`
+  let persisted: PersistedPublicCaseAsset
+  try {
+    persisted = asset.mediaType === 'audio'
+      ? await persistDynamicAudio(file, `${groupId}/public-case/${template.slug}/audio`, { preferIndexedDb: true })
+      : await persistDynamicMedia(file, scope, { preferIndexedDb: true })
+  } catch (error) {
+    throw new PublicCaseImportError(
+      'asset-persistence-failed',
+      `Public case asset could not be saved: ${asset.name}`,
+      { templateId: template.templateId, assetId: asset.assetId, originalError: error }
+    )
+  }
+
+  if (!persisted.filePath && !persisted.storageKey) {
+    if (persisted.url.startsWith('blob:')) URL.revokeObjectURL(persisted.url)
+    throw new PublicCaseImportError(
+      'asset-persistence-failed',
+      `Public case asset was not saved to durable storage: ${asset.name}`,
+      { templateId: template.templateId, assetId: asset.assetId }
+    )
+  }
+
+  return persisted
+}
+
+const createPublicCaseImportAssetMap = async (
+  template: PublicCaseTemplate,
+  groupId: string,
+  signal?: AbortSignal,
+  onAssetProgress?: (phase: 'downloading' | 'persisting', index: number, asset: PublicCaseAsset) => void
+) => {
+  const persistedBySourceId = new Map<string, PersistedPublicCaseAsset>()
+  const persistedAssets: PersistedPublicCaseAsset[] = []
+
+  try {
+    for (let index = 0; index < template.assets.length; index += 1) {
+      const asset = template.assets[index]
+      throwIfAborted(signal)
+      onAssetProgress?.('downloading', index, asset)
+      const file = await downloadPublicCaseAsset(template, asset, signal)
+      onAssetProgress?.('persisting', index, asset)
+      const persisted = await persistImportedPublicCaseAsset(template, asset, file, groupId)
+      persistedAssets.push(persisted)
+      persistedBySourceId.set(asset.assetId, persisted)
+    }
+  } catch (error) {
+    await Promise.allSettled(persistedAssets.map(async (media) => {
+      await deletePersistedDynamicMedia(media)
+      if (media.url.startsWith('blob:')) URL.revokeObjectURL(media.url)
+    }))
+    throw error
+  }
+
+  return { persistedBySourceId, persistedAssets }
+}
+
+const loadPublicCasePreviewGroup = async (
+  templateId: string,
+  options: PublicCasePreviewOptions = {}
+): Promise<DynamicGroup> => {
+  const requestedTemplateId = templateId.trim()
+  if (!requestedTemplateId) {
+    throw new PublicCaseImportError('template-not-found', 'A public case template ID is required')
+  }
+
+  const manifest = await loadPublicCaseManifest({ signal: options.signal })
+  throwIfAborted(options.signal)
+  const template = findPublicCaseTemplate(manifest, requestedTemplateId)
+  if (!template) {
+    throw new PublicCaseImportError(
+      'template-not-found',
+      `Public case template was not found: ${requestedTemplateId}`,
+      { templateId: requestedTemplateId }
+    )
+  }
+
+  validatePublicCaseTemplate(template)
+  throwIfAborted(options.signal)
+  const previewItemPrefix = `public-case-preview:${template.templateId}:item:`
+  return createDynamicGroupFromTemplate(
+    template,
+    createPublicCasePreviewAssetMap(template),
+    `public-case-preview:${template.templateId}`,
+    getPublicCaseName(template, options.locale),
+    {
+      makeItemId: (sourceItemId) => `${previewItemPrefix}${sourceItemId}`,
+      timestamp: 0
+    }
+  )
 }
 
 const importPublicCase = async (
@@ -800,44 +857,32 @@ const importPublicCase = async (
   throwIfAborted(options.signal)
 
   const groupId = makeImportId('group')
-  const persistedAssets: PersistedPublicCaseAsset[] = []
-  const persistedBySourceId = new Map<string, PersistedPublicCaseAsset>()
   let groupSaved = false
+  let persistedAssets: PersistedPublicCaseAsset[] = []
   let completedBytes = 0
 
   try {
-    for (let index = 0; index < template.assets.length; index += 1) {
-      const asset = template.assets[index]
-      const progress = {
-        templateId: template.templateId,
-        completedAssets: index,
-        totalAssets: template.assets.length,
-        completedBytes,
-        totalBytes,
-        asset
-      }
-      reportProgress(options.onProgress, { phase: 'downloading', ...progress })
-      const file = await downloadPublicCaseAsset(template, asset, options.signal)
-      reportProgress(options.onProgress, { phase: 'persisting', ...progress })
-      const persisted = await persistPublicCaseAsset(template, asset, file, groupId)
-      persistedAssets.push(persisted)
-      persistedBySourceId.set(asset.assetId, persisted)
-      completedBytes += asset.size > 0 ? asset.size : file.size
-      reportProgress(options.onProgress, {
-        phase: 'persisting',
-        ...progress,
-        completedAssets: index + 1,
-        completedBytes
-      })
-      throwIfAborted(options.signal)
-    }
-
-    const group = createDynamicGroupFromTemplate(
+    const imported = await createPublicCaseImportAssetMap(
       template,
-      persistedBySourceId,
       groupId,
-      options.name?.trim() || getPublicCaseName(template, options.locale)
+      options.signal,
+      (phase, index, asset) => {
+        const progress = {
+          templateId: template.templateId,
+          completedAssets: index,
+          totalAssets: template.assets.length,
+          completedBytes,
+          totalBytes,
+          asset
+        }
+        reportProgress(options.onProgress, { phase, ...progress })
+        if (phase === 'persisting') {
+          completedBytes += asset.size > 0 ? asset.size : 0
+        }
+      }
     )
+    persistedAssets = imported.persistedAssets
+    throwIfAborted(options.signal)
     reportProgress(options.onProgress, {
       phase: 'saving',
       templateId: template.templateId,
@@ -846,6 +891,13 @@ const importPublicCase = async (
       completedBytes,
       totalBytes
     })
+    const group = createDynamicGroupFromTemplate(
+      template,
+      imported.persistedBySourceId,
+      groupId,
+      options.name?.trim() || getPublicCaseName(template, options.locale),
+      { folderId: options.folderId }
+    )
     throwIfAborted(options.signal)
     const savedGroup = upsertDynamicGroup(group)
     groupSaved = true
@@ -874,7 +926,10 @@ const importPublicCase = async (
         if (media.url.startsWith('blob:')) URL.revokeObjectURL(media.url)
       })
     } else {
-      await rollbackPersistedAssets(persistedAssets)
+      await Promise.allSettled(persistedAssets.map(async (media) => {
+        await deletePersistedDynamicMedia(media)
+        if (media.url.startsWith('blob:')) URL.revokeObjectURL(media.url)
+      }))
     }
     if (error instanceof PublicCaseImportError || (error instanceof DOMException && error.name === 'AbortError')) {
       throw error
@@ -891,7 +946,8 @@ export {
   PUBLIC_CASE_MANIFEST_URL,
   PublicCaseImportError,
   importPublicCase,
-  loadPublicCaseManifest
+  loadPublicCaseManifest,
+  loadPublicCasePreviewGroup
 }
 export type {
   PublicCaseAsset,
@@ -903,5 +959,6 @@ export type {
   PublicCaseImportProgress,
   PublicCaseManifest,
   PublicCaseMediaType,
+  PublicCasePreviewOptions,
   PublicCaseTemplate
 }

@@ -103,6 +103,8 @@ const statusPanel = document.getElementById('statusPanel')
 const statusText = document.getElementById('statusText')
 const groupText = document.getElementById('groupText')
 const archiveView = document.getElementById('archiveView')
+const publicLibraryView = document.getElementById('publicLibraryView')
+const publicLibraryGrid = document.getElementById('publicLibraryGrid')
 const stageStandby = document.getElementById('stageStandby')
 let archiveMirrorImage = document.getElementById('archiveMirrorImage')
 const archiveMirrorFallback = document.getElementById('archiveMirrorFallback')
@@ -127,7 +129,8 @@ let runtimeState = {
   assets: {},
   watermarkEnabled: DEFAULT_STAGE_WATERMARK_ENABLED,
   view: {
-    mode: 'archive',
+    mode: 'public-library',
+    controller: 'local',
     mirror: {
       replayId: null,
       startedAt: 0,
@@ -318,7 +321,9 @@ const getPreviewPlaybackStartBackground = (group, preview = runtimeState.preview
   return backgrounds[startIndex] ?? backgrounds[0]
 }
 
-const isArchiveView = () => runtimeState.view?.mode !== 'stage'
+const isStageView = () => runtimeState.view?.mode === 'stage'
+const isArchiveView = () => runtimeState.view?.mode === 'archive'
+const isPublicLibraryView = () => runtimeState.view?.mode === 'public-library'
 
 const getAsset = (assetId) => {
   if (!assetId) return null
@@ -694,7 +699,7 @@ const preloadBackground = (background) => {
 
 const getPreviewPresentationKey = () => {
   const preview = runtimeState.preview ?? {}
-  if (preview.enabled !== true || isArchiveView()) return ''
+  if (preview.enabled !== true || !isStageView()) return ''
   return `${runtimeState.activeGroupId ?? preview.groupId ?? ''}:${preview.replayId ?? 0}:${String(preview.backgroundId ?? '').trim()}`
 }
 
@@ -774,6 +779,7 @@ const activatePreviewPresentation = (key, now) => {
 
 const updateRuntimePresentation = (now = performance.now()) => {
   const archiveActive = isArchiveView()
+  const publicLibraryActive = isPublicLibraryView()
   const requestedKey = getPreviewPresentationKey()
 
   if (!requestedKey) {
@@ -784,18 +790,20 @@ const updateRuntimePresentation = (now = performance.now()) => {
     previewPresentationReady = false
   }
 
-  if (!archiveActive && requestedKey && !previewPresentationReady) {
+  if (!archiveActive && !publicLibraryActive && requestedKey && !previewPresentationReady) {
     primePreviewAssets(getActiveGroup())
     if (arePreviewVisualsReady(getActiveGroup())) {
       activatePreviewPresentation(requestedKey, now)
     }
   }
 
-  const standbyActive = !archiveActive && !previewPresentationReady
+  const standbyActive = !archiveActive && !publicLibraryActive && !previewPresentationReady
+  displayRoot?.classList.toggle('is-public-library-view', publicLibraryActive)
   displayRoot?.classList.toggle('is-stage-standby', standbyActive)
+  publicLibraryView?.setAttribute('aria-hidden', publicLibraryActive ? 'false' : 'true')
   stageStandby?.setAttribute('aria-hidden', standbyActive ? 'false' : 'true')
-  if (standbyActive) clearStageSurface()
-  return { archiveActive, standbyActive, previewActive: !archiveActive && !standbyActive }
+  if (standbyActive || publicLibraryActive) clearStageSurface()
+  return { archiveActive, standbyActive, previewActive: isStageView() && !standbyActive }
 }
 
 const disposeAudioElement = (element) => {
@@ -2514,6 +2522,7 @@ const receiveState = (state) => {
   applyStateEventToInteractions(runtimeState)
   animationOverrides.reconcile(runtimeState)
   clearUnusedMedia()
+  renderPublicLibrary()
   renderArchiveMirror()
   updateRuntimePresentation()
   if (archiveModeChanged || previousPreview.enabled !== nextPreview.enabled) {
@@ -2530,6 +2539,61 @@ const receiveState = (state) => {
   updateStatusPanel()
 }
 
+const renderPublicLibrary = () => {
+  if (!publicLibraryGrid) return
+  const library = runtimeState.publicLibrary ?? {}
+  const cases = Array.isArray(library.cases) ? library.cases : []
+  const nextKey = cases.map((item) => `${item.templateId}:${item.posterUrl}`).join('|')
+  if (publicLibraryGrid.dataset.catalogKey === nextKey) return
+  publicLibraryGrid.dataset.catalogKey = nextKey
+  publicLibraryGrid.replaceChildren()
+
+  cases.forEach((item) => {
+    const card = document.createElement('article')
+    card.className = 'public-library-card'
+    card.setAttribute('role', 'listitem')
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'public-library-card-main'
+    button.setAttribute('aria-label', `播放 ${item.name}`)
+    button.addEventListener('click', () => {
+      if (!isPublicLibraryView()) return
+      window.runtimeApi?.playPublicCase(item.templateId)
+    })
+
+    const preview = document.createElement('span')
+    preview.className = 'public-library-card-preview'
+    const image = document.createElement('img')
+    image.alt = ''
+    image.draggable = false
+    image.src = item.posterUrl || ''
+    preview.appendChild(image)
+
+    const copy = document.createElement('span')
+    copy.className = 'public-library-card-copy'
+    const title = document.createElement('strong')
+    title.textContent = item.name || item.templateId
+    const meta = document.createElement('small')
+    meta.textContent = `${item.backgroundCount || 0} 個背景 · ${item.objectCount || 0} 個物件`
+    const badge = document.createElement('span')
+    badge.className = 'public-library-card-badge'
+    badge.textContent = '官方案例'
+    copy.append(title, meta, badge)
+
+    button.append(preview, copy)
+    card.appendChild(button)
+    publicLibraryGrid.appendChild(card)
+  })
+}
+
+const handlePublicLibraryKeydown = (event) => {
+  if (event.key !== 'Escape' && event.key !== 'Esc') return
+  if (runtimeState.view?.controller === 'ipad' || !isStageView()) return
+  event.preventDefault()
+  window.runtimeApi?.exitPublicCase()
+}
+
 const receiveServerStatus = (status) => {
   serverStatus = status
   updateStatusPanel()
@@ -2543,8 +2607,10 @@ window.addEventListener('beforeunload', () => {
   resetAdvancedPlaybackSession('')
 })
 canvas.addEventListener('pointerdown', handleStagePointerDown)
+window.addEventListener('keydown', handlePublicLibraryKeydown)
 resizeCanvas()
 resizeArchivePortalCanvas()
+renderPublicLibrary()
 renderArchiveMirror()
 
 window.runtimeApi?.onState(receiveState)

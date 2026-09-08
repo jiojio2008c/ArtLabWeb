@@ -6225,6 +6225,27 @@ code {
   font-weight: 900;
 }
 
+.dynamic-speed-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  gap: 10px;
+  align-items: center;
+}
+
+.dynamic-speed-input {
+  box-sizing: border-box;
+  width: 76px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--ink);
+  background: #fff;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .dynamic-animation-grid {
   grid-template-columns: repeat(10, minmax(0, 1fr));
 }
@@ -11053,6 +11074,10 @@ button.ui-pressed {
 }
 
 @media (max-width: 1100px) {
+  .dynamic-library-detail-row.public-case {
+    grid-template-columns: minmax(220px, 1.35fr) 160px 80px minmax(120px, 1fr) minmax(112px, auto);
+  }
+
   .dynamic-library-detail-main {
     grid-template-columns: minmax(220px, 1.35fr) 160px 80px minmax(150px, 1fr);
   }
@@ -11718,6 +11743,43 @@ button.ui-pressed {
   background: rgba(248, 253, 252, 0.96);
 }
 
+.dynamic-library-icon-card.public-case .dynamic-library-icon-copy {
+  position: relative;
+  padding: 8px 10px 34px 11px;
+  align-content: start;
+  gap: 2px;
+}
+
+.dynamic-library-icon-grid.has-public-cases {
+  grid-auto-rows: 236px;
+}
+
+.dynamic-library-icon-grid.has-public-cases .dynamic-library-icon-card {
+  height: 236px;
+}
+
+.dynamic-library-icon-card.public-case .dynamic-library-icon-main {
+  grid-template-rows: minmax(0, 1fr) 92px;
+}
+
+.dynamic-library-icon-card.public-case .dynamic-library-icon-copy strong {
+  display: block;
+  overflow: visible;
+  font-size: 14px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.dynamic-library-icon-card.public-case .dynamic-library-icon-copy small {
+  display: block;
+  overflow: visible;
+  line-height: 1.25;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .dynamic-library-icon-card.public-case .dynamic-library-icon-preview,
 .dynamic-library-detail-row.public-case .dynamic-library-detail-thumbnail {
   background: #edf5f4;
@@ -11731,8 +11793,11 @@ button.ui-pressed {
 }
 
 .dynamic-library-public-badge {
+  position: absolute;
+  left: 10px;
+  bottom: 7px;
   width: fit-content;
-  max-width: 100%;
+  max-width: calc(50% - 12px);
   overflow: hidden;
   border: 1px solid rgba(8, 127, 117, 0.2);
   border-radius: 999px;
@@ -11748,6 +11813,7 @@ button.ui-pressed {
 
 .dynamic-library-public-action,
 .dynamic-library-public-detail-action {
+  border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11756,23 +11822,149 @@ button.ui-pressed {
   font-size: 11px;
   font-weight: 900;
   white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .dynamic-library-public-action {
   position: absolute;
+  z-index: 3;
   right: 10px;
-  bottom: 8px;
-  max-width: calc(100% - 20px);
-  padding: 5px 8px;
+  bottom: 6px;
+  max-width: calc(58% - 12px);
+  min-height: 28px;
+  padding: 5px 9px;
   border-radius: 999px;
   background: rgba(224, 248, 243, 0.94);
-  pointer-events: none;
 }
 
 .dynamic-library-public-detail-action {
   grid-column: 5;
   justify-self: center;
-  padding: 0 4px;
+  min-height: 34px;
+  margin: 0 5px;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(224, 248, 243, 0.94);
+}
+
+.dynamic-library-public-action:hover,
+.dynamic-library-public-action:focus-visible,
+.dynamic-library-public-detail-action:hover,
+.dynamic-library-public-detail-action:focus-visible {
+  color: #04675f;
+  background: #d4f2ec;
+  box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.12);
+  outline: none;
+}
+
+.dynamic-library-public-action:active,
+.dynamic-library-public-detail-action:active {
+  transform: scale(0.96);
+}
+
+.dynamic-library-public-action:disabled,
+.dynamic-library-public-detail-action:disabled {
+  cursor: default;
+  transform: none;
+}
+
+/* Official case cards keep copying as their only inline action. Opening the
+   card leads to the read-only detail page, where playback is deliberately
+   started by the user. */
+.dynamic-library-public-actions {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  bottom: 6px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.dynamic-library-public-actions .dynamic-library-public-action {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  min-height: 30px;
+  padding: 5px 8px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 10px;
+}
+
+.dynamic-library-public-actions .dynamic-library-public-action span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-public-actions .dynamic-library-public-action svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.dynamic-library-public-copy-action {
+  background: rgba(224, 248, 243, 0.94);
+}
+
+.dynamic-library-public-detail-actions {
+  grid-column: 5;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 6px;
+}
+
+.dynamic-library-public-detail-actions .dynamic-library-public-detail-action {
+  grid-column: auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 29px;
+  margin: 0;
+  padding: 4px 6px;
+  overflow: hidden;
+  font-size: 10px;
+}
+
+.dynamic-library-public-detail-actions .dynamic-library-public-detail-action span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-library-public-detail-actions .dynamic-library-public-detail-action svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.dynamic-library-public-detail-copy-action {
+  background: rgba(224, 248, 243, 0.94);
+}
+
+.dynamic-library-detail-row.public-case,
+.dynamic-library-detail-row.public-case .dynamic-library-detail-main {
+  min-height: 84px;
+}
+
+.dynamic-library-detail-row.public-case {
+  grid-template-columns: minmax(240px, 1.45fr) 184px 92px minmax(140px, 1fr) minmax(116px, auto);
+}
+
+.dynamic-library-detail-row.public-case .dynamic-library-detail-name strong {
+  overflow: visible;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .dynamic-library-public-spinner {
@@ -11786,6 +11978,34 @@ button.ui-pressed {
   opacity: 0.68;
 }
 
+.dynamic-library-icon-card.public-case.public-case-previewing,
+.dynamic-library-detail-row.public-case.public-case-previewing {
+  border-color: rgba(8, 127, 117, 0.48);
+  box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.1), 0 12px 28px rgba(30, 45, 52, 0.14);
+}
+
+.dynamic-library-public-copy-modal {
+  height: min(610px, calc(100dvh - 52px));
+}
+
+.dynamic-library-public-copy-note,
+.dynamic-library-public-copy-error {
+  margin: -7px 0 0;
+  color: #68736e;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.dynamic-library-public-copy-error {
+  margin: 0;
+  color: #aa3f34;
+}
+
+.dynamic-library-public-copy-modal .settings-actions .primary-button {
+  gap: 7px;
+}
+
 @keyframes dynamic-library-public-spin {
   to { transform: rotate(360deg); }
 }
@@ -11795,6 +12015,59 @@ button.ui-pressed {
     right: 7px;
     bottom: 6px;
     font-size: 10px;
+  }
+
+  .dynamic-library-icon-grid.has-public-cases {
+    grid-auto-rows: 246px;
+  }
+
+  .dynamic-library-icon-grid.has-public-cases .dynamic-library-icon-card {
+    height: 246px;
+  }
+
+  .dynamic-library-icon-card.public-case .dynamic-library-icon-main {
+    grid-template-rows: minmax(0, 1fr) 102px;
+  }
+
+  /* Keep the detail view usable on portrait tablets and small windows. The
+     metadata columns retain their hierarchy while the action rail stays wide
+     enough for both labelled buttons. */
+  .dynamic-library-detail-header,
+  .dynamic-library-detail-row.public-case {
+    grid-template-columns: minmax(170px, 1.3fr) 112px 68px minmax(92px, 1fr) minmax(108px, auto);
+  }
+
+  .dynamic-library-detail-main {
+    grid-template-columns: minmax(170px, 1.3fr) 112px 68px minmax(92px, 1fr);
+  }
+
+  .dynamic-library-public-detail-actions {
+    padding-inline: 4px;
+  }
+
+  .dynamic-library-public-detail-actions .dynamic-library-public-detail-action {
+    padding-inline: 4px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dynamic-library-icon-grid.has-public-cases {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dynamic-library-public-actions {
+    left: 7px;
+    right: 7px;
+    max-width: none;
+    gap: 4px;
+  }
+
+  .dynamic-library-public-actions .dynamic-library-public-action {
+    flex: 1 1 0;
+    padding-inline: 5px;
+    font-size: 9px;
   }
 }
 

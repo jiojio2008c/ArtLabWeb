@@ -1074,13 +1074,23 @@ const loadRawGroups = (): DynamicGroup[] => {
   }
 }
 
+const isDurableMediaUrl = (url?: string) => {
+  if (!url) return false
+  const value = url.trim()
+  if (!value || value.startsWith('blob:') || value.startsWith('data:')) return false
+  return value.startsWith('/')
+    || value.startsWith('http://')
+    || value.startsWith('https://')
+    || value.startsWith('capacitor:')
+}
+
 const serializeMediaForStorage = <T extends DynamicStoredMedia>(media?: T): T | undefined => {
   if (!media) return undefined
 
-  const { url: _url, ...storedMedia } = media
+  const { url, ...storedMedia } = media
   return {
     ...storedMedia,
-    url: ''
+    url: isDurableMediaUrl(url) ? url : ''
   } as T
 }
 
@@ -1368,7 +1378,15 @@ const loadDynamicGroups = async () => {
   return Promise.all(groups.map(hydrateGroup))
 }
 
-const persistDynamicAsset = async (file: File, scope: string): Promise<DynamicStoredMedia> => {
+interface PersistDynamicAssetOptions {
+  preferIndexedDb?: boolean
+}
+
+const persistDynamicAsset = async (
+  file: File,
+  scope: string,
+  options: PersistDynamicAssetOptions = {}
+): Promise<DynamicStoredMedia> => {
   const mediaId = generateId('media')
   const type = getStoredMediaType(file)
   const mimeType = file.type || (type === 'video' ? 'video/mp4' : type === 'audio' ? 'audio/mp4' : 'image/png')
@@ -1376,7 +1394,7 @@ const persistDynamicAsset = async (file: File, scope: string): Promise<DynamicSt
   let filePath: string | undefined
   let storageKey: string | undefined
 
-  if (isNativeStorage()) {
+  if (isNativeStorage() && !options.preferIndexedDb) {
     try {
       filePath = await saveFileToFilesystem(file, mediaId, scope)
     } catch (error) {
@@ -1415,8 +1433,12 @@ const persistDynamicAsset = async (file: File, scope: string): Promise<DynamicSt
   }
 }
 
-const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMedia> => {
-  const media = await persistDynamicAsset(file, scope)
+const persistDynamicMedia = async (
+  file: File,
+  scope: string,
+  options: PersistDynamicAssetOptions = {}
+): Promise<DynamicMedia> => {
+  const media = await persistDynamicAsset(file, scope, options)
   if (media.type === 'audio') {
     await deleteDynamicMedia(media)
     throw new Error('Audio files cannot be used as dynamic visual media')
@@ -1424,11 +1446,15 @@ const persistDynamicMedia = async (file: File, scope: string): Promise<DynamicMe
   return media
 }
 
-const persistDynamicAudio = async (file: File, scope: string): Promise<DynamicAudioMedia> => {
+const persistDynamicAudio = async (
+  file: File,
+  scope: string,
+  options: PersistDynamicAssetOptions = {}
+): Promise<DynamicAudioMedia> => {
   const normalizedFile = normalizeDynamicAudioFile(file)
   if (!normalizedFile) throw new Error('The selected file is not a supported audio file')
 
-  const media = await persistDynamicAsset(normalizedFile, scope)
+  const media = await persistDynamicAsset(normalizedFile, scope, options)
   if (media.type !== 'audio') {
     await deleteDynamicMedia(media)
     throw new Error('The selected file is not an audio file')
@@ -1438,6 +1464,66 @@ const persistDynamicAudio = async (file: File, scope: string): Promise<DynamicAu
     throw new Error('The selected audio file could not be persisted')
   }
   return media
+}
+
+const isUsableMediaBlob = (blob?: Blob) => (
+  Boolean(blob && blob.size > 0 && !String(blob.type || '').toLowerCase().includes('text/html'))
+)
+
+const resolveFetchableMediaUrl = (url: string) => {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (
+    trimmed.startsWith('blob:')
+    || trimmed.startsWith('data:')
+    || /^https?:\/\//i.test(trimmed)
+    || trimmed.startsWith('capacitor:')
+    || trimmed.startsWith('ionic:')
+  ) {
+    return trimmed
+  }
+  try {
+    return new URL(trimmed, window.location.href).toString()
+  } catch {
+    return trimmed
+  }
+}
+
+const fetchMediaBlob = async (url: string) => {
+  const candidates = Array.from(new Set([
+    url.trim(),
+    resolveFetchableMediaUrl(url)
+  ].filter(Boolean)))
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate)
+      if (!response.ok) continue
+      const blob = await response.blob()
+      if (isUsableMediaBlob(blob)) return blob
+    } catch (error) {
+      console.error('Failed to fetch dynamic media url for sync:', error)
+    }
+
+    const xhrBlob = await new Promise<Blob | undefined>((resolve) => {
+      try {
+        const request = new XMLHttpRequest()
+        request.open('GET', candidate, true)
+        request.responseType = 'blob'
+        request.onload = () => {
+          const blob = request.response instanceof Blob ? request.response : undefined
+          resolve(isUsableMediaBlob(blob) ? blob : undefined)
+        }
+        request.onerror = () => resolve(undefined)
+        request.send()
+      } catch {
+        resolve(undefined)
+      }
+    })
+    if (xhrBlob) return xhrBlob
+  }
+
+  return undefined
 }
 
 const getDynamicMediaFile = async (media: DynamicStoredMedia): Promise<File | undefined> => {
@@ -1458,7 +1544,7 @@ const getDynamicMediaFile = async (media: DynamicStoredMedia): Promise<File | un
     }
   }
 
-  if (!blob && media.storageKey) {
+  if (!isUsableMediaBlob(blob) && media.storageKey) {
     try {
       const record = await getDynamicBlob(media.storageKey)
       blob = record?.blob
@@ -1467,18 +1553,11 @@ const getDynamicMediaFile = async (media: DynamicStoredMedia): Promise<File | un
     }
   }
 
-  if (!blob && media.url) {
-    try {
-      const response = await fetch(media.url)
-      if (response.ok) {
-        blob = await response.blob()
-      }
-    } catch (error) {
-      console.error('Failed to fetch dynamic media url for sync:', error)
-    }
+  if (!isUsableMediaBlob(blob) && media.url) {
+    blob = await fetchMediaBlob(media.url)
   }
 
-  if (!blob) return undefined
+  if (!isUsableMediaBlob(blob) || !blob) return undefined
 
   const mimeType = media.mimeType || blob.type || 'application/octet-stream'
   return new File([blob], media.name || `${media.id}.bin`, {

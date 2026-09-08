@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld('runtimeApi', {
   onServerStatus: (callback) => {
     ipcRenderer.on('server-status', (_event, status) => callback(status))
   },
-  requestState: () => ipcRenderer.send('request-runtime-state')
+  requestState: () => ipcRenderer.send('request-runtime-state'),
+  playPublicCase: (templateId) => ipcRenderer.send('play-public-case', templateId),
+  exitPublicCase: () => ipcRenderer.send('exit-public-case')
 })

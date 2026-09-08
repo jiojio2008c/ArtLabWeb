@@ -22,6 +22,29 @@ test('stale full-state selections are cached without replacing the active stage'
   assert.match(mainSource, /if \(activatesGroup\) \{[\s\S]*?runtimeState\.view\.mode = 'stage'/)
 })
 
+test('idle public library and iPad control stay on separate paths', () => {
+  assert.match(mainSource, /mode: 'public-library'/)
+  assert.match(mainSource, /controller: 'local'/)
+  assert.match(mainSource, /enterIpadControl\(\)/)
+  assert.match(mainSource, /scheduleIpadIdleReturn\(\)/)
+  assert.match(mainSource, /returnToUncontrolledIdle\(\)/)
+  assert.match(mainSource, /IPAD_CONTROL_IDLE_MS/)
+  assert.match(mainSource, /playLocalPublicCase/)
+  assert.match(mainSource, /exitLocalPublicCase/)
+  assert.match(mainSource, /pathname\.startsWith\('\/public-cases\/'\)/)
+  assert.match(playerSource, /const isStageView = \(\) => runtimeState\.view\?\.mode === 'stage'/)
+  assert.match(playerSource, /const isPublicLibraryView = \(\) => runtimeState\.view\?\.mode === 'public-library'/)
+  assert.match(playerSource, /window\.runtimeApi\?\.playPublicCase/)
+  assert.match(playerSource, /window\.runtimeApi\?\.exitPublicCase/)
+  assert.match(playerSource, /event\.key !== 'Escape'/)
+  assert.match(rendererHtml, /id="publicLibraryView"/)
+  assert.match(rendererHtml, /id="publicLibraryGrid"/)
+  assert.match(rendererStyles, /\.display-root\.is-public-library-view \.public-library-view/)
+  const preloadSource = fs.readFileSync(path.join(runtimeDir, 'preload.js'), 'utf8')
+  assert.match(preloadSource, /playPublicCase:/)
+  assert.match(preloadSource, /exitPublicCase:/)
+})
+
 test('state caching, stage standby, and preview activation remain separate', () => {
   const fullStateSource = mainSource.slice(
     mainSource.indexOf("case 'GroupSelectAndSync':"),
@@ -37,7 +60,7 @@ test('state caching, stage standby, and preview activation remain separate', () 
   assert.doesNotMatch(fullStateSource, /eventName === 'GroupStateSync'[\s\S]*?setActiveGroup/)
   assert.match(previewSource, /(?:enabled:\s*Boolean\(payload\.enabled\)|const previewEnabled = Boolean\(payload\.enabled\)[\s\S]*?enabled:\s*previewEnabled)/)
   assert.match(playerSource, /const getPreviewPresentationKey = \(\) =>/)
-  assert.match(playerSource, /if \(preview\.enabled !== true \|\| isArchiveView\(\)\) return ''/)
+  assert.match(playerSource, /if \(preview\.enabled !== true \|\| !isStageView\(\)\) return ''/)
   assert.match(playerSource, /displayRoot\?\.classList\.toggle\('is-stage-standby', standbyActive\)/)
   assert.match(rendererHtml, /id="stageStandby"/)
   assert.match(rendererHtml, /src="\.\/assets\/Right_Logo\.png"/)
@@ -208,7 +231,7 @@ test('async receiver requests have finite XMLHttpRequest timeouts', () => {
     path.join(runtimeDir, '..', 'src', 'services', 'unityBridge.ts'),
     'utf8'
   )
-  assert.match(bridgeSource, /const UNITY_ASYNC_REQUEST_TIMEOUT_MS = 15000/)
+  assert.match(bridgeSource, /const UNITY_ASYNC_REQUEST_TIMEOUT_MS = 60000/)
   assert.equal(
     (bridgeSource.match(/xhr\.timeout = UNITY_ASYNC_REQUEST_TIMEOUT_MS/g) ?? []).length,
     2

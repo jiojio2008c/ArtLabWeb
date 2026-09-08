@@ -15,9 +15,17 @@
     "main.vertical-flip.js",
     "runtime-display-settings-core.cjs",
     "group-state-revision-core.cjs",
+    "public-cases-core.cjs",
+    "public-library-idle-core.cjs",
     "preload.js",
     "renderer/**/*",
     "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "../public/dynamic-cases",
+      "to": "dynamic-cases"
+    }
   ],
   "win": {
     "target": [

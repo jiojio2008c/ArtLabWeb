@@ -47,7 +47,7 @@ const APP_LAUNCH_COMMAND_PREFIX = 'MF|AppLauncher|Launch|'
 const APP_CLOSE_COMMAND_PREFIX = 'MF|AppLauncher|Close|'
 const REMOTE_KEYBOARD_COMMAND_PREFIX = 'MF|RemoteKeyboard|'
 const QR_CODE_COMMAND = 'QrCode'
-const UNITY_ASYNC_REQUEST_TIMEOUT_MS = 15000
+const UNITY_ASYNC_REQUEST_TIMEOUT_MS = 60000
 
 const DYNAMIC_REVISION_STORAGE_KEY = 'magicfloor_dynamic_state_revision_v1'
 const DYNAMIC_STATE_REVISION_EVENTS = new Set([

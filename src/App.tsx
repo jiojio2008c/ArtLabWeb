@@ -13,6 +13,7 @@ import DynamicBackgroundPage from './components/DynamicBackgroundPage.tsx'
 import DynamicGroupsPage from './components/DynamicGroupsPage.tsx'
 import DynamicItemsPage from './components/DynamicItemsPage.tsx'
 import DynamicControlPage from './components/DynamicControlPage.tsx'
+import PublicCasePreviewPage from './components/PublicCasePreviewPage.tsx'
 import DynamicPortalTransition from './components/dynamicTransitions/DynamicPortalTransition.tsx'
 import DirectThemeUploadTransition from './components/interactiveTransitions/DirectThemeUploadTransition.tsx'
 import DirectThemeUploadReturnTransition from './components/interactiveTransitions/DirectThemeUploadReturnTransition.tsx'
@@ -27,7 +28,7 @@ import {
   loadDynamicGroups,
   type DynamicGroup
 } from './services/dynamicArtStorage.ts'
-import { importPublicCase } from './services/publicCaseStorage.ts'
+import { importPublicCase, loadPublicCasePreviewGroup } from './services/publicCaseStorage.ts'
 import {
   captureDynamicArchiveSourceSnapshot,
   makeDynamicArchiveReplayId,
@@ -61,6 +62,7 @@ type Page =
   | 'dynamicGroups'
   | 'dynamicItems'
   | 'dynamicControl'
+  | 'publicCasePreview'
   | 'directSelect'
   | 'directUpload'
   | 'directComplete'
@@ -74,6 +76,7 @@ const pageOrder: Record<Page, number> = {
   dynamicBackground: 2,
   dynamicItems: 3,
   dynamicControl: 4,
+  publicCasePreview: 2,
   directSelect: 1,
   directUpload: 2,
   directComplete: 3
@@ -96,6 +99,7 @@ function App() {
   const [dynamicGroups, setDynamicGroups] = useState<DynamicGroup[]>([])
   const [dynamicGroupsLoaded, setDynamicGroupsLoaded] = useState(false)
   const [selectedDynamicGroupId, setSelectedDynamicGroupId] = useState('')
+  const [publicCasePreviewGroup, setPublicCasePreviewGroup] = useState<DynamicGroup | null>(null)
   const [selectedDynamicItemId, setSelectedDynamicItemId] = useState('')
   const [dynamicEditorExperience, setDynamicEditorExperience] = useState<DynamicCreationFlowExperience>('free')
   const [dynamicPortalOrigin, setDynamicPortalOrigin] = useState<DynamicTransitionOrigin | null>(null)
@@ -196,6 +200,7 @@ function App() {
         setSettingsOpen(false)
         setDirectUploadResult(null)
         setSelectedDynamicItemId('')
+        setPublicCasePreviewGroup(null)
         setDynamicPortalOrigin(null)
         setInteractivePortalOrigin(null)
         setDirectThemeUploadTransition(null)
@@ -525,14 +530,33 @@ function App() {
 
   const handleImportPublicCase = useCallback(async (
     templateId: string,
+    destinationFolderId?: string,
     _origin?: DynamicTransitionOrigin
   ) => {
     const importedGroup = await importPublicCase(templateId, {
-      locale: i18n.resolvedLanguage ?? i18n.language
+      locale: i18n.resolvedLanguage ?? i18n.language,
+      folderId: destinationFolderId || undefined
     })
-    updateDynamicGroupState(importedGroup)
     return importedGroup
   }, [i18n.language, i18n.resolvedLanguage])
+
+  const handlePreviewPublicCase = useCallback(async (
+    templateId: string,
+    _origin?: DynamicTransitionOrigin
+  ) => {
+    const previewGroup = await loadPublicCasePreviewGroup(templateId, {
+      locale: i18n.resolvedLanguage ?? i18n.language
+    })
+    setPublicCasePreviewGroup(previewGroup)
+    setTransitionDirection('instant')
+    setCurrentPage('publicCasePreview')
+  }, [i18n.language, i18n.resolvedLanguage])
+
+  const handleReturnFromPublicCasePreview = useCallback(() => {
+    setPublicCasePreviewGroup(null)
+    setTransitionDirection('instant')
+    setCurrentPage('dynamicGroups')
+  }, [])
 
   const handleDynamicBackgroundComplete = (group: DynamicGroup) => {
     updateDynamicGroupState(group)
@@ -566,6 +590,7 @@ function App() {
     setSettingsOpen(false)
     setDirectUploadResult(null)
     setSelectedDynamicItemId('')
+    setPublicCasePreviewGroup(null)
     setDynamicPortalOrigin(null)
     setInteractivePortalOrigin(null)
     setDirectThemeUploadTransition(null)
@@ -588,6 +613,7 @@ function App() {
     setSettingsOpen(false)
     setDirectUploadResult(null)
     setSelectedDynamicItemId('')
+    setPublicCasePreviewGroup(null)
     setDynamicPortalOrigin(null)
     setInteractivePortalOrigin(null)
     setDirectThemeUploadTransition(null)
@@ -649,6 +675,7 @@ function App() {
     || currentPage === 'dynamicBackground'
     || currentPage === 'dynamicItems'
     || currentPage === 'dynamicControl'
+    || currentPage === 'publicCasePreview'
   )
   const magicFloorSurfaceActive = currentPage === 'entry'
     || currentPage === 'directSelect'
@@ -672,6 +699,7 @@ function App() {
                 onUpdateGroup={updateDynamicGroupState}
                 onDeleteGroup={handleDeleteDynamicGroup}
                 onSelectGroup={handleSelectDynamicGroup}
+                onPreviewPublicCase={handlePreviewPublicCase}
                 onImportPublicCase={handleImportPublicCase}
                 portalArrival={Boolean(dynamicPortalOrigin)}
                 transitionPrepared={false}
@@ -694,6 +722,11 @@ function App() {
               />
             )}
           </>
+        ) : currentPage === 'publicCasePreview' && publicCasePreviewGroup ? (
+          <PublicCasePreviewPage
+            group={publicCasePreviewGroup}
+            onBack={handleReturnFromPublicCasePreview}
+          />
         ) : currentPage === 'entry' ? (
           <EntryPage
             wsIp={networkSettings.wsIp}

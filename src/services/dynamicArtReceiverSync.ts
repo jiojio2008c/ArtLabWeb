@@ -390,6 +390,7 @@ const getMediaSignaturePart = (media: DynamicMedia | DynamicAudioMedia) => [
   media.updatedAt,
   media.filePath ?? '',
   media.storageKey ?? '',
+  media.url ?? '',
   media.width ?? '',
   media.height ?? ''
 ].join(':')
