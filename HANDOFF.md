@@ -4428,3 +4428,54 @@ npm --prefix desktop-runtime run pack:all
 - 翻转版 EXE：`desktop-runtime/release-vertical-flip/MagicFloor Dynamic Player Vertical Flip 0.1.0.exe`（约 161.48 MB）。
 - 已通过 `npx tsc --noEmit --pretty false`、`npm run test:creation-flow`、`npm --prefix desktop-runtime run test:presentation`。
 - Windows 仍不能 Archive / 签名 / 上传 App Store。现场需安装本日新 iOS 包和新 EXE；只刷新旧安装包不会带上本次修复。
+
+## 84. 2026-09-08 互动艺术扫描遮罩卡、iPad 掉帧与印刷卡识别
+
+回退节点仍是 `5c219b89`（`chore: checkpoint before interactive mask-card scan capture`）。本轮只动互动艺术上载，**没有改动态艺术、EXE、11701 协议或公共案例**。
+
+### 初版扫卡（未写入第 83 节的工作区改动）
+
+- 互动上载 `+` 菜单增加「扫描遮罩卡」，只在 `UploadPage` `mode="direct"` 出现。
+- 初版在主线程对 320px 灰度帧做多尺度 NCC + 实心 IoU，锁定后裁切拍照。普通拍照入口保留。
+- 相关文件：`src/services/maskCardScanCore.ts`、`maskCardScanner.ts`、`UploadPage.tsx`、五语文案、`scripts/verify-mask-card-scan.mjs`。
+
+### 真机反馈（iPad Air + iPad Pro 11"）
+
+- 取景大约只有肉眼可见的 **20 帧**，属于负优化。
+- 选了 **孔雀（A-02）**，打印纸是 **#C-03 河豚** 和 **#A-01 长颈鹿**。任意角度都认不出。
+- 原因：
+  1. 后置相机未限分辨率，iPad 容易开到 4K；遮罩 PNG 是 **3508×2481**，盖在预览上会把 GPU 打满。
+  2. 主线程每 ~120ms 做密集 NCC，扫卡时预览和 UI 一起卡。
+  3. 数字遮罩是**实心剪影**，印刷卡是**线稿**；再用实心 IoU / 灰度 NCC 对不上。
+  4. 初版不处理旋转；长颈鹿照片是竖放的。
+  5. 扫卡只比对当前选中的一张。孔雀对河豚/长颈鹿本来就不会过。魔幻森林列表还去掉了 A-01，不能从抽屉改选长颈鹿。
+
+### 帧率（功能不变）
+
+- 相机约束改为后置 **1280×720 @ 30fps**（失败再回退）。拍照仍最大 1920，观感与以前接近。
+- 预览遮罩改用最长边 1280 的缩小图，不再每帧合成 3508 原图。
+- 识别放到 Web Worker；忙则跳过该帧；框和文案没变就不 `setState`。
+- Worker 不可用时退回 `queueMicrotask`，不堵 rAF。
+
+### 识别
+
+- 印刷卡四角的实心/空心方块是定位码（长颈鹿 `1000`、孔雀 `1010`、河豚 `1101`），和中间是线稿还是实心无关。
+- 用 Otsu 找卡面，读四角码，再和当前主题整组遮罩（含森林被隐藏的 A-01）比对，并处理 0/90/180/270。
+- 对上当前选中的卡才锁定快拍。
+- 对上同组另一张（例如选孔雀却看到长颈鹿）显示「看到的是长颈鹿卡，目前选的是孔雀」，**不误拍成孔雀**。
+- 河豚属于海洋 C 组：在森林里扫 C-03 只会提示「看到遮罩卡，但不是孔雀」。要扫河豚请到美丽海洋并选河豚。
+- 用用户拍的 #C-03 / #A-01 印刷照做过离线核对：河豚能对上 C-03；长颈鹿在选孔雀时会判成 A-01 不匹配。
+
+### 怎么测
+
+1. 普通拍照：预览应明显顺于 20fps，遮罩叠层还在。
+2. 森林选孔雀，扫印刷长颈鹿：橙框 + 不匹配文案，不要自动拍成孔雀。
+3. 森林选长颈鹿（若抽屉没有，扫卡库仍含 A-01）或先改选后再扫：应锁定并拍照。
+4. 海洋选河豚，扫印刷 #C-03：应锁定。
+5. 动态艺术档案 / 控制页 / EXE 应完全没变。
+
+### 验证
+
+- `npx tsc --noEmit --pretty false`
+- `npm run test:mask-card-scan`
+- 已执行 `npm run sync:ios`。当前入口为 `index-uDCxr4nf.js`、`index-CzDxjaB4.css`、`web-CBGQRbAm.js`，另有 Worker `maskCardScan.worker-cBDK733x.js`。`dist/index.html` 与 `ios/App/App/public/index.html` SHA-256 均为 `2B21F258088A820F5541F54821413BE07C9AB2B97D28F691B552447CA692F650`。

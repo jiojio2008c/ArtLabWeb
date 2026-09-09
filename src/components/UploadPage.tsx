@@ -1,12 +1,31 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import axios from 'axios'
-import { Camera, FileUp, Image as ImageIcon, Images, Plus, Zap, ZapOff } from 'lucide-react'
+import { Camera, FileUp, Image as ImageIcon, Images, Plus, ScanSearch, Zap, ZapOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { saveArtworkToIp, saveThumbnailToIp } from '../services/artworkStorage.ts'
 import { playArtworkLaunchSound, stopArtworkLaunchSound } from '../services/artworkLaunchAudio.ts'
 import { saveLastWsIp } from '../services/appSettings.ts'
 import { CONTROL_PORT } from '../services/networkConfig.ts'
-import type { UploadMaskOption } from '../services/directUploadThemes.ts'
+import { DIRECT_MASKS_BY_PREFIX, type DirectMaskPrefix, type UploadMaskOption } from '../services/directUploadThemes.ts'
+import {
+  createMaskCardLockTracker,
+  hitsLookSame,
+  mapNormalizedRectToPixels,
+  MASK_CARD_MIN_CONFIDENCE,
+  MASK_CARD_PROCESS_WIDTH,
+  type MaskCardDetectResult,
+  type MaskCardHit,
+  type MaskCardScanStatus,
+  type MaskCardTemplate
+} from '../services/maskCardScanCore.ts'
+import { createMaskCardScanSession } from '../services/maskCardScanSession.ts'
+import {
+  canvasToGrayImage,
+  drawVideoFrameToCanvas,
+  loadMaskCardTemplates,
+  loadMaskOverlayUrl,
+  requestCardFocus
+} from '../services/maskCardScanner.ts'
 import { playUiSound } from '../services/uiFeedback.ts'
 import ArtworkLaunchTransition from './interactiveTransitions/ArtworkLaunchTransition.tsx'
 
@@ -15,6 +34,7 @@ type ImageGestureMode = 'none' | 'drag' | 'pinch'
 type DirectMediaSource = 'camera' | 'file'
 type DirectUploadPhase = 'idle' | 'launching' | 'holding' | 'returning'
 type DirectInternalReturnPhase = 'idle' | 'exiting' | 'entering'
+type ScanCropRect = { x: number; y: number; width: number; height: number }
 
 type TorchCapabilities = MediaTrackCapabilities & { torch?: boolean }
 type TorchConstraintSet = MediaTrackConstraintSet & { torch: boolean }
@@ -159,6 +179,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const [torchEnabled, setTorchEnabled] = useState(false)
   const [isTakingPhoto, setIsTakingPhoto] = useState(false)
   const [cameraFlashVisible, setCameraFlashVisible] = useState(false)
+  const [cameraScanMode, setCameraScanMode] = useState(false)
+  const [scanStatus, setScanStatus] = useState<MaskCardScanStatus>('searching')
+  const [scanHit, setScanHit] = useState<MaskCardHit | null>(null)
+  const [scanFoundMaskId, setScanFoundMaskId] = useState<string | null>(null)
+  const [maskPreviewSrc, setMaskPreviewSrc] = useState<string | null>(null)
   const [directMediaSource, setDirectMediaSource] = useState<DirectMediaSource>('file')
   const [directUploadPhase, setDirectUploadPhase] = useState<DirectUploadPhase>('idle')
   const [directInternalReturnPhase, setDirectInternalReturnPhase] = useState<DirectInternalReturnPhase>('idle')
@@ -180,19 +205,49 @@ const UploadPage: React.FC<UploadPageProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const cameraFlashTimerRef = useRef<number | null>(null)
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const scanTemplatesRef = useRef<MaskCardTemplate[]>([])
+  const scanTrackerRef = useRef(createMaskCardLockTracker())
+  const scanHitRef = useRef<MaskCardHit | null>(null)
+  const scanStatusRef = useRef<MaskCardScanStatus>('searching')
+  const scanFoundMaskIdRef = useRef<string | null>(null)
+  const scanCapturedRef = useRef(false)
+  const scanFocusAtRef = useRef(0)
+  const scanLockTimerRef = useRef<number | null>(null)
+  const selectedMaskRef = useRef(selectedMask)
+  const takePhotoRef = useRef<(crop?: ScanCropRect) => void>(() => {})
   const directInternalReturnTimerRef = useRef<number | null>(null)
   const directLaunchPromiseRef = useRef<Promise<void> | null>(null)
   const directLaunchResolveRef = useRef<(() => void) | null>(null)
   const directReturnPromiseRef = useRef<Promise<void> | null>(null)
   const directReturnResolveRef = useRef<(() => void) | null>(null)
 
+  selectedMaskRef.current = selectedMask
   const selectedMaskOption = activeMaskOptions.find((option) => option.id === selectedMask) ?? activeMaskOptions[0]
+  const scanLibrary = useMemo(() => {
+    const prefix = selectedMaskOption?.id?.charAt(0)
+    if (prefix === 'A' || prefix === 'B' || prefix === 'C') {
+      return DIRECT_MASKS_BY_PREFIX[prefix as DirectMaskPrefix]
+    }
+    return activeMaskOptions.filter((option) => option.src)
+  }, [activeMaskOptions, selectedMaskOption?.id])
   const selectedMaskLabel = selectedMaskOption ? t(selectedMaskOption.labelKey) : t('upload.mask')
+  const scanFoundMask = scanLibrary.find((option) => option.id === scanFoundMaskId)
+  const maskOverlaySrc = maskPreviewSrc ?? selectedMaskOption?.src
   const selectedFileName = selectedFile?.name ?? t('upload.noFile')
   const uploadModeLabel = isDirectMode ? `HTTP :${uploadPort}` : enableSupabaseUpload ? 'Supabase + HTTP' : t('upload.directHttp')
   const title = isDirectMode ? (directThemeName ?? t('upload.quickPhotoTitle')) : t('upload.artworkTitle')
   const eyebrow = isDirectMode ? t('upload.quickEyebrow') : t('upload.slotEyebrow', { index: selectedObjectIndex })
   const submitLabel = isDirectMode ? t('upload.sendQuick') : t('upload.sendGallery')
+  const scanStatusLabel = scanStatus === 'locked'
+    ? t('upload.scanLocked')
+    : scanStatus === 'locking'
+      ? t('upload.scanLocking')
+      : scanStatus === 'mismatch'
+        ? (scanFoundMask
+          ? t('upload.scanMismatch', { found: t(scanFoundMask.labelKey), selected: selectedMaskLabel })
+          : t('upload.scanOtherCard', { name: selectedMaskLabel }))
+        : t('upload.scanSearching', { name: selectedMaskLabel })
   const directStageStyle = isDirectMode
     ? ({
         '--mask-aspect-ratio': directMaskAspectRatio ?? 1.414,
@@ -364,6 +419,201 @@ const UploadPage: React.FC<UploadPageProps> = ({
       })
   }, [showCamera])
 
+  useEffect(() => {
+    if (!selectedMaskOption?.src) {
+      setMaskPreviewSrc(null)
+      return undefined
+    }
+
+    let cancelled = false
+    void loadMaskOverlayUrl(selectedMaskOption.src)
+      .then((url) => {
+        if (!cancelled) setMaskPreviewSrc(url)
+      })
+      .catch(() => {
+        if (!cancelled) setMaskPreviewSrc(selectedMaskOption.src ?? null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMaskOption?.src])
+
+  useEffect(() => {
+    if (!cameraScanMode) {
+      scanTemplatesRef.current = []
+      return undefined
+    }
+
+    const options = scanLibrary.flatMap((option) => (
+      option.src ? [{ id: option.id, src: option.src }] : []
+    ))
+    if (options.length === 0) {
+      scanTemplatesRef.current = []
+      return undefined
+    }
+
+    let cancelled = false
+    scanTrackerRef.current.reset()
+    scanCapturedRef.current = false
+    setScanStatus('searching')
+    setScanHit(null)
+    setScanFoundMaskId(null)
+    scanHitRef.current = null
+    scanStatusRef.current = 'searching'
+    scanFoundMaskIdRef.current = null
+
+    void loadMaskCardTemplates(options)
+      .then((templates) => {
+        if (!cancelled) scanTemplatesRef.current = templates
+      })
+      .catch((error) => {
+        console.error('Mask card template load failed:', error)
+        if (!cancelled) setUploadError('upload.scanTemplateFailed')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [cameraScanMode, scanLibrary])
+
+  useEffect(() => {
+    if (!cameraScanMode) return
+    scanTrackerRef.current.reset()
+    scanCapturedRef.current = false
+    setScanStatus('searching')
+    setScanHit(null)
+    setScanFoundMaskId(null)
+    scanHitRef.current = null
+    scanStatusRef.current = 'searching'
+    scanFoundMaskIdRef.current = null
+  }, [cameraScanMode, selectedMask])
+
+  useEffect(() => {
+    if (!showCamera || !cameraScanMode || !cameraReady) return undefined
+
+    let cancelled = false
+    let frameId = 0
+    let lastScanAt = 0
+    if (!scanCanvasRef.current) {
+      scanCanvasRef.current = document.createElement('canvas')
+    }
+
+    const stopLockTimer = () => {
+      if (scanLockTimerRef.current !== null) {
+        window.clearTimeout(scanLockTimerRef.current)
+        scanLockTimerRef.current = null
+      }
+    }
+
+    const publishScan = (status: MaskCardScanStatus, hit: MaskCardHit | null, foundMaskId: string | null) => {
+      scanHitRef.current = hit
+      scanStatusRef.current = status
+      scanFoundMaskIdRef.current = foundMaskId
+      setScanHit(hit)
+      setScanStatus(status)
+      setScanFoundMaskId(foundMaskId)
+    }
+
+    const applyResult = (result: MaskCardDetectResult) => {
+      if (cancelled || scanCapturedRef.current) return
+
+      let status: MaskCardScanStatus = 'searching'
+      let hit: MaskCardHit | null = null
+      let foundMaskId: string | null = null
+
+      if (result.preferredMatched && result.hit && result.hit.confidence >= MASK_CARD_MIN_CONFIDENCE) {
+        const state = scanTrackerRef.current.push(result.hit)
+        status = state.status
+        hit = state.hit
+        foundMaskId = result.matchedMaskId
+      } else {
+        scanTrackerRef.current.reset()
+        if (result.matchedMaskId && result.hit) {
+          status = 'mismatch'
+          hit = result.hit
+          foundMaskId = result.matchedMaskId
+        } else if (result.hit) {
+          status = 'searching'
+          hit = result.hit
+        } else {
+          status = 'searching'
+        }
+      }
+
+      if (
+        status === scanStatusRef.current
+        && foundMaskId === scanFoundMaskIdRef.current
+        && hitsLookSame(hit, scanHitRef.current)
+      ) {
+        if (status === 'locked') {
+          // Keep the lock timer logic below using current refs.
+        } else {
+          stopLockTimer()
+        }
+      } else {
+        publishScan(status, hit, foundMaskId)
+      }
+
+      const now = performance.now()
+      if (hit && status !== 'searching' && now - scanFocusAtRef.current > 900) {
+        scanFocusAtRef.current = now
+        void requestCardFocus(cameraStreamRef.current?.getVideoTracks()[0], hit.focus)
+      }
+
+      if (status === 'locked' && hit && scanLockTimerRef.current === null && !scanCapturedRef.current) {
+        scanLockTimerRef.current = window.setTimeout(() => {
+          scanLockTimerRef.current = null
+          const lockedHit = scanHitRef.current
+          const liveVideo = videoRef.current
+          if (cancelled || scanCapturedRef.current || !lockedHit || !liveVideo || scanStatusRef.current !== 'locked') return
+          takePhotoRef.current(mapNormalizedRectToPixels(
+            lockedHit.rect,
+            liveVideo.videoWidth,
+            liveVideo.videoHeight
+          ))
+        }, 280)
+      } else if (status !== 'locked') {
+        stopLockTimer()
+      }
+    }
+
+    const session = createMaskCardScanSession(applyResult)
+    let postedKey = ''
+
+    const tick = (now: number) => {
+      if (cancelled) return
+      frameId = window.requestAnimationFrame(tick)
+      if (scanCapturedRef.current || isTakingPhoto) return
+      if (now - lastScanAt < 180) return
+      lastScanAt = now
+
+      const templates = scanTemplatesRef.current
+      const preferred = selectedMaskRef.current
+      const templateKey = `${templates.length}:${templates.map((item) => item.maskId).join(',')}:${preferred}`
+      if (templates.length > 0 && templateKey !== postedKey) {
+        session.setTemplates(templates, preferred)
+        postedKey = templateKey
+      }
+
+      const video = videoRef.current
+      const canvas = scanCanvasRef.current
+      if (!video || !canvas || templates.length === 0 || video.videoWidth <= 0) return
+      if (!drawVideoFrameToCanvas(video, canvas, MASK_CARD_PROCESS_WIDTH)) return
+      const gray = canvasToGrayImage(canvas)
+      if (!gray) return
+      session.submit(gray)
+    }
+
+    frameId = window.requestAnimationFrame(tick)
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frameId)
+      stopLockTimer()
+      session.dispose()
+    }
+  }, [cameraReady, cameraScanMode, showCamera])
+
   const startAudioRecording = async () => {
     try {
       setAudioStatus('upload.audioRecording')
@@ -435,14 +685,33 @@ const UploadPage: React.FC<UploadPageProps> = ({
   }
 
   const requestCameraStream = async () => {
+    const rearCamera: MediaTrackConstraints = {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 30 }
+    }
+
     try {
-      return await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' }
-        }
-      })
+      return await navigator.mediaDevices.getUserMedia({ video: rearCamera })
     } catch {
-      return await navigator.mediaDevices.getUserMedia({ video: true })
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        })
+      } catch {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } }
+          })
+        } catch {
+          return await navigator.mediaDevices.getUserMedia({ video: true })
+        }
+      }
     }
   }
 
@@ -573,9 +842,22 @@ const UploadPage: React.FC<UploadPageProps> = ({
     reader.readAsDataURL(file)
   }
 
-  const handleOpenCamera = async () => {
+  const handleOpenCamera = async (options?: { scanCard?: boolean }) => {
+    const scanCard = Boolean(options?.scanCard) && isDirectMode
+    if (scanCard && !selectedMaskOption?.src) {
+      setShowImportMenu(false)
+      setUploadError('upload.scanNeedMask')
+      return
+    }
+
     setShowImportMenu(false)
-    setCameraMaskDrawerOpen(isDirectMode && activeMaskOptions.length > 0)
+    setCameraScanMode(scanCard)
+    setScanStatus('searching')
+    setScanHit(null)
+    scanHitRef.current = null
+    scanCapturedRef.current = false
+    scanTrackerRef.current.reset()
+    setCameraMaskDrawerOpen(isDirectMode && activeMaskOptions.length > 0 && !scanCard)
     setUploadError(null)
     setCameraReady(false)
     setTorchSupported(false)
@@ -613,6 +895,14 @@ const UploadPage: React.FC<UploadPageProps> = ({
     }
     setShowCamera(false)
     setCameraMaskDrawerOpen(false)
+    setCameraScanMode(false)
+    setScanStatus('searching')
+    setScanHit(null)
+    scanHitRef.current = null
+    scanCapturedRef.current = false
+    scanTemplatesRef.current = []
+    setScanFoundMaskId(null)
+    scanTrackerRef.current.reset()
     setCameraReady(false)
     setTorchSupported(false)
     setTorchEnabled(false)
@@ -755,14 +1045,15 @@ const UploadPage: React.FC<UploadPageProps> = ({
     }
   }
 
-  const handleTakePhoto = () => {
-    if (!videoRef.current || !canvasRef.current || !cameraReady || isTakingPhoto) return
+  const handleTakePhoto = (crop?: ScanCropRect) => {
+    if (!videoRef.current || !canvasRef.current || !cameraReady || isTakingPhoto || scanCapturedRef.current) return
 
     const video = videoRef.current
     const canvas = canvasRef.current
     const context = canvas.getContext('2d')
     if (!context) return
 
+    scanCapturedRef.current = cameraScanMode
     setIsTakingPhoto(true)
     setCameraFlashVisible(true)
     playUiSound('shutter')
@@ -777,6 +1068,12 @@ const UploadPage: React.FC<UploadPageProps> = ({
     const maxWidth = 1920
     let width = video.videoWidth
     let height = video.videoHeight
+    const source = crop && crop.width > 8 && crop.height > 8 ? crop : null
+
+    if (source) {
+      width = source.width
+      height = source.height
+    }
 
     if (width > maxWidth) {
       const scale = maxWidth / width
@@ -786,7 +1083,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
 
     canvas.width = width
     canvas.height = height
-    context.drawImage(video, 0, 0, width, height)
+    if (source) {
+      context.drawImage(video, source.x, source.y, source.width, source.height, 0, 0, width, height)
+    } else {
+      context.drawImage(video, 0, 0, width, height)
+    }
 
     if (isDirectMode) {
       canvas.toBlob((blob) => {
@@ -795,6 +1096,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
           handleCloseCamera()
         } else {
           setIsTakingPhoto(false)
+          scanCapturedRef.current = false
           setUploadError('upload.photoFailed')
         }
       }, 'image/jpeg', 0.92)
@@ -837,6 +1139,11 @@ const UploadPage: React.FC<UploadPageProps> = ({
         img.src = URL.createObjectURL(blob)
       }
     }, 'image/jpeg', 0.9)
+  }
+  takePhotoRef.current = handleTakePhoto
+
+  const handleOpenScanCamera = () => {
+    void handleOpenCamera({ scanCard: true })
   }
 
   const clampImagePosition = (nextPosition: Point, nextScale = imageScaleRef.current) => {
@@ -1289,10 +1596,16 @@ const UploadPage: React.FC<UploadPageProps> = ({
               <Images size={20} strokeWidth={2.2} aria-hidden="true" />
               <span>{t('upload.photoLibrary')}</span>
             </button>
-            <button type="button" onClick={handleOpenCamera} className="upload-action-item">
+            <button type="button" onClick={() => void handleOpenCamera()} className="upload-action-item">
               <Camera size={20} strokeWidth={2.2} aria-hidden="true" />
               <span>{t('upload.takePhoto')}</span>
             </button>
+            {isDirectMode && (
+              <button type="button" onClick={handleOpenScanCamera} className="upload-action-item">
+                <ScanSearch size={20} strokeWidth={2.2} aria-hidden="true" />
+                <span>{t('upload.scanMaskCard')}</span>
+              </button>
+            )}
             <button type="button" onClick={openFilePicker} className="upload-action-item">
               <FileUp size={20} strokeWidth={2.2} aria-hidden="true" />
               <span>{t('upload.chooseFile')}</span>
@@ -1302,7 +1615,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
       )}
 
       {showCamera ? (
-        <section className={`camera-workspace ${isDirectMode ? 'direct-camera-workspace' : ''}`}>
+        <section className={`camera-workspace ${isDirectMode ? 'direct-camera-workspace' : ''} ${cameraScanMode ? 'is-scan-mode' : ''}`}>
           <div className="camera-preview">
             <video
               ref={videoRef}
@@ -1320,12 +1633,41 @@ const UploadPage: React.FC<UploadPageProps> = ({
               </div>
             )}
             {isDirectMode && <div className={`direct-camera-capture-flash ${cameraFlashVisible ? 'visible' : ''}`} />}
-            {isDirectMode && selectedMaskOption?.src && (
+            {isDirectMode && !cameraScanMode && maskOverlaySrc && (
               <img
-                src={selectedMaskOption.src}
+                src={maskOverlaySrc}
                 alt={t('upload.maskAlt', { name: selectedMaskLabel })}
                 className="camera-mask-overlay"
               />
+            )}
+            {isDirectMode && cameraScanMode && (
+              <div className={`direct-camera-scan-hud is-${scanStatus}`} aria-live="polite">
+                {scanHit && (
+                  <span
+                    className="direct-camera-scan-frame"
+                    style={{
+                      left: `${scanHit.rect.x * 100}%`,
+                      top: `${scanHit.rect.y * 100}%`,
+                      width: `${scanHit.rect.width * 100}%`,
+                      height: `${scanHit.rect.height * 100}%`
+                    }}
+                  />
+                )}
+                <div className="direct-camera-scan-banner">
+                  {maskOverlaySrc && (
+                    <img
+                      src={maskOverlaySrc}
+                      alt=""
+                      className="direct-camera-scan-thumb"
+                      draggable={false}
+                    />
+                  )}
+                  <div>
+                    <strong>{t('upload.scanMaskCard')}</strong>
+                    <span>{scanStatusLabel}</span>
+                  </div>
+                </div>
+              </div>
             )}
             <canvas ref={canvasRef} className="hidden"></canvas>
             {isDirectMode && activeMaskOptions.length > 0 && (
@@ -1401,7 +1743,18 @@ const UploadPage: React.FC<UploadPageProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={handleTakePhoto}
+                  onClick={() => {
+                    const video = videoRef.current
+                    if (cameraScanMode && scanHit && video?.videoWidth) {
+                      handleTakePhoto(mapNormalizedRectToPixels(
+                        scanHit.rect,
+                        video.videoWidth,
+                        video.videoHeight
+                      ))
+                      return
+                    }
+                    handleTakePhoto()
+                  }}
                   className={`direct-camera-shutter ${isTakingPhoto ? 'capturing' : ''}`}
                   disabled={!cameraReady || isTakingPhoto}
                   aria-label={t('upload.takePhoto')}
@@ -1417,7 +1770,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
               <button type="button" onClick={handleCloseCamera} className="ipad-button secondary-button">
                 {t('common.close')}
               </button>
-              <button type="button" onClick={handleTakePhoto} className="ipad-button primary-button">
+              <button type="button" onClick={() => handleTakePhoto()} className="ipad-button primary-button">
                 {t('upload.capture')}
               </button>
             </div>
@@ -1566,7 +1919,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
             {isDirectMode && previewUrl && (
               <button
                 type="button"
-                onClick={directMediaSource === 'camera' ? handleOpenCamera : handleImportClick}
+                onClick={directMediaSource === 'camera' ? () => void handleOpenCamera() : handleImportClick}
                 disabled={isUploading}
                 className="ipad-button secondary-button"
               >
@@ -1622,7 +1975,7 @@ const UploadPage: React.FC<UploadPageProps> = ({
               <div className="capture-content">
                 <p className="eyebrow light">{t('upload.camera')}</p>
                 <h2>{t('upload.captureArtwork')}</h2>
-                <button type="button" onClick={handleOpenCamera} className="hidden">
+                <button type="button" onClick={() => void handleOpenCamera()} className="hidden">
                   {t('upload.openCamera')}
                 </button>
               </div>

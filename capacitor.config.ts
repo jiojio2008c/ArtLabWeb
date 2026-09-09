@@ -8,10 +8,10 @@ const config: CapacitorConfig = {
     Camera: {
       permission: {
         photosLibrary: {
-          description: '允許 MagicFloor 存取您的照片圖庫',
+          description: 'MagicFloor 只在你主動從相簿選擇素材時讀取照片或影片。例如你從相簿選一張展品照片，加入動態藝術作品。',
         },
         camera: {
-          description: '允許 MagicFloor 使用您的相機',
+          description: 'MagicFloor 只在你主動拍照或掃描遮罩卡時使用相機。例如你拍攝一幅畫作並套用遮罩後，照片會傳送到你設定的藝術畫廊顯示。',
         },
       },
     },

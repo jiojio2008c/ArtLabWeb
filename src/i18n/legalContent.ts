@@ -35,7 +35,7 @@ MagicFloor 是面向藝術教育、展覽及互動空間的 iPad 創作與舞台
 應用會在目前裝置保存語言、局部網絡 IP 位址、連接埠、作品狀態、同步狀態及其他偏好。帳戶驗證服務可能為登入安全、濫用防護及故障排查處理 IP 位址、裝置或瀏覽器資料及存取記錄。應用不收集精確位置、聯絡人、健康、財務、購買、瀏覽或搜尋歷史，也不整合廣告、跨 App 追蹤或行為分析。
 
 3. 裝置權限
-相機只在你主動拍攝作品時使用；照片圖庫只在你選擇匯入圖片或影片時使用；麥克風只在你主動錄音時使用；本地網絡只用於連接你設定的舞台播放電腦或互動裝置；檔案儲存用於保存及讀取本機作品。拒絕權限不會影響無關功能。
+相機只在你主動拍攝作品或掃描遮罩卡時使用，例如拍攝畫作後套用遮罩並傳送到藝術畫廊；照片圖庫只在你選擇匯入圖片或影片時使用；麥克風只在你主動錄音時使用，例如為物件或背景錄製音效；本地網絡只用於連接你設定的舞台播放電腦或互動裝置；檔案儲存用於保存及讀取本機作品。拒絕權限不會影響無關功能。
 
 4. 使用目的
 我們只在提供 MagicFloor 所需範圍內處理資料，包括驗證帳戶、維持登入、顯示帳戶資料、提供創作與控制功能、保障服務安全、排查故障、回應支援或刪除請求，以及履行適用法律義務。我們不出售個人資料，也不作跨 App 或跨網站追蹤。
@@ -110,7 +110,7 @@ MagicFloor 是面向艺术教育、展览及互动空间的 iPad 创作与舞台
 应用会在当前设备保存语言、局域网 IP 地址、端口、作品状态、同步状态及其他偏好。账号验证服务可能为了登录安全、防止滥用及故障排查处理 IP 地址、设备或浏览器信息及访问日志。应用不收集精确位置、联系人、健康、财务、购买、浏览或搜索历史，也不集成广告、跨 App 追踪或行为分析。
 
 3. 设备权限
-相机只在你主动拍摄作品时使用；照片图库只在你选择导入图片或视频时使用；麦克风只在你主动录音时使用；本地网络只用于连接你设置的舞台播放电脑或互动装置；文件存储用于保存及读取本地作品。拒绝权限不会影响无关功能。
+相机只在你主动拍摄作品或扫描遮罩卡时使用，例如拍摄画作后套用遮罩并传送到艺术画廊；照片图库只在你选择导入图片或视频时使用；麦克风只在你主动录音时使用，例如为物件或背景录制音效；本地网络只用于连接你设置的舞台播放电脑或互动装置；文件存储用于保存及读取本地作品。拒绝权限不会影响无关功能。
 
 4. 使用目的
 我们只在提供 MagicFloor 所需范围内处理数据，包括验证账号、维持登录、显示账号资料、提供创作与控制功能、保障服务安全、排查故障、回应支持或删除请求，以及履行适用法律义务。我们不出售个人信息，也不作跨 App 或跨网站追踪。
@@ -185,7 +185,7 @@ Account information may include an email address, user ID, display name, account
 The app stores language, local-network IP address and port, artwork state, synchronisation state and other preferences on the current device. The authentication provider may process IP address, device or browser information and access logs for login security, abuse prevention and troubleshooting. The app does not collect precise location, contacts, health, financial, purchase, browsing or search history, and does not integrate advertising, cross-app tracking or behavioural analytics.
 
 3. Device permissions
-The camera is used only when you actively take a work; Photos only when you choose images or video; the microphone only when you record; the local network only to connect to your configured stage computer or interactive device; and file storage to read and save local works. Denying a permission does not affect unrelated features.
+The camera is used only when you actively photograph a work or scan a mask card, for example capturing a painting, applying a mask and sending it to your art gallery; Photos only when you choose images or video; the microphone only when you record, for example an object or background sound; the local network only to connect to your configured stage computer or interactive device; and file storage to read and save local works. Denying a permission does not affect unrelated features.
 
 4. Purposes
 We process information only as needed to provide MagicFloor: authenticate and maintain accounts, show account details, provide creation and control features, secure the service, troubleshoot, respond to support or deletion requests, and comply with law. We do not sell personal information or track you across apps or websites.

@@ -13,6 +13,7 @@
     "test:creation-flow": "node --no-warnings scripts/verify-dynamic-creation-flow.mjs",
     "test:receiver-sync": "node --no-warnings scripts/verify-dynamic-receiver-sync.mjs",
     "test:public-cases": "node scripts/verify-public-cases.mjs",
+    "test:mask-card-scan": "node --no-warnings scripts/verify-mask-card-scan.mjs",
     "export:public-cases": "node scripts/export-public-dynamic-cases.mjs"
   },
   "dependencies": {
